@@ -11,7 +11,7 @@ param(
     [ValidateSet('hacker','gamer','programmer')]
     [string]$Mode = 'hacker',
     [int]$WaitSeconds = 20,
-    [switch]$Debug
+    [switch]$DebugLog
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,7 +25,7 @@ Start-Sleep -Seconds 2
 # suyu-cmd never writes its log file, and the GUI defaults to *:Info. Debug is
 # what actually names the failing subsystem - it is how the titlekek crash in
 # issue #2 was pinned down.
-if ($Debug) {
+if ($DebugLog) {
     $cfg = Join-Path $env:APPDATA 'suyu\config\qt-config.ini'
     if (Test-Path -LiteralPath $cfg) {
         $text = Get-Content -LiteralPath $cfg -Raw

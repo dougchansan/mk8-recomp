@@ -16,7 +16,8 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $Bin      = Join-Path $Root 'build\suyu\bin'
-$Exe      = Join-Path $Bin ($Gui ? 'suyu.exe' : 'suyu-cmd.exe')
+$ExeName  = if ($Gui) { 'suyu.exe' } else { 'suyu-cmd.exe' }
+$Exe      = Join-Path $Bin $ExeName
 $KeysDir  = Join-Path $env:APPDATA 'suyu\keys'
 $TraceDir = Join-Path $Root 'traces\baseline'
 
@@ -59,7 +60,10 @@ $p  = Start-Process -FilePath $Exe -ArgumentList @('-g', $Game) -PassThru -NoNew
 
 if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
     Write-Host "Still running after ${TimeoutSeconds}s - that is the good outcome for a boot test." -ForegroundColor Green
-    $p.Kill($true)
+    # Ask nicely first: suyu's file logger flushes on shutdown, so a hard Kill
+    # leaves suyu_log.txt empty and the run unusable as evidence.
+    $null = $p.CloseMainWindow()
+    if (-not $p.WaitForExit(15000)) { $p.Kill() }
     $reachedTimeout = $true
 } else {
     Write-Host "Exited after $([int]$sw.Elapsed.TotalSeconds)s with code $($p.ExitCode)" -ForegroundColor Yellow

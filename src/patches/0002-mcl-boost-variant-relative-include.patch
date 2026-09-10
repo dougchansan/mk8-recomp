@@ -1,0 +1,13 @@
+diff --git a/externals/mcl/include/boost/variant.hpp b/externals/mcl/include/boost/variant.hpp
+index c2ebe23..8d12db2 100644
+--- a/externals/mcl/include/boost/variant.hpp
++++ b/externals/mcl/include/boost/variant.hpp
+@@ -1,2 +1,6 @@
+-// Forwarding header: redirect to CPM-managed boost/variant
+-#include "C:/Users/charl/Documents/SuyuEclipse/.cache/cpm/boost/boost-1.90.0/libs/variant/include/boost/variant.hpp"
++// Forwarding header: redirect to CPM-managed boost/variant.
++//
++// Upstream commits this file with an absolute path into the original
++// developer's home directory, which cannot resolve on any other machine.
++// Made relative to the suyu checkout root instead. See mk8-recomp issue #15.
++#include "../../../../../../.cache/cpm/boost/boost-1.90.0/libs/variant/include/boost/variant.hpp"

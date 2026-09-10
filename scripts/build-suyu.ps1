@@ -25,6 +25,7 @@ $VcVars    = Join-Path $VsRoot 'VC\Auxiliary\Build\vcvars64.bat'
 # looks for the old name, so point the cache variable at the new binary rather
 # than installing the whole Vulkan SDK for one shader compiler.
 $Glslang   = Join-Path $Root 'local\tools\glslang\bin\glslang.exe'
+$QtDir     = Join-Path $Root 'local\tools\Qt\6.9.3\msvc2022_64'
 
 if (-not (Test-Path -LiteralPath $VcVars)) { throw "vcvars64.bat not found at $VcVars" }
 if (-not (Test-Path -LiteralPath $SuyuSrc)) { throw "Suyu checkout not found at $SuyuSrc" }
@@ -49,7 +50,13 @@ $cmakeArgs = @(
     '-G Ninja'
     "-DCMAKE_BUILD_TYPE=$BuildType"
     '-DENABLE_QT=ON'
-    '-DYUZU_USE_BUNDLED_QT=ON'
+    # The bundled Eden-CI Qt 6.11.1 drop is built with a newer MSVC STL than
+    # either toolset on this machine provides, so linking suyu.exe against it
+    # fails on __std_replace_copy_1/2 and __std_minmax_element_2u. Use an
+    # official Qt built for MSVC 2022 instead - it also actually ships Svg.
+    '-DYUZU_USE_BUNDLED_QT=OFF'
+    "-DQt6_DIR=`"$QtDir`""
+    "-DCMAKE_PREFIX_PATH=`"$QtDir`"" 
     '-DYUZU_CMD=ON'
     '-DYUZU_TESTS=OFF'
     '-DENABLE_WEB_SERVICE=OFF'

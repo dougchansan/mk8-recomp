@@ -13,6 +13,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $SuyuCommit = 'd1d09321d7ab84252291e05b3efbc8a8dfa57481'
 $GlslangTag = '16.5.0'
+$QtVersion  = '6.9.3'
 
 # --- input verification -----------------------------------------------------
 # The containing directory also ends in .xci, so every path touch is -LiteralPath.
@@ -47,23 +48,36 @@ if (-not (Test-Path -LiteralPath (Join-Path $SuyuSrc '.git'))) {
 Push-Location $SuyuSrc
 git checkout --quiet $SuyuCommit
 git submodule update --init --recursive --depth 1 --jobs 8
-
-# Upstream v0.0.4 does not configure on Windows: it requires the Qt6 Svg
-# component, its own bundled Qt drop does not ship Svg, and nothing in the
-# source actually uses Svg. See issue #5.
-$patch = Join-Path $Root 'src\patches\0001-drop-spurious-qt6-svg-component.patch'
-if (Test-Path -LiteralPath $patch) {
-    git apply --check $patch 2>$null
-    if ($LASTEXITCODE -eq 0) { git apply $patch; Write-Host 'Applied 0001-drop-spurious-qt6-svg-component' }
-    else { Write-Host 'Patch 0001 already applied or not applicable' }
-}
 Pop-Location
+
+# Upstream commits mcl/include/boost/variant.hpp with an absolute include path
+# into the original developer's home directory. It breaks game_export.cpp - the
+# one file in src/suyu that pulls in Dynarmic headers, and the exporter we
+# actually care about. Issue #15. It lives in a submodule, so it is patched here
+# rather than showing up in the suyu tree diff.
+
+$Mcl   = Join-Path $SuyuSrc 'externals\dynarmic\externals\mcl'
+$Patch = Join-Path $Root 'src\patches\0002-mcl-boost-variant-relative-include.patch'
+if ((Test-Path -LiteralPath $Mcl) -and (Test-Path -LiteralPath $Patch)) {
+    Push-Location $Mcl
+    git apply --check $Patch 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        git apply $Patch
+        Write-Host 'Applied 0002-mcl-boost-variant-relative-include' -ForegroundColor Green
+    } else {
+        Write-Host 'Patch 0002 already applied or not applicable'
+    }
+    Pop-Location
+}
 
 # --- glslang ----------------------------------------------------------------
 # suyu needs glslangValidator to compile its host shaders. That normally means
 # installing the whole Vulkan SDK; the standalone Khronos release is ~10 MB and
 # is the only piece the build actually uses. Vulkan headers come from
-# externals/Vulkan-Headers, so no SDK is needed beyond this.
+# externals/Vulkan-Headers, so no SDK is needed beyond this one tool.
+#
+# glslang 16.x renamed the executable to glslang.exe, so build-suyu.ps1 passes
+# -DGLSLANGVALIDATOR explicitly instead of relying on find_program.
 
 $GlslangExe = Join-Path $Root 'local\tools\glslang\bin\glslang.exe'
 if (-not (Test-Path -LiteralPath $GlslangExe)) {
@@ -75,6 +89,23 @@ if (-not (Test-Path -LiteralPath $GlslangExe)) {
     Pop-Location
 }
 & $GlslangExe --version | Select-Object -First 1
+
+# --- Qt ---------------------------------------------------------------------
+# YUZU_USE_BUNDLED_QT is not usable here. The Eden-CI Qt 6.11.1 Windows drop is
+# built against a newer MSVC STL than either installed toolset provides, so
+# suyu.exe cannot link against it (issue #16), and it ships no Qt6Svg although
+# CMakeLists requires the component (issue #5). An official Qt built for MSVC
+# 2022 links against older STL symbols, which a newer toolset still supplies -
+# the compatible direction.
+
+$QtRoot = Join-Path $Root 'local\tools\Qt'
+$QtDir  = Join-Path $QtRoot "$QtVersion\msvc2022_64"
+if (-not (Test-Path -LiteralPath $QtDir)) {
+    python -m pip install --quiet aqtinstall
+    python -m aqt install-qt windows desktop $QtVersion win64_msvc2022_64 -m qtcharts -O $QtRoot
+}
+if (-not (Test-Path -LiteralPath $QtDir)) { throw "Qt install failed: $QtDir" }
+Write-Host "Qt   : $QtDir"
 
 Write-Host ''
 Write-Host 'Bootstrap complete. Next: scripts\build-suyu.ps1 -Configure' -ForegroundColor Green

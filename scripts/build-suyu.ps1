@@ -21,9 +21,14 @@ $SuyuSrc   = Join-Path $Root 'third_party\suyu'
 $BuildDir  = Join-Path $Root 'build\suyu'
 $VsRoot    = 'C:\Program Files\Microsoft Visual Studio\18\Community'
 $VcVars    = Join-Path $VsRoot 'VC\Auxiliary\Build\vcvars64.bat'
+# glslang 16.x renamed glslangValidator to glslang; suyu's find_program still
+# looks for the old name, so point the cache variable at the new binary rather
+# than installing the whole Vulkan SDK for one shader compiler.
+$Glslang   = Join-Path $Root 'local\tools\glslang\bin\glslang.exe'
 
 if (-not (Test-Path -LiteralPath $VcVars)) { throw "vcvars64.bat not found at $VcVars" }
 if (-not (Test-Path -LiteralPath $SuyuSrc)) { throw "Suyu checkout not found at $SuyuSrc" }
+if (-not (Test-Path -LiteralPath $Glslang)) { throw "glslang not found at $Glslang - see scripts/bootstrap.ps1" }
 
 if ($Clean -and (Test-Path -LiteralPath $BuildDir)) {
     Remove-Item -LiteralPath $BuildDir -Recurse -Force
@@ -52,6 +57,7 @@ $cmakeArgs = @(
     '-DYUZU_ROOM_STANDALONE=OFF'
     '-DENABLE_QT_TRANSLATION=OFF'
     '-DUSE_DISCORD_PRESENCE=OFF'
+    "-DGLSLANGVALIDATOR=`"$Glslang`""
 ) -join ' '
 
 if ($Configure -or -not (Test-Path -LiteralPath (Join-Path $BuildDir 'build.ninja'))) {

@@ -34,6 +34,13 @@ function Set-Unlimited {
     $cfg = Join-Path $env:APPDATA 'suyu\config\qt-config.ini'
     if (-not (Test-Path -LiteralPath $cfg)) { return }
     $t = Get-Content -LiteralPath $cfg -Raw
+    # Force the log filter back to Info. A debug filter left in the config from
+    # some earlier investigation floods the log, slows the boot enormously, and
+    # pushes every sample into the shader-compilation window - which the sampler
+    # discards, so the arm silently produces no data at all. That happened once
+    # and looked like the build under test had crashed.
+    $t = $t -replace 'log_filter\\default=true', 'log_filter\default=false'
+    $t = $t -replace 'log_filter=.*', 'log_filter="*:Info"'
     $t = $t -replace 'use_speed_limit\\default=true', 'use_speed_limit\default=false'
     $t = $t -replace 'use_speed_limit=true', 'use_speed_limit=false'
     $t = $t -replace 'use_vsync\\default=true', 'use_vsync\default=false'

@@ -83,9 +83,17 @@ Five of those commits fix defects in suyu itself and are not
 recompiler-specific — most notably that *no* installed update or DLC was ever
 indexed in NAND, for any title.
 
-This replaces the hand-maintained patch files that used to live under
-`src/patches/`. They were a substitute for a tracked tree, reconstructed by
+`externals/dynarmic` inside that fork points at
+[`dougchansan/dynarmic`][dyn] for the same reason: upstream committed a
+forwarding header containing an absolute path into a developer's home directory,
+so it built on one machine. That repository is *not* archived, so unlike the
+suyu changes it could reasonably go upstream as a PR.
+
+Between them these replace the hand-maintained patch files that used to live
+under `src/patches/`. They were a substitute for a tracked tree, reconstructed by
 reverse-applying edits, and a recurring source of error.
+
+[dyn]: https://github.com/dougchansan/dynarmic/tree/mk8-recomp
 
 [fork]: https://github.com/dougchansan/suyu-v0.0.4/tree/mk8-recomp
 [prov]: https://github.com/dougchansan/suyu-v0.0.4/blob/mk8-recomp/PROVENANCE.md

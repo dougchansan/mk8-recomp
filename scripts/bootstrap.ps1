@@ -34,7 +34,7 @@ if (-not $SkipHash) {
 
 # --- directories ------------------------------------------------------------
 
-foreach ($d in 'docs','scripts','src\runtime','src\bridge','src\patches','src\instrumentation',
+foreach ($d in 'docs','scripts','src\runtime','src\bridge','src\instrumentation',
                 'tests','manifests','local\tools','generated','traces\baseline','build','third_party') {
     New-Item -ItemType Directory -Force -Path (Join-Path $Root $d) | Out-Null
 }
@@ -49,26 +49,6 @@ Push-Location $SuyuSrc
 git checkout --quiet $SuyuCommit
 git submodule update --init --recursive --depth 1 --jobs 8
 Pop-Location
-
-# Upstream commits mcl/include/boost/variant.hpp with an absolute include path
-# into the original developer's home directory. It breaks game_export.cpp - the
-# one file in src/suyu that pulls in Dynarmic headers, and the exporter we
-# actually care about. Issue #15. It lives in a submodule, so it is patched here
-# rather than showing up in the suyu tree diff.
-
-$Mcl   = Join-Path $SuyuSrc 'externals\dynarmic\externals\mcl'
-$Patch = Join-Path $Root 'src\patches\0002-mcl-boost-variant-relative-include.patch'
-if ((Test-Path -LiteralPath $Mcl) -and (Test-Path -LiteralPath $Patch)) {
-    Push-Location $Mcl
-    git apply --check $Patch 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        git apply $Patch
-        Write-Host 'Applied 0002-mcl-boost-variant-relative-include' -ForegroundColor Green
-    } else {
-        Write-Host 'Patch 0002 already applied or not applicable'
-    }
-    Pop-Location
-}
 
 # --- glslang ----------------------------------------------------------------
 # suyu needs glslangValidator to compile its host shaders. That normally means

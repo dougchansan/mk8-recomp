@@ -80,6 +80,10 @@ int main() {
         Case{"prfm pstl1keep, [x19]", 0xF9800260u},
         Case{"ldr x0, [x1, #8]", 0xF9400420u},
         Case{"str x0, [x1, #8]", 0xF9000420u},
+        Case{"mrs x0, cntpct_el0", 0xD53BE020u},
+        Case{"mrs x20, cntpct_el0", 0xD53BE034u},
+        Case{"mrs x1, cntvct_el0", 0xD53BE041u},
+        Case{"mrs x2, cntfrq_el0", 0xD53BE002u},
     };
 
     std::printf("emitter decode coverage\n\n");

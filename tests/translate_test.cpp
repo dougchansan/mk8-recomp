@@ -50,6 +50,24 @@ void Check(const Case& c) {
     }
 }
 
+void CheckFallsBack(const Case& c) {
+    std::string out;
+    bool unhandled = false;
+    suyu::recomp::Translate(c.insn, 0x1000, out, &unhandled);
+
+    // The mirror of Check. Some encodings must keep reaching the fallback
+    // engine, and a mask that is too broad swallows them silently while the
+    // coverage number improves - the exact failure this file exists to catch.
+    // DC ZVA writes memory and IC IVAU invalidates the instruction cache, so
+    // translating either as a no-op would be a wrong answer, not a gap.
+    if (unhandled) {
+        std::printf("  ok    %-34s %08X  -> falls back, as required\n", c.name, c.insn);
+    } else {
+        std::printf("  FAIL  %-34s %08X  -> translated, must not be\n", c.name, c.insn);
+        ++failures;
+    }
+}
+
 } // namespace
 
 int main() {
@@ -91,6 +109,12 @@ int main() {
         Case{"ldxp w10, w9, [x0]", 0x887F240Au},
         Case{"stxp w1, w10, w9, [x0]", 0x8821240Au},
         Case{"ldxp wzr, w9, [sp]", 0x887F27FFu},
+        Case{"mrs x9, ctr_el0", 0xD53B0029u},
+        Case{"mrs xzr, ctr_el0", 0xD53B003Fu},
+        Case{"msr ctr_el0, x9", 0xD51B0029u},
+        Case{"dc cvac, x10", 0xD50B7A2Au},
+        Case{"dc cvau, x10", 0xD50B7B2Au},
+        Case{"dc civac, x10", 0xD50B7E2Au},
     };
 
     std::printf("emitter decode coverage\n\n");
@@ -98,6 +122,17 @@ int main() {
         Check(c);
     }
 
-    std::printf("\n%d/%zu translated\n", int(cases.size()) - failures, cases.size());
+    const std::vector<Case> must_fall_back = {
+        Case{"dc zva, x10", 0xD50B742Au},
+        Case{"ic ivau, x10", 0xD50B752Au},
+    };
+
+    std::printf("\nencodings that must NOT be translated\n\n");
+    for (const auto& c : must_fall_back) {
+        CheckFallsBack(c);
+    }
+
+    const std::size_t total = cases.size() + must_fall_back.size();
+    std::printf("\n%d/%zu ok\n", int(total) - failures, total);
     return failures == 0 ? 0 : 1;
 }

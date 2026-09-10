@@ -1,0 +1,73 @@
+diff --git a/src/core/recompiler/arm64_to_c.h b/src/core/recompiler/arm64_to_c.h
+index e9a0b1f..740f625 100644
+--- a/src/core/recompiler/arm64_to_c.h
++++ b/src/core/recompiler/arm64_to_c.h
+@@ -1161,6 +1161,38 @@ inline bool Translate(u32 i, u64 pc, std::string& out, bool* unhandled = nullptr
+     // MRS/MSR against the small set of system registers a user-mode program
+     // actually touches. Anything else stays on the fallback rather than being
+     // silently invented.
++    // SYS: 1101 0101 0000 1 op1 CRn CRm op2 Rt - the DC/IC/AT/TLBI space, which
++    // the MRS/MSR handler below does not cover (that one matches op0=3 only).
++    if ((i & 0xFFF80000) == 0xD5080000) {
++        const u32 sys_op1 = (i >> 16) & 7;
++        const u32 sys_crn = (i >> 12) & 0xF;
++        const u32 sys_crm = (i >> 8) & 0xF;
++        const u32 sys_op2 = (i >> 5) & 7;
++
++        // Data cache clean / invalidate by VA: DC CVAC, CVAU, CVAP, CVADP,
++        // CIVAC. Guest memory is host memory here with no emulated cache
++        // hierarchy, so there is nothing to write back or discard.
++        //
++        // This is not an assumption about what is safe to skip: suyu never sets
++        // Dynarmic's hook_data_cache_operations, so it stays false and the
++        // fallback JIT compiles these to nothing. Emitting nothing matches the
++        // other engine exactly.
++        //
++        // Deliberately narrow. Two neighbours in the same CRn=7 space must keep
++        // falling back:
++        //   DC ZVA (CRm=4)  zeroes a cache line - a real memory write.
++        //   IC IVAU (CRm=5) invalidates the instruction cache, which suyu does
++        //                   act on (InvalidateCacheRange, then halts the JIT).
++        const bool is_dc_clean_invalidate =
++            sys_op1 == 3 && sys_crn == 7 && sys_op2 == 1 &&
++            (sys_crm == 10 || sys_crm == 11 || sys_crm == 12 || sys_crm == 13 || sys_crm == 14);
++        if (is_dc_clean_invalidate) {
++            put("/* dc clean/invalidate: no cache to maintain */");
++            return true;
++        }
++        // Everything else in this space - DC ZVA, the IC family, AT, TLBI -
++        // goes to the fallback engine.
++    }
+     if ((i & 0xFFF00000) == 0xD5300000 || (i & 0xFFF00000) == 0xD5100000) {
+         const bool is_read = ((i >> 21) & 1) != 0;   // MRS reads, MSR writes
+         const u32 sysreg = (i >> 5) & 0x7FFF;
+@@ -1242,6 +1274,29 @@ inline bool Translate(u32 i, u64 pc, std::string& out, bool* unhandled = nullptr
+             }
+             return true;
+         }
++        // CTR_EL0, the cache type register (op0=3 op1=3 CRn=0 CRm=0 op2=1).
++        //
++        // A constant, and read constantly: 31% of every transition to the
++        // fallback engine on the target title was this one instruction, most
++        // of a matrix-heavy title's remaining gap spent marshalling the whole
++        // context into dynarmic to fetch a number that never changes.
++        //
++        // The value is the one suyu configures dynarmic with
++        // (arm_dynarmic_64.cpp: config.ctr_el0), not a plausible-looking
++        // constant. Code that reads a cache line size once and relies on it
++        // later must not see it change when a thread crosses between engines.
++        constexpr u32 kCtrEl0 = 0x5801;
++        if (sysreg == kCtrEl0) {
++            if (is_read) {
++                if (rt != 31) {
++                    put("c->x[" + std::to_string(rt) + "] = 0x8444c004ULL;");
++                }
++            } else {
++                // Read-only at EL0; a write traps on hardware.
++                put("(void)" + Xz(rt) + ";");
++            }
++            return true;
++        }
+         if (sysreg == kTpidrroEl0) {
+             if (is_read) {
+                 if (rt != 31) put("c->x[" + std::to_string(rt) + "] = c->tpidrro_el0;");

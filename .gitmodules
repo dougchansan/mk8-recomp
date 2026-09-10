@@ -1,0 +1,4 @@
+[submodule "third_party/suyu"]
+	path = third_party/suyu
+	url = https://github.com/dougchansan/suyu-v0.0.4.git
+	branch = mk8-recomp

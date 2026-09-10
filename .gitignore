@@ -13,7 +13,15 @@ traces/
 build/
 exefs/
 romfs/
-third_party/
+# third_party/* rather than third_party/ so the negation below can take effect:
+# git does not descend into an ignored directory, so a rule excluding the parent
+# outright makes any un-ignore inside it unreachable.
+third_party/*
+# The suyu fork is a submodule pinned to an exact commit. The emulator source is
+# the other half of this project and was previously ignored entirely, which
+# meant the modified tree existed only on one disk and the patch files under
+# src/patches were a hand-reconstructed substitute for it.
+!third_party/suyu
 *.obj
 *.exe
 *.dll

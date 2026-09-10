@@ -4,18 +4,31 @@ Static recompilation of Nintendo Switch AArch64 CPU code to native Windows
 x86-64, using [suyu v0.0.4](https://github.com/suyu-emu/suyu-v0.0.4)'s AOT
 recompiler as the starting point and its HLE stack for everything above the CPU.
 
-**Current target: the target title** (`targets/target/`).
+**Targets: the target title** (`targets/target/`) and
+**the target title** (`targets/target/`).
 
-The project began as an the target title recompilation. the target title turned out
-to be a **32-bit AArch32** title and suyu's recompiler is AArch64-only, so it can
-never be targeted - see [issue #19](https://github.com/dougchansan/mk8-recomp/issues/19)
-and `docs/library-isa.md`. The repository name is kept for continuity.
+the target title was written off early as untargetable: the cartridge ships a **32-bit
+AArch32** build and suyu's recompiler is AArch64-only. That was wrong, and the
+reason was a bug in our own ISA probe — it read only the *base* NPDM, so an
+update-only NSP came back "no exefs" and the base's ARM32 flag stood in for the
+whole title. **Update v4.0.0 is AArch64**, and it is the build the emulator
+actually runs. See `targets/target/README.md`.
 
-**Status: bootstrap.** Nothing here runs a game yet.
+**Status.** Both targets boot and render at 60 FPS with recompiled AArch64 code
+executing:
+
+| | static coverage | hybrid run |
+|---|---:|---|
+| the target title | 99.79% of 4,832,510 instructions | renders, 60 FPS, 2.4bn blocks native |
+| the target title | — | boots; renders black under full recompilation ([#27](https://github.com/dougchansan/mk8-recomp/issues/27)) |
+
+Neither is a playable port. Both still lean on the fallback JIT for the
+instructions the emitter does not yet translate, which is correct but slow, and
+the target has a genuine translation defect that the target does not.
 
 ## What this repository contains
 
-Our own code, patches, build tooling, manifests, and documentation. It contains
+Our own code, build tooling, manifests, and documentation. It contains
 no game data, no Nintendo code, no keys, and no generated C — that material is
 produced locally and gitignored. See [`docs/assumptions.md`](docs/assumptions.md).
 
@@ -27,11 +40,11 @@ help you obtain either.
 ```
 docs/         findings, architecture, assumptions, progress, library survey
 scripts/      reproducible PowerShell/Python for every step
-src/          our additions — runtime, bridge, patches, instrumentation
+src/          our additions — runtime, bridge, instrumentation
 manifests/    machine-readable catalogs (hashes and offsets, no content)
 targets/      per-title working directories
 tests/        differential validation
-third_party/  pinned suyu checkout (gitignored, see scripts/bootstrap.ps1)
+third_party/  suyu submodule, pinned to a commit on our fork
 ```
 
 ## Start here
@@ -49,11 +62,33 @@ third_party/  pinned suyu checkout (gitignored, see scripts/bootstrap.ps1)
 Progress is tracked in [issues](https://github.com/dougchansan/mk8-recomp/issues),
 organised by milestone M0–M10.
 
-## Upstream
+## The emulator
 
-Pinned at `suyu-emu/suyu-v0.0.4` commit `d1d09321d7ab84252291e05b3efbc8a8dfa57481`
-(GPL-3.0-or-later). Upstream is kept unmodified under `third_party/suyu`; our
-changes live in `src/` or as reviewable patches under `src/patches/`.
+`third_party/suyu` is a submodule of [`dougchansan/suyu-v0.0.4`][fork], branch
+`mk8-recomp`, pinned to an exact commit.
+
+suyu was archived upstream, so this is a continuation rather than a temporary
+divergence: the name and numbering carry on, `0.0.4` becomes `0.0.5`. The base
+is `suyu-emu/suyu-v0.0.4` at `d1d09321d7ab84252291e05b3efbc8a8dfa57481`,
+GPL-3.0-or-later. See [`PROVENANCE.md`][prov] in the fork for the base, the
+licensing, and the significant changes.
+
+The change set is:
+
+```
+git -C third_party/suyu diff d1d09321d7ab84252291e05b3efbc8a8dfa57481..mk8-recomp
+```
+
+Five of those commits fix defects in suyu itself and are not
+recompiler-specific — most notably that *no* installed update or DLC was ever
+indexed in NAND, for any title.
+
+This replaces the hand-maintained patch files that used to live under
+`src/patches/`. They were a substitute for a tracked tree, reconstructed by
+reverse-applying edits, and a recurring source of error.
+
+[fork]: https://github.com/dougchansan/suyu-v0.0.4/tree/mk8-recomp
+[prov]: https://github.com/dougchansan/suyu-v0.0.4/blob/mk8-recomp/PROVENANCE.md
 
 ## Licence
 

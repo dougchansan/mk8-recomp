@@ -45,7 +45,8 @@ def main():
         try:
             st = call("get_emulator_state", timeout=30.0)
             print(f"   {elapsed + 10:>4}s  running={st.get('game_running')} "
-                  f"first_frame={st.get('first_frame_displayed')}")
+                  f"first_frame={st.get('first_frame_displayed')} "
+                  f"fps={st.get('fps')}")
         except Exception as e:
             print(f"   {elapsed + 10:>4}s  (suyu gone: {type(e).__name__})")
             return 1

@@ -23,7 +23,11 @@ param(
     # Passed through to suyu's log_filter. '*:Info Render:Debug' is the useful
     # one for graphics questions; a bare '*:Debug' floods the log with kernel
     # traffic and slows the run enough to change what it measures.
-    [string]$LogFilter = ''
+    [string]$LogFilter = '',
+    # Load only these modules, by directory name (e.g. main,rtld). Everything
+    # else runs on the JIT, which is how a wrong answer gets localised to one
+    # module without rebuilding anything.
+    [string[]]$Only = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -41,6 +45,30 @@ if ($Baseline) {
     Write-Host 'BASELINE: no AOT image (dynarmic only)' -ForegroundColor Yellow
 } else {
     if (-not (Test-Path -LiteralPath $RecompIn)) { throw "No recompiled modules at $RecompIn" }
+
+    # A subset is staged as hard links rather than copies: the main image alone
+    # is 200 MB and the point of bisecting is to iterate quickly. Directory
+    # junctions would be cheaper still, but neither Get-ChildItem -Recurse nor
+    # suyu's own scan follows a reparse point, so the staged modules would be
+    # invisible and the run would silently be a baseline.
+    if ($Only.Count -gt 0) {
+        $stage = Join-Path $Root 'build\recomp-stage'
+        if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Force -Recurse }
+        New-Item -ItemType Directory -Force -Path $stage | Out-Null
+        foreach ($m in $Only) {
+            $src = Join-Path $RecompIn $m
+            if (-not (Test-Path -LiteralPath $src)) { throw "No such module: $m" }
+            $dstDir = Join-Path $stage $m
+            New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
+            Get-ChildItem -LiteralPath $src -Filter '*.dll' -File | ForEach-Object {
+                New-Item -ItemType HardLink -Path (Join-Path $dstDir $_.Name) `
+                         -Target $_.FullName | Out-Null
+            }
+        }
+        $RecompIn = $stage
+        Write-Host ("SUBSET: only " + ($Only -join ', ')) -ForegroundColor Magenta
+    }
+
     $dlls = Get-ChildItem -LiteralPath $RecompIn -Recurse -Filter '*.dll'
     if (-not $dlls) { throw "No DLLs under $RecompIn" }
     $env:SUYU_RECOMP_DIR = $RecompIn

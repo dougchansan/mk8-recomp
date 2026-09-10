@@ -68,7 +68,7 @@ python (Join-Path $Root 'scripts\boot-and-stop.py') $Rom $RunSeconds
 # here loses the whole report, so shut down properly and wait for it.
 Write-Host 'closing suyu for teardown ...'
 $null = $p.CloseMainWindow()
-if (-not $p.WaitForExit(90000)) {
+if (-not $p.WaitForExit(240000)) {
     Write-Warning 'suyu did not exit within 90s; killing (coverage report will be missing)'
     $p.Kill()
 }

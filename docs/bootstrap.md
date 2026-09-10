@@ -1,0 +1,89 @@
+# Recomp — Bootstrap Record
+
+Session 1. All values below were measured on this machine, not assumed.
+
+## Workspace
+
+| | |
+|---|---|
+| Repo root | `G:\mk8-recomp` |
+| Pinned upstream | `G:\mk8-recomp\third_party\suyu` (gitignored) |
+| Build output | `G:\mk8-recomp\build\suyu` |
+| Public remote | https://github.com/dougchansan/mk8-recomp |
+
+Note: the original brief suggested `<alternate workspace>`. The session's working
+directory is `G:\mk8-recomp`, which is what was used. G: is NTFS with 627 GiB free,
+sufficient for the Suyu build plus generated C.
+
+## Input title (READ ONLY — never modified)
+
+| | |
+|---|---|
+| Path | `D:\Games\the target title.xci\the target title.xci` |
+| Size | 15,971,909,632 bytes (14.87 GiB) |
+| SHA-256 | `REDACTED` |
+| LastWriteTime | 2024-09-07 18:16:56 |
+| Filesystem | NTFS (F:, 9.09 TiB total, 3.19 TiB free) |
+
+Sibling files present and untouched:
+- `the target title (Certificate).bin`
+- `the target title (Initial Data).bin`
+
+Neither is used unless Suyu's loader demands it.
+
+## Host machine
+
+| | |
+|---|---|
+| OS | Windows 11 Pro 10.0.26200 |
+| CPU | AMD Ryzen 9 9950X3D — 16C / 32T |
+| RAM | 125.6 GiB |
+| GPU | AMD Radeon RX 9070 XT (driver 32.0.31041.1004) |
+| | AMD Radeon(TM) Graphics (iGPU, 32.0.21045.5002) |
+| | Parsec Virtual Display Adapter |
+
+## Toolchain present
+
+| Tool | Version |
+|---|---|
+| git | 2.54.0.windows.1 |
+| git-lfs | 3.7.1 |
+| gh | 2.88.1 (authed as dougchansan) |
+| cmake | 4.3.2 |
+| ninja | 1.13.0 |
+| python | 3.12.10 |
+| MSVC | 14.50.35717 (VS 2026 Community, `C:\Program Files\Microsoft Visual Studio\18\Community`) |
+| MSVC (alt) | 14.44.35207 (VS 2022 Build Tools) |
+| Windows SDK | 10.0.26100.0 |
+
+Not present: `clang` / `clang-cl` on PATH, Vulkan SDK, standalone Qt.
+Neither is a blocker — Suyu vendors `externals/Vulkan-Headers` and
+`YUZU_USE_BUNDLED_QT` defaults ON under MSVC (downloads a Qt binary drop).
+
+## Keys / firmware
+
+No `%APPDATA%\suyu`, `\yuzu`, or `\eden` user directory exists — Suyu has never been
+run on this machine, so it has no configured key store.
+
+One user-owned key file was located on local storage:
+
+```
+<your prod.keys>
+12,584 bytes, 2022-10-17
+```
+
+This is a firmware-15.0.1-era key set. Nothing was downloaded. Whether it carries a
+high enough master key generation for this XCI's update partition is unverified —
+see `docs/progress.md`.
+
+## Upstream pin
+
+| | |
+|---|---|
+| Repo | `suyu-emu/suyu-v0.0.4` (public archive, GPL-3.0) |
+| Commit | `d1d09321d7ab84252291e05b3efbc8a8dfa57481` |
+| Date | 2026-09-04 22:40:58 +0100 |
+| Subject | `feat: build the libretro core for Windows as well as Linux` |
+| Default branch | `main` |
+
+Submodules are NOT checked in; `git submodule update --init --recursive` is required.

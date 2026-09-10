@@ -35,7 +35,7 @@ public class Win32Rect {
     [DllImport("user32.dll")]
     public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
     [DllImport("user32.dll")]
-    public static extern bool SetForegroundWindow(IntPtr hWnd);
+    public static extern IntPtr GetForegroundWindow();
 }
 '@
 }
@@ -49,8 +49,21 @@ function Get-SuyuWindow {
 
 function Capture-One([string]$path) {
     $p = Get-SuyuWindow
-    $null = [Win32Rect]::SetForegroundWindow($p.MainWindowHandle)
-    Start-Sleep -Milliseconds 400
+
+    # Never steal focus, and never capture unless suyu is already frontmost.
+    #
+    # This used to call SetForegroundWindow and then copy that screen region.
+    # Run periodically during a benchmark it did two bad things: it yanked focus
+    # away from whatever the user was doing every few seconds, and when they
+    # clicked back the copy grabbed their window instead of the emulator. A
+    # benchmark left running captured the user's email.
+    #
+    # Screen copy is still the method - PrintWindow does not capture the Vulkan
+    # surface - so the only safe rule is to skip the shot when suyu is not on
+    # top rather than to force it there.
+    if ([Win32Rect]::GetForegroundWindow() -ne $p.MainWindowHandle) {
+        throw 'suyu is not the foreground window; skipping capture'
+    }
 
     $r = New-Object Win32Rect+RECT
     if (-not [Win32Rect]::GetWindowRect($p.MainWindowHandle, [ref]$r)) {

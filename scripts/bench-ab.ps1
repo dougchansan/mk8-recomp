@@ -21,7 +21,12 @@ param(
     [int]$Warmup     = 90,
     [int]$Samples    = 60,
     [double]$Interval = 2.0,
-    [string]$OutDir  = 'G:\temp\work\bench'
+    [string]$OutDir  = 'G:\temp\work\bench',
+    # Replay a recorded TAS script instead of measuring whatever the attract
+    # sequence happens to be showing. That sequence alternates between a static
+    # title screen and a demo race and does not repeat identically between runs,
+    # which is the source of most of the noise these measurements fight.
+    [switch]$Tas
 )
 
 $ErrorActionPreference = 'Stop'
@@ -72,8 +77,43 @@ function Invoke-Arm([string]$name, [bool]$hybrid) {
     }
 
     $json = Join-Path $OutDir "$name.json"
-    python (Join-Path $Root 'scripts\fps-sample.py') $Rom `
-        --warmup $Warmup --samples $Samples --interval $Interval --out $json
+
+    # Capture the screen periodically while the arm runs. FPS alone cannot tell
+    # a fast build from a fast *and correct* one - a rendering regression shows
+    # up as a higher frame rate, not a lower one - so every arm leaves behind
+    # evidence of what it actually drew.
+    $shots = Join-Path $OutDir "shots-$name"
+    New-Item -ItemType Directory -Force -Path $shots | Out-Null
+    $capture = Start-Job -ScriptBlock {
+        param($root, $dir, $warmup, $count, $gap)
+        Start-Sleep -Seconds ($warmup + 10)
+        for ($i = 1; $i -le $count; $i++) {
+            try {
+                & (Join-Path $root 'scripts\capture-window.ps1') `
+                    -Out (Join-Path $dir ('{0:d2}.png' -f $i)) | Out-Null
+            } catch { }
+            Start-Sleep -Seconds $gap
+        }
+    } -ArgumentList $Root, $shots, $Warmup, 8, 30
+
+    if ($Tas) {
+        # Boot, let it settle, then start playback explicitly. pause_tas_on_load
+        # keeps the script from firing while the game is still loading, so the
+        # start has to be triggered rather than waited for.
+        $romJson = (@{ path = $Rom } | ConvertTo-Json -Compress)
+        python (Join-Path $Root 'scripts\mcp.py') call launch_game_path $romJson | Out-Null
+        Start-Sleep -Seconds $Warmup
+        python (Join-Path $Root 'scripts\mcp.py') call trigger_ui_action '{"action":"tas_start_stop"}' | Out-Null
+        Write-Host 'TAS playback started' -ForegroundColor Green
+        python (Join-Path $Root 'scripts\fps-sample.py') $Rom `
+            --warmup 0 --samples $Samples --interval $Interval --out $json --no-launch
+    } else {
+        python (Join-Path $Root 'scripts\fps-sample.py') $Rom `
+            --warmup $Warmup --samples $Samples --interval $Interval --out $json
+    }
+
+    Stop-Job -Job $capture -ErrorAction SilentlyContinue
+    Remove-Job -Job $capture -Force -ErrorAction SilentlyContinue
 
     $null = $p.CloseMainWindow()
     if (-not $p.WaitForExit(120000)) { $p.Kill() }

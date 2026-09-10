@@ -45,8 +45,11 @@ def main():
     samples = opt("--samples", 40)
     interval = opt("--interval", 2.0)
 
-    print(f"booting {pathlib.Path(rom).name} ...")
-    print("  ", json.dumps(call("launch_game_path", {"path": rom})))
+    # --no-launch: the caller already booted the game and started whatever it
+    # wants measured (TAS playback, say), so launching again would restart it.
+    if "--no-launch" not in args:
+        print(f"booting {pathlib.Path(rom).name} ...")
+        print("  ", json.dumps(call("launch_game_path", {"path": rom})))
 
     print(f"warmup {warmup}s (shader compilation and boot) ...")
     time.sleep(warmup)

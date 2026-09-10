@@ -19,7 +19,11 @@ param(
     [string]$Rom    = 'D:\Games\the target title.xci\the target title.xci',
     [int]$RunSeconds = 60,
     [switch]$Baseline,
-    [int]$WaitSeconds = 120
+    [int]$WaitSeconds = 120,
+    # Passed through to suyu's log_filter. '*:Info Render:Debug' is the useful
+    # one for graphics questions; a bare '*:Debug' floods the log with kernel
+    # traffic and slows the run enough to change what it measures.
+    [string]$LogFilter = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,6 +46,21 @@ if ($Baseline) {
     $env:SUYU_RECOMP_DIR = $RecompIn
     Write-Host "HYBRID: $($dlls.Count) AOT modules from $RecompIn" -ForegroundColor Green
     $dlls | ForEach-Object { '    {0,-28} {1,12:n0} bytes' -f $_.Directory.Name, $_.Length }
+}
+
+# suyu rewrites qt-config.ini on exit, so the filter has to be set before every
+# run rather than once. log_filter\default=true makes the value itself ignored.
+if ($LogFilter) {
+    $cfg = Join-Path $env:APPDATA 'suyu\config\qt-config.ini'
+    if (Test-Path -LiteralPath $cfg) {
+        $text = Get-Content -LiteralPath $cfg -Raw
+        $text = $text -replace 'log_filter\\default=true', 'log_filter\default=false'
+        $text = $text -replace 'log_filter=.*', ('log_filter="' + $LogFilter + '"')
+        # -Encoding utf8 writes a BOM on PowerShell 5.1, which corrupts the
+        # first line of the file. Write the bytes without one.
+        [System.IO.File]::WriteAllText($cfg, $text, (New-Object System.Text.UTF8Encoding $false))
+        Write-Host "log_filter set to $LogFilter"
+    }
 }
 
 # Rotate the log so the run's coverage report is unambiguous.

@@ -84,6 +84,13 @@ int main() {
         Case{"mrs x20, cntpct_el0", 0xD53BE034u},
         Case{"mrs x1, cntvct_el0", 0xD53BE041u},
         Case{"mrs x2, cntfrq_el0", 0xD53BE002u},
+        Case{"ldxp x10, x9, [x0]", 0xC87F240Au},
+        Case{"ldaxp x8, x10, [x0]", 0xC87FA808u},
+        Case{"stxp w1, x10, x9, [x0]", 0xC821240Au},
+        Case{"stlxp w1, x10, x9, [x0]", 0xC821A40Au},
+        Case{"ldxp w10, w9, [x0]", 0x887F240Au},
+        Case{"stxp w1, w10, w9, [x0]", 0x8821240Au},
+        Case{"ldxp wzr, w9, [sp]", 0x887F27FFu},
     };
 
     std::printf("emitter decode coverage\n\n");

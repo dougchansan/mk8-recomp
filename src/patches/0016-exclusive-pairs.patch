@@ -1,0 +1,180 @@
+diff --git a/src/core/recompiler/arm64_to_c.h b/src/core/recompiler/arm64_to_c.h
+index 003de3e..e9a0b1f 100644
+--- a/src/core/recompiler/arm64_to_c.h
++++ b/src/core/recompiler/arm64_to_c.h
+@@ -792,8 +792,51 @@ inline bool Translate(u32 i, u64 pc, std::string& out, bool* unhandled = nullptr
+     if ((i & 0x3F000000) == 0x08000000) {
+         const u32 size = i >> 30, o2 = (i >> 23) & 1, L = (i >> 22) & 1, o1 = (i >> 21) & 1;
+         const u32 rt2 = (i >> 10) & 31, rn = (i >> 5) & 31, rt = i & 31;
+-        // Pair variants (o1 set) are left to the fallback; only the single
+-        // register forms are handled here.
++        // Pair forms: LDXP/LDAXP/STXP/STLXP. size 00/01 is unallocated here,
++        // so only the 32- and 64-bit register widths exist.
++        //
++        // These carry the lock traffic. A threaded engine implements its mutex
++        // as a 128-bit compare-and-swap over {owner, count} or {ptr, tag}, and
++        // on the target title the pair forms alone were 73.5% of every
++        // transition to the fallback engine once cntpct_el0 was implemented.
++        if (o1 && !o2 && (size == 2 || size == 3)) {
++            const u32 rbytes = (size == 3) ? 8u : 4u;
++            const std::string addr = "c->x[" + std::to_string(rn) + "]";
++            const std::string sz = std::to_string(rbytes);
++            if (L) {
++                // LDXP/LDAXP. Rt takes the low half, Rt2 the high half - the
++                // same order DynarmicExclusiveMonitor::ExclusiveRead128 fills,
++                // and for the 32-bit form the low and high words of the
++                // doubleword at the address.
++                std::string s2 = "{ uint64_t _lo,_hi; recomp_ldxp(c," + addr + "," + sz +
++                                 ",&_lo,&_hi); ";
++                // A W-register destination is written zero-extended.
++                const char* cast = (rbytes == 4) ? "(uint32_t)" : "";
++                if (rt != 31) {
++                    s2 += "c->x[" + std::to_string(rt) + "] = " + cast + "_lo; ";
++                }
++                if (rt2 != 31) {
++                    s2 += "c->x[" + std::to_string(rt2) + "] = " + cast + "_hi; ";
++                }
++                s2 += "}";
++                put(s2);
++            } else {
++                // STXP/STLXP. Rs (bits 20:16) receives the status, 0 on success.
++                const u32 rs = (i >> 16) & 31;
++                const std::string lo =
++                    (rbytes == 4) ? ("(uint64_t)(uint32_t)" + Xz(rt)) : Xz(rt);
++                const std::string hi =
++                    (rbytes == 4) ? ("(uint64_t)(uint32_t)" + Xz(rt2)) : Xz(rt2);
++                std::string s2 = "{ uint32_t _st = recomp_stxp(c," + addr + "," + sz + "," +
++                                 lo + "," + hi + "); ";
++                if (rs != 31) {
++                    s2 += "c->x[" + std::to_string(rs) + "] = _st; ";
++                }
++                s2 += "}";
++                put(s2);
++            }
++            return true;
++        }
+         if (!o1 && rt2 == 31) {
+             const u32 bits = 8u << size;
+             if (!o2) {
+@@ -2667,6 +2710,14 @@ typedef struct RecompHostMem {
+        JIT report, or the guest sees time jump backwards whenever execution
+        crosses between engines. */
+     uint64_t (*read_cntpct)(void* user);
++    /* Exclusive pair forms. `size` is the width of ONE register (4 or 8), so
++       the reservation covers 2*size bytes. Split out rather than widening
++       excl_load/excl_store because the 64-bit pair needs a 128-bit
++       reservation, which no scalar return can carry. */
++    void (*excl_load_pair)(void* user, uint64_t va, uint32_t size, uint64_t* lo,
++                           uint64_t* hi);
++    uint32_t (*excl_store_pair)(void* user, uint64_t va, uint32_t size, uint64_t lo,
++                                uint64_t hi);
+ } RecompHostMem;
+ 
+ typedef struct GuestContext {
+@@ -2775,6 +2826,9 @@ uint32_t recomp_stxr(GuestContext* c, uint64_t addr, uint32_t size, uint64_t val
+ void recomp_clrex(GuestContext* c);
+ /* CNTPCT_EL0: the 19.2 MHz physical counter the guest reads for timing. */
+ uint64_t recomp_cntpct(GuestContext* c);
++/* Exclusive pair forms. `size` is the width of one register, 4 or 8. */
++void recomp_ldxp(GuestContext* c, uint64_t addr, uint32_t size, uint64_t* lo, uint64_t* hi);
++uint32_t recomp_stxp(GuestContext* c, uint64_t addr, uint32_t size, uint64_t lo, uint64_t hi);
+ /* halted values. 1 is an ordinary stop; 2 asks the host to re-execute the
+    current PC on its interpreter fallback because the decoder had no
+    translation for the instruction there. */
+@@ -2857,6 +2911,25 @@ uint32_t recomp_stxr(GuestContext* c, uint64_t addr, uint32_t size, uint64_t val
+   return 0;
+ }
+ 
++void recomp_ldxp(GuestContext* c, uint64_t addr, uint32_t size, uint64_t* lo, uint64_t* hi){
++  if(c->host_mem && c->host_mem->excl_load_pair){
++    c->host_mem->excl_load_pair(c->host_mem->user,addr,size,lo,hi); return;
++  }
++  g_excl_addr = addr; g_excl_valid = 1;
++  *lo = memload(c,addr,size);
++  *hi = memload(c,addr+size,size);
++}
++
++uint32_t recomp_stxp(GuestContext* c, uint64_t addr, uint32_t size, uint64_t lo, uint64_t hi){
++  if(c->host_mem && c->host_mem->excl_store_pair)
++    return c->host_mem->excl_store_pair(c->host_mem->user,addr,size,lo,hi);
++  if(!g_excl_valid || g_excl_addr != addr) return 1;
++  g_excl_valid = 0;
++  memstore(c,addr,size,lo);
++  memstore(c,addr+size,size,hi);
++  return 0;
++}
++
+ void recomp_clrex(GuestContext* c){
+   if(c->host_mem && c->host_mem->clear_excl){ c->host_mem->clear_excl(c->host_mem->user); return; }
+   g_excl_valid = 0;
+diff --git a/src/core/arm/recomp/arm_recomp.cpp b/src/core/arm/recomp/arm_recomp.cpp
+index 1c58a4c..a850dc2 100644
+--- a/src/core/arm/recomp/arm_recomp.cpp
++++ b/src/core/arm/recomp/arm_recomp.cpp
+@@ -78,6 +78,9 @@ struct RecompHostMem {
+     // The physical counter, read from the emulator's timing source so the
+     // recompiled code and the JIT agree about time.
+     u64 (*read_cntpct)(void* user);
++    // Exclusive pair forms; `size` is the width of one register, 4 or 8.
++    void (*excl_load_pair)(void* user, u64 va, u32 size, u64* lo, u64* hi);
++    u32 (*excl_store_pair)(void* user, u64 va, u32 size, u64 lo, u64 hi);
+ };
+ 
+ // Nothing links these two builds together, so the shared layout is pinned on
+@@ -310,6 +313,8 @@ struct ArmRecomp::Impl {
+         bridge.excl_store = &Impl::HostExclusiveStore;
+         bridge.clear_excl = &Impl::HostClearExclusive;
+         bridge.read_cntpct = &Impl::HostReadCntpct;
++        bridge.excl_load_pair = &Impl::HostExclusiveLoadPair;
++        bridge.excl_store_pair = &Impl::HostExclusiveStorePair;
+         ctx.host_mem = &bridge;
+     }
+ 
+@@ -353,6 +358,47 @@ struct ArmRecomp::Impl {
+         return ok ? 0u : 1u;
+     }
+ 
++    /// LDXP/LDAXP. The 64-bit pair takes a real 128-bit reservation; the
++    /// 32-bit pair is a 64-bit reservation whose two words are the registers,
++    /// which is what the architecture specifies rather than a shortcut.
++    static void HostExclusiveLoadPair(void* user, u64 va, u32 size, u64* lo, u64* hi) {
++        auto* self = static_cast<Impl*>(user);
++        if (!self->exclusive_monitor) {
++            *lo = HostLoad(user, va, size);
++            *hi = HostLoad(user, va + size, size);
++            return;
++        }
++        const auto core = self->core_index;
++        if (size == 8) {
++            const u128 v = self->exclusive_monitor->ExclusiveRead128(core, va);
++            *lo = v[0];
++            *hi = v[1];
++        } else {
++            const u64 v = self->exclusive_monitor->ExclusiveRead64(core, va);
++            *lo = static_cast<u32>(v);
++            *hi = static_cast<u32>(v >> 32);
++        }
++    }
++
++    /// STXP/STLXP. Returns 0 on success, matching STXR's status sense.
++    static u32 HostExclusiveStorePair(void* user, u64 va, u32 size, u64 lo, u64 hi) {
++        auto* self = static_cast<Impl*>(user);
++        if (!self->exclusive_monitor) {
++            HostStore(user, va, size, lo);
++            HostStore(user, va + size, size, hi);
++            return 0;
++        }
++        const auto core = self->core_index;
++        bool ok = false;
++        if (size == 8) {
++            ok = self->exclusive_monitor->ExclusiveWrite128(core, va, u128{lo, hi});
++        } else {
++            ok = self->exclusive_monitor->ExclusiveWrite64(
++                core, va, static_cast<u32>(lo) | (static_cast<u64>(static_cast<u32>(hi)) << 32));
++        }
++        return ok ? 0u : 1u;
++    }
++
+     /// The same source DynarmicCallbacks64::GetCNTPCT uses, so a guest thread
+     /// that migrates between engines sees one monotonic clock.
+     static u64 HostReadCntpct(void* user) {

@@ -73,6 +73,13 @@ int main() {
         Case{"stlxr w4, x5, [x6]", 0xC804FCC5u},
         Case{"ldxrb w1, [x2]", 0x085F7C41u},
         Case{"clrex", 0xD5033F5Fu},
+        Case{"msr fpcr, x1", 0xD51B4401u},
+        Case{"mrs x1, fpcr", 0xD53B4401u},
+        Case{"msr fpsr, x2", 0xD51B4422u},
+        Case{"mrs x2, fpsr", 0xD53B4422u},
+        Case{"prfm pstl1keep, [x19]", 0xF9800260u},
+        Case{"ldr x0, [x1, #8]", 0xF9400420u},
+        Case{"str x0, [x1, #8]", 0xF9000420u},
     };
 
     std::printf("emitter decode coverage\n\n");

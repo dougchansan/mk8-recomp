@@ -65,6 +65,11 @@ $cmakeArgs = @(
     '-DENABLE_QT_TRANSLATION=OFF'
     '-DUSE_DISCORD_PRESENCE=OFF'
     "-DGLSLANGVALIDATOR=`"$Glslang`""
+    # A linker map turns a Windows Error Reporting fault offset into a function
+    # name. Without a debugger on this machine it is the only way to identify
+    # where suyu is crashing.
+    '-DCMAKE_EXE_LINKER_FLAGS=/MAP'
+    '-DCMAKE_SHARED_LINKER_FLAGS=/MAP' 
 ) -join ' '
 
 if ($Configure -or -not (Test-Path -LiteralPath (Join-Path $BuildDir 'build.ninja'))) {

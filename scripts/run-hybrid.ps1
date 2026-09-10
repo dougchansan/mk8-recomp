@@ -27,7 +27,12 @@ param(
     # Load only these modules, by directory name (e.g. main,rtld). Everything
     # else runs on the JIT, which is how a wrong answer gets localised to one
     # module without rebuilding anything.
-    [string[]]$Only = @()
+    [string[]]$Only = @(),
+    # Remove the frame limiter and vsync. At the default 100% cap both engines
+    # sit at exactly 60 FPS and are indistinguishable by construction, so this is
+    # the only way to see whether recompiled code is actually faster than the
+    # JIT or merely fast enough.
+    [switch]$Unlimited
 )
 
 $ErrorActionPreference = 'Stop'
@@ -74,6 +79,23 @@ if ($Baseline) {
     $env:SUYU_RECOMP_DIR = $RecompIn
     Write-Host "HYBRID: $($dlls.Count) AOT modules from $RecompIn" -ForegroundColor Green
     $dlls | ForEach-Object { '    {0,-28} {1,12:n0} bytes' -f $_.Directory.Name, $_.Length }
+}
+
+# Same story as the log filter: suyu rewrites qt-config.ini on exit, so this is
+# set per run. The \default flags matter - a setting whose companion default is
+# true is ignored, which is how the log_filter change silently did nothing the
+# first time it was tried.
+if ($Unlimited) {
+    $cfg = Join-Path $env:APPDATA 'suyu\config\qt-config.ini'
+    if (Test-Path -LiteralPath $cfg) {
+        $text = Get-Content -LiteralPath $cfg -Raw
+        $text = $text -replace 'use_speed_limit\\default=true', 'use_speed_limit\default=false'
+        $text = $text -replace 'use_speed_limit=true', 'use_speed_limit=false'
+        $text = $text -replace 'use_vsync\\default=true', 'use_vsync\default=false'
+        $text = $text -replace 'use_vsync=\d+', 'use_vsync=0'
+        [System.IO.File]::WriteAllText($cfg, $text, (New-Object System.Text.UTF8Encoding $false))
+        Write-Host 'UNLIMITED: frame limiter and vsync off' -ForegroundColor Yellow
+    }
 }
 
 # suyu rewrites qt-config.ini on exit, so the filter has to be set before every

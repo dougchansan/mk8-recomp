@@ -87,3 +87,37 @@ see `docs/progress.md`.
 | Default branch | `main` |
 
 Submodules are NOT checked in; `git submodule update --init --recursive` is required.
+
+## Build result (session 1)
+
+| | |
+|---|---|
+| Compiler | MSVC 14.50.35717 (VS2026 Community), runtime 14.51.36247 |
+| Generator | Ninja 1.13.0 |
+| Build type | Release |
+| Commit | `d1d09321d7ab84252291e05b3efbc8a8dfa57481` |
+| Qt | 6.9.3 `msvc2022_64`, official, via `aqtinstall` (not the bundled drop) |
+| glslang | 16.5.0 standalone (no Vulkan SDK installed) |
+| Targets | 1259 |
+| Duration | 4.8 min (full rebuild) |
+| Output | `build/suyu/bin/suyu.exe` 40,048,128 B; `suyu-cmd.exe` 30,234,624 B |
+
+CMake options: see `scripts/build-suyu.ps1`.
+
+`--help` prints nothing on either binary: upstream links them
+`/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup` in Release
+(`src/suyu_cmd/CMakeLists.txt:142`), so `std::cout` is discarded. "Runs" is
+evidenced by the GUI's log and its MCP server, not by console output.
+
+## Keys — insufficient
+
+The one user-owned key file on this machine covers `master_key_00`-`master_key_0e`
+and `titlekek_00`-`titlekek_0e` (firmware ~15.x, 2022). The XCI is a 2024
+cartridge dump requiring generation `0f` or higher.
+
+Result: `KeyManager` hands out a zero-filled titlekek, `content_archive.cpp:65`'s
+`HasKey` guard passes anyway, and suyu dies with `0xC0000094`. See issues #2 and
+#18.
+
+Nothing was downloaded, derived, or searched for. A newer `prod.keys` must be
+supplied by the user at `%APPDATA%\suyu\keys\prod.keys`.

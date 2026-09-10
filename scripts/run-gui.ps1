@@ -10,7 +10,7 @@ param(
     [string]$Root = 'G:\mk8-recomp',
     [ValidateSet('hacker','gamer','programmer')]
     [string]$Mode = 'hacker',
-    [int]$WaitSeconds = 20,
+    [int]$WaitSeconds = 90,
     [switch]$DebugLog
 )
 

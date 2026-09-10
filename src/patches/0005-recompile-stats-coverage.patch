@@ -1,0 +1,227 @@
+diff --git a/src/core/recompiler/arm64_to_c.h b/src/core/recompiler/arm64_to_c.h
+index 69b0a0ab6d..88d6784193 100644
+--- a/src/core/recompiler/arm64_to_c.h
++++ b/src/core/recompiler/arm64_to_c.h
+@@ -12,6 +12,9 @@
+ 
+ #pragma once
+ 
++#include <algorithm>
++#include <iomanip>
++#include <utility>
+ #include <array>
+ #include <cstdint>
+ #include <cstdio>
+@@ -20,6 +23,7 @@
+ #include <filesystem>
+ #include <fstream>
+ #include <sstream>
++#include <map>
+ #include <string>
+ #include <string_view>
+ #include <vector>
+@@ -269,7 +273,19 @@ inline std::string Xsp(u32 r) {
+ }
+ 
+ // Append C for one instruction. Returns false if the instruction terminates the block.
+-inline bool Translate(u32 i, u64 pc, std::string& out) {
++/// Translate one AArch64 instruction to C.
++///
++/// Returns true if the block stays open. `unhandled`, when supplied, reports
++/// whether this instruction fell through the decoder to recomp_unhandled -
++/// which the return value cannot express, because an unhandled instruction is
++/// stepped over and leaves the block open exactly like a translated one. Without
++/// this signal the emitter cannot tell a full translation from a stream of
++/// fallbacks, which is how a whole module of misdecoded ARM32 once passed for a
++/// successful export.
++inline bool Translate(u32 i, u64 pc, std::string& out, bool* unhandled = nullptr) {
++    if (unhandled) {
++        *unhandled = false;
++    }
+     char buf[256];
+     // Appends in place. Taking a string_view and appending piecewise (rather
+     // than `out += "    " + s + "\n"`) matters at scale: that expression built
+@@ -1765,6 +1781,9 @@ inline bool Translate(u32 i, u64 pc, std::string& out) {
+     // hand-off to the fallback engine correct: the remaining instructions in
+     // this block must not run twice, since the fallback resumes at this same
+     // PC and will execute them itself.
++    if (unhandled) {
++        *unhandled = true;
++    }
+     snprintf(buf, sizeof buf,
+              "recomp_unhandled(c,0x%08xU,g_module_base+0x%llxULL); if(c->halted) return;", i,
+              (unsigned long long)pc);
+@@ -1786,11 +1805,49 @@ inline size_t FuncNameTo(char (&b)[64], const char* mod, u64 v) {
+ const char* RuntimeH();
+ const char* RuntimeC();
+ 
++/// One bucket of the unhandled-instruction histogram.
++struct UnhandledSite {
++    size_t count = 0;
++    u32 example_insn = 0;   ///< a representative full encoding, for hand-decoding
++    u64 example_pc = 0;     ///< where that example lives, for disassembling in context
++};
++
++/// AArch64 top-level encoding group, from bits 28:25 of the instruction.
++/// Table C4-1 in the ARM ARM. Coarse, but enough to say "the gap is SIMD"
++/// versus "the gap is loads and stores" at a glance.
++inline const char* EncodingGroupName(u32 op0) {
++    switch (op0 & 0xF) {
++    case 0x0: return "reserved/sme";
++    case 0x1: case 0x3: return "unallocated";
++    case 0x2: return "sve";
++    case 0x8: case 0x9: return "dp-immediate";
++    case 0xA: case 0xB: return "branch/exception/system";
++    case 0x4: case 0x6: case 0xC: case 0xE: return "load/store";
++    case 0x5: case 0xD: return "dp-register";
++    case 0x7: case 0xF: return "dp-simd/fp";
++    default: return "unknown";
++    }
++}
++
+ // Stats returned to the caller for manifest/reporting.
+ struct RecompileStats {
+     size_t blocks = 0;
+-    size_t instructions = 0;
++    size_t instructions = 0;          ///< n_bytes/4: every word in .text, padding included
+     size_t translated_terminators = 0;
++    size_t emitted = 0;               ///< instructions actually walked inside discovered blocks
++    size_t unhandled = 0;             ///< of those, how many fell through to recomp_unhandled
++
++    /// Unhandled counts keyed by encoding group (bits 28:25).
++    std::map<u32, size_t> unhandled_by_group;
++    /// Unhandled counts keyed by the top 10 bits, which usually identifies the
++    /// opcode family while dropping register operands. This is the list that
++    /// says which instruction to implement next.
++    std::map<u32, UnhandledSite> unhandled_by_signature;
++
++    /// Fraction of walked instructions the decoder could not translate.
++    double UnhandledFraction() const {
++        return emitted ? double(unhandled) / double(emitted) : 0.0;
++    }
+ };
+ 
+ // Emit a buildable C project that statically recompiles `text` (raw AArch64 .text at `base`).
+@@ -1938,8 +1995,22 @@ inline RecompileStats EmitProject(const std::string& mod, const u8* text, size_t
+         bool open = true;
+         for (u32 k = 0; k < b.count; ++k) {
+             body.clear();
+-            open = Translate(p[first + k], b.vaddr + (u64)k * 4, body);
++            const u32 insn = p[first + k];
++            const u64 insn_pc = b.vaddr + (u64)k * 4;
++            bool unhandled = false;
++            open = Translate(insn, insn_pc, body, &unhandled);
+             rcu += body;
++            ++stats.emitted;
++            if (unhandled) {
++                ++stats.unhandled;
++                ++stats.unhandled_by_group[(insn >> 25) & 0xF];
++                auto& site = stats.unhandled_by_signature[insn & 0xFFC00000u];
++                if (site.count == 0) {
++                    site.example_insn = insn;
++                    site.example_pc = insn_pc;
++                }
++                ++site.count;
++            }
+             if (!open) { ++stats.translated_terminators; break; }
+         }
+         // A block that ends by running off its own end still has to hand the
+@@ -2270,6 +2341,64 @@ inline RecompileStats EmitProject(const std::string& mod, const u8* text, size_t
+     write("recomp_export.c", ex.str());
+     write("CMakeLists.txt", cm.str());
+ 
++    // Coverage report. Without this the exporter cannot describe its own output:
++    // block and instruction counts say how much code was walked, not how much of
++    // it was actually translated, and an export made entirely of fallbacks looks
++    // identical to a complete one. The signature histogram is the actionable
++    // part - it ranks which opcode family to implement next by how often it is
++    // actually hit, rather than by which gaps look important.
++    {
++        std::ostringstream cov;
++        cov << "{\n";
++        cov << "  \"module\": \"" << mod << "\",\n";
++        cov << "  \"blocks\": " << stats.blocks << ",\n";
++        cov << "  \"text_words\": " << stats.instructions << ",\n";
++        cov << "  \"instructions_emitted\": " << stats.emitted << ",\n";
++        cov << "  \"instructions_unhandled\": " << stats.unhandled << ",\n";
++        cov << "  \"unhandled_fraction\": " << std::fixed << std::setprecision(6)
++            << stats.UnhandledFraction() << ",\n";
++        cov.unsetf(std::ios::floatfield);
++
++        cov << "  \"unhandled_by_group\": {";
++        bool first_group = true;
++        for (const auto& [group, count] : stats.unhandled_by_group) {
++            if (!first_group) cov << ",";
++            first_group = false;
++            cov << "\n    \"" << EncodingGroupName(group) << "\": " << count;
++        }
++        cov << (first_group ? "}" : "\n  }") << ",\n";
++
++        // Ranked, because the only question this file exists to answer is
++        // "what should I implement next".
++        std::vector<std::pair<u32, UnhandledSite>> ranked(stats.unhandled_by_signature.begin(),
++                                                          stats.unhandled_by_signature.end());
++        std::sort(ranked.begin(), ranked.end(),
++                  [](const auto& a, const auto& b) { return a.second.count > b.second.count; });
++
++        cov << "  \"unhandled_by_signature\": [";
++        bool first_sig = true;
++        size_t shown = 0;
++        for (const auto& [sig, site] : ranked) {
++            if (shown++ >= 64) break;
++            if (!first_sig) cov << ",";
++            first_sig = false;
++            char line[256];
++            snprintf(line, sizeof line,
++                     "\n    { \"signature\": \"0x%08X\", \"count\": %zu, "
++                     "\"share\": %.4f, \"example_insn\": \"0x%08X\", "
++                     "\"example_pc\": \"0x%llX\", \"group\": \"%s\" }",
++                     sig, site.count,
++                     stats.unhandled ? double(site.count) / double(stats.unhandled) : 0.0,
++                     site.example_insn, (unsigned long long)site.example_pc,
++                     EncodingGroupName((site.example_insn >> 25) & 0xF));
++            cov << line;
++        }
++        cov << (first_sig ? "]" : "\n  ]") << ",\n";
++        cov << "  \"distinct_signatures\": " << stats.unhandled_by_signature.size() << "\n";
++        cov << "}\n";
++        write("recomp_coverage.json", cov.str());
++    }
++
+     // Bundle text/rodata/data as binary blobs so the exe can load them at startup
+     {
+         std::string data_subdir = out_dir + "/data";
+diff --git a/src/suyu/game_export.cpp b/src/suyu/game_export.cpp
+index 7fa442e35f..2868a5ca0b 100644
+--- a/src/suyu/game_export.cpp
++++ b/src/suyu/game_export.cpp
+@@ -1624,6 +1624,29 @@ QString GameExportDialog::RunAotPrecompile(const QString& exefs_dir,
+                 mod.data_bytes.empty() ? nullptr : mod.data_bytes.data(), mod.data_bytes.size(),
+                 mod.entry_vaddr, game_name.toStdString(), &exported_roots);
+             emit_ok = true;
++
++            // Report coverage, not just volume. Block and instruction counts say
++            // how much code was walked; only this says how much of it the decoder
++            // actually understood. A high unhandled fraction means the AOT image
++            // is mostly a shim that bounces straight back into the JIT - and a
++            // fraction near 100% means the input was not the ISA we think it is.
++            const double unhandled_pct = stats.UnhandledFraction() * 100.0;
++            LOG_INFO(Frontend,
++                     "AOT coverage [{}]: {} blocks, {} instructions emitted, {} unhandled "
++                     "({:.2f}%), {} distinct opcode signatures",
++                     mod.name.toStdString(), stats.blocks, stats.emitted, stats.unhandled,
++                     unhandled_pct, stats.unhandled_by_signature.size());
++            for (const auto& [group, count] : stats.unhandled_by_group) {
++                LOG_INFO(Frontend, "AOT coverage [{}]:   unhandled {}: {}",
++                         mod.name.toStdString(), suyu::recomp::EncodingGroupName(group), count);
++            }
++            if (unhandled_pct > 50.0) {
++                LOG_WARNING(Frontend,
++                            "AOT coverage [{}]: over half of all instructions are unhandled. "
++                            "Either the decoder is missing something very common, or this module "
++                            "is not AArch64 at all.",
++                            mod.name.toStdString());
++            }
+         } catch (const std::exception& e) {
+             LOG_ERROR(Frontend, "EmitProject failed for module {}: {}", mod.name.toStdString(),
+                       e.what());

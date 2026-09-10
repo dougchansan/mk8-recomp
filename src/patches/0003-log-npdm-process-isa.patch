@@ -1,0 +1,23 @@
+diff --git a/src/core/file_sys/program_metadata.cpp b/src/core/file_sys/program_metadata.cpp
+index b0ba812982..fc3f551f6c 100644
+--- a/src/core/file_sys/program_metadata.cpp
++++ b/src/core/file_sys/program_metadata.cpp
+@@ -29,6 +29,18 @@ Loader::ResultStatus ProgramMetadata::Load(VirtualFile file) {
+         return Loader::ResultStatus::ErrorBadNPDMHeader;
+     }
+ 
++    // Log the process ISA up front. The static recompiler is AArch64-only, so
++    // whether a title is A32 or A64 decides whether it can be targeted at all -
++    // and nothing else in the boot log says so until BootGame prints the window
++    // title. the target title is A32, which is why it can never use the AOT
++    // path; that cost a lot of misdirected debugging to establish.
++    LOG_INFO(Loader,
++                 "DIAG NPDM name='{}' size={} flags={:#04x} is64={} addr_space={} prio={}",
++                 file->GetName(), total_size, npdm_header.flags,
++                 npdm_header.has_64_bit_instructions.Value(),
++                 static_cast<u32>(npdm_header.address_space_type.Value()),
++                 npdm_header.main_thread_priority);
++
+     if (sizeof(AcidHeader) != file->ReadObject(&acid_header, npdm_header.acid_offset)) {
+         return Loader::ResultStatus::ErrorBadACIDHeader;
+     }

@@ -63,8 +63,19 @@ if (-not $mcp) { throw 'MCP server did not come up' }
 
 python (Join-Path $Root 'scripts\boot-and-stop.py') $Rom $RunSeconds
 
+# The execution-coverage report is printed from the last ArmRecomp destructor,
+# which only runs when the emulated process is actually torn down. Killing suyu
+# here loses the whole report, so shut down properly and wait for it.
+Write-Host 'closing suyu for teardown ...'
+$null = $p.CloseMainWindow()
+if (-not $p.WaitForExit(90000)) {
+    Write-Warning 'suyu did not exit within 90s; killing (coverage report will be missing)'
+    $p.Kill()
+}
+Start-Sleep -Seconds 3
+
 Write-Host ''
 Write-Host '=== coverage report ===' -ForegroundColor Cyan
 Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue |
-    Select-String -Pattern 'RECOMP EXECUTION COVERAGE|recomp:|Using ArmRecomp|recomp dispatch' |
+    Select-String -Pattern 'COVERAGE|static blocks|SVCs to HLE|static ->|JIT ->|blocks per transition|import traps|distinct|by execution|^s+[0-9A-F]{8}|Using ArmRecomp' |
     ForEach-Object { $_.Line }

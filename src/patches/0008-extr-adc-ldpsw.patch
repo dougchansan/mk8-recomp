@@ -1,0 +1,301 @@
+diff --git a/src/core/recompiler/arm64_to_c.h b/src/core/recompiler/arm64_to_c.h
+index 69b0a0ab6d..8a8ca5b94d 100644
+--- a/src/core/recompiler/arm64_to_c.h
++++ b/src/core/recompiler/arm64_to_c.h
+@@ -12,6 +12,9 @@
+ 
+ #pragma once
+ 
++#include <algorithm>
++#include <iomanip>
++#include <utility>
+ #include <array>
+ #include <cstdint>
+ #include <cstdio>
+@@ -20,6 +23,7 @@
+ #include <filesystem>
+ #include <fstream>
+ #include <sstream>
++#include <map>
+ #include <string>
+ #include <string_view>
+ #include <vector>
+@@ -269,7 +273,19 @@ inline std::string Xsp(u32 r) {
+ }
+ 
+ // Append C for one instruction. Returns false if the instruction terminates the block.
+-inline bool Translate(u32 i, u64 pc, std::string& out) {
++/// Translate one AArch64 instruction to C.
++///
++/// Returns true if the block stays open. `unhandled`, when supplied, reports
++/// whether this instruction fell through the decoder to recomp_unhandled -
++/// which the return value cannot express, because an unhandled instruction is
++/// stepped over and leaves the block open exactly like a translated one. Without
++/// this signal the emitter cannot tell a full translation from a stream of
++/// fallbacks, which is how a whole module of misdecoded ARM32 once passed for a
++/// successful export.
++inline bool Translate(u32 i, u64 pc, std::string& out, bool* unhandled = nullptr) {
++    if (unhandled) {
++        *unhandled = false;
++    }
+     char buf[256];
+     // Appends in place. Taking a string_view and appending piecewise (rather
+     // than `out += "    " + s + "\n"`) matters at scale: that expression built
+@@ -1765,6 +1781,117 @@ inline bool Translate(u32 i, u64 pc, std::string& out) {
+     // hand-off to the fallback engine correct: the remaining instructions in
+     // this block must not run twice, since the fallback resumes at this same
+     // PC and will execute them itself.
++    // ---- EXTR (and therefore ROR immediate) ----------------------------
++    //
++    // ROR Rd, Rn, #imm is EXTR with Rn == Rm, and between the two widths it was
++    // 13.1% of every unhandled instruction in the target title - the single
++    // largest gap after EXT, and pure integer work. Compilers emit it for
++    // rotates in hashing and bit-twiddling code.
++    //
++    // sf 0 0 100111 N 0 Rm imms Rn Rd. N must track sf: N==sf is the only
++    // allocated combination, and imms must be < 32 in the 32-bit form.
++    if ((i & 0x7FA00000) == 0x13800000) {
++        const u32 sf = i >> 31, N = (i >> 22) & 1;
++        const u32 rm = (i >> 16) & 31, imms = (i >> 10) & 63;
++        const u32 rn = (i >> 5) & 31, rd = i & 31;
++        const u32 width = sf ? 64u : 32u;
++        if (N == sf && imms < width) {
++            if (rd != 31) {
++                std::string s2 = "{ uint64_t _hi=" + (sf ? Xz(rn) : ("(uint64_t)" + Wz(rn))) +
++                                 ", _lo=" + (sf ? Xz(rm) : ("(uint64_t)" + Wz(rm))) + ", _r; ";
++                if (imms == 0) {
++                    // Shifting by the full width is undefined in C, and lsb==0
++                    // is the common case (a plain MOV-through-EXTR).
++                    s2 += "_r = _lo; ";
++                } else {
++                    s2 += "_r = (_lo >> " + std::to_string(imms) + ") | (_hi << " +
++                          std::to_string(width - imms) + "); ";
++                }
++                if (!sf) s2 += "_r &= 0xFFFFFFFFULL; ";
++                s2 += "c->x[" + std::to_string(rd) + "] = _r; }";
++                put(s2);
++            } else {
++                put("/* extr -> xzr */");
++            }
++            return true;
++        }
++    }
++
++    // ---- ADC / ADCS / SBC / SBCS ---------------------------------------
++    //
++    // sf op S 11010000 Rm 000000 Rn Rd. op: 0 = ADC, 1 = SBC. Small but real -
++    // 1.4% of the gap - and it appears in multi-word arithmetic where getting
++    // the carry wrong is silent.
++    if ((i & 0x1FE0FC00) == 0x1A000000) {
++        const u32 sf = i >> 31, op = (i >> 30) & 1, S = (i >> 29) & 1;
++        const u32 rm = (i >> 16) & 31, rn = (i >> 5) & 31, rd = i & 31;
++        const char* sign = sf ? "0x8000000000000000ULL" : "0x80000000ULL";
++        std::string s2 = "{ uint64_t _a=" + (sf ? Xz(rn) : ("(uint64_t)" + Wz(rn))) +
++                         ", _b=" + (sf ? Xz(rm) : ("(uint64_t)" + Wz(rm))) +
++                         ", _ci=(uint64_t)c->c, _r; ";
++        // SBC is ADC against the inverted operand, which is also what makes the
++        // borrow come out right: carry-clear means borrow.
++        if (op) s2 += sf ? "_b = ~_b; " : "_b = (~_b) & 0xFFFFFFFFULL; ";
++        s2 += "_r = _a + _b + _ci; ";
++        if (!sf) s2 += "_r &= 0xFFFFFFFFULL; ";
++        if (S) {
++            s2 += std::string("c->z = (_r == 0); c->n = (_r & ") + sign + ") ? 1 : 0; ";
++            if (sf) {
++                // Unsigned overflow with a carry-in: the sum wraps either when
++                // it lands below _a, or when it lands exactly on _a with the
++                // carry set (_b == ~0 and _ci == 1).
++                s2 += "c->c = (_r < _a) || (_ci && _r == _a); ";
++            } else {
++                s2 += "c->c = ((_a + _b + _ci) > 0xFFFFFFFFULL); ";
++            }
++            s2 += std::string("c->v = ((~(_a ^ _b) & (_a ^ _r)) & ") + sign + ") ? 1 : 0; ";
++        }
++        if (rd != 31) {
++            s2 += "c->x[" + std::to_string(rd) + "] = _r; ";
++        }
++        s2 += "}";
++        put(s2);
++        return true;
++    }
++
++    // ---- LDPSW ----------------------------------------------------------
++    //
++    // Load pair of 32-bit words, each sign-extended to 64. opc=01 V=0 L=1, so
++    // it sits outside the LDP/STP handler above, which only covers opc 00/10.
++    // 3.1% of the gap, and it turns up wherever a pair of ints is read into
++    // 64-bit registers at once.
++    //
++    // 0110100xx1 ... : signed offset 0x69400000, post-index 0x68C00000,
++    // pre-index 0x69C00000. imm7 is scaled by 4.
++    if ((i & 0xFFC00000) == 0x69400000 || (i & 0xFFC00000) == 0x68C00000 ||
++        (i & 0xFFC00000) == 0x69C00000) {
++        const u32 rt = i & 31, rn = (i >> 5) & 31, rt2 = (i >> 10) & 31;
++        const s32 imm7 = ((s32)(((i >> 15) & 0x7F) << 25) >> 25) * 4;
++        const bool post = (i & 0xFFC00000) == 0x68C00000;
++        const bool pre = (i & 0xFFC00000) == 0x69C00000;
++
++        std::string s2 = "{ uint64_t _base=" + Xsp(rn) + "; uint64_t _addr = _base";
++        if (!post) s2 += " + (int64_t)" + std::to_string(imm7);
++        s2 += "; ";
++        // Both words are read before either register is written: Rn may be Rt
++        // or Rt2, and writing early would corrupt the address for the second
++        // load.
++        s2 += "uint64_t _v1 = (uint64_t)(int64_t)(int32_t)(uint32_t)recomp_load32(c,_addr); ";
++        s2 += "uint64_t _v2 = (uint64_t)(int64_t)(int32_t)(uint32_t)recomp_load32(c,_addr+4); ";
++        if (rt != 31) s2 += "c->x[" + std::to_string(rt) + "] = _v1; ";
++        if (rt2 != 31) s2 += "c->x[" + std::to_string(rt2) + "] = _v2; ";
++        if (post || pre) {
++            s2 += "c->x[" + std::to_string(rn) + "] = _base + (int64_t)" +
++                  std::to_string(imm7) + "; ";
++        }
++        s2 += "}";
++        put(s2);
++        return true;
++    }
++
++    if (unhandled) {
++        *unhandled = true;
++    }
+     snprintf(buf, sizeof buf,
+              "recomp_unhandled(c,0x%08xU,g_module_base+0x%llxULL); if(c->halted) return;", i,
+              (unsigned long long)pc);
+@@ -1786,11 +1913,49 @@ inline size_t FuncNameTo(char (&b)[64], const char* mod, u64 v) {
+ const char* RuntimeH();
+ const char* RuntimeC();
+ 
++/// One bucket of the unhandled-instruction histogram.
++struct UnhandledSite {
++    size_t count = 0;
++    u32 example_insn = 0;   ///< a representative full encoding, for hand-decoding
++    u64 example_pc = 0;     ///< where that example lives, for disassembling in context
++};
++
++/// AArch64 top-level encoding group, from bits 28:25 of the instruction.
++/// Table C4-1 in the ARM ARM. Coarse, but enough to say "the gap is SIMD"
++/// versus "the gap is loads and stores" at a glance.
++inline const char* EncodingGroupName(u32 op0) {
++    switch (op0 & 0xF) {
++    case 0x0: return "reserved/sme";
++    case 0x1: case 0x3: return "unallocated";
++    case 0x2: return "sve";
++    case 0x8: case 0x9: return "dp-immediate";
++    case 0xA: case 0xB: return "branch/exception/system";
++    case 0x4: case 0x6: case 0xC: case 0xE: return "load/store";
++    case 0x5: case 0xD: return "dp-register";
++    case 0x7: case 0xF: return "dp-simd/fp";
++    default: return "unknown";
++    }
++}
++
+ // Stats returned to the caller for manifest/reporting.
+ struct RecompileStats {
+     size_t blocks = 0;
+-    size_t instructions = 0;
++    size_t instructions = 0;          ///< n_bytes/4: every word in .text, padding included
+     size_t translated_terminators = 0;
++    size_t emitted = 0;               ///< instructions actually walked inside discovered blocks
++    size_t unhandled = 0;             ///< of those, how many fell through to recomp_unhandled
++
++    /// Unhandled counts keyed by encoding group (bits 28:25).
++    std::map<u32, size_t> unhandled_by_group;
++    /// Unhandled counts keyed by the top 10 bits, which usually identifies the
++    /// opcode family while dropping register operands. This is the list that
++    /// says which instruction to implement next.
++    std::map<u32, UnhandledSite> unhandled_by_signature;
++
++    /// Fraction of walked instructions the decoder could not translate.
++    double UnhandledFraction() const {
++        return emitted ? double(unhandled) / double(emitted) : 0.0;
++    }
+ };
+ 
+ // Emit a buildable C project that statically recompiles `text` (raw AArch64 .text at `base`).
+@@ -1938,8 +2103,22 @@ inline RecompileStats EmitProject(const std::string& mod, const u8* text, size_t
+         bool open = true;
+         for (u32 k = 0; k < b.count; ++k) {
+             body.clear();
+-            open = Translate(p[first + k], b.vaddr + (u64)k * 4, body);
++            const u32 insn = p[first + k];
++            const u64 insn_pc = b.vaddr + (u64)k * 4;
++            bool unhandled = false;
++            open = Translate(insn, insn_pc, body, &unhandled);
+             rcu += body;
++            ++stats.emitted;
++            if (unhandled) {
++                ++stats.unhandled;
++                ++stats.unhandled_by_group[(insn >> 25) & 0xF];
++                auto& site = stats.unhandled_by_signature[insn & 0xFFC00000u];
++                if (site.count == 0) {
++                    site.example_insn = insn;
++                    site.example_pc = insn_pc;
++                }
++                ++site.count;
++            }
+             if (!open) { ++stats.translated_terminators; break; }
+         }
+         // A block that ends by running off its own end still has to hand the
+@@ -2270,6 +2449,64 @@ inline RecompileStats EmitProject(const std::string& mod, const u8* text, size_t
+     write("recomp_export.c", ex.str());
+     write("CMakeLists.txt", cm.str());
+ 
++    // Coverage report. Without this the exporter cannot describe its own output:
++    // block and instruction counts say how much code was walked, not how much of
++    // it was actually translated, and an export made entirely of fallbacks looks
++    // identical to a complete one. The signature histogram is the actionable
++    // part - it ranks which opcode family to implement next by how often it is
++    // actually hit, rather than by which gaps look important.
++    {
++        std::ostringstream cov;
++        cov << "{\n";
++        cov << "  \"module\": \"" << mod << "\",\n";
++        cov << "  \"blocks\": " << stats.blocks << ",\n";
++        cov << "  \"text_words\": " << stats.instructions << ",\n";
++        cov << "  \"instructions_emitted\": " << stats.emitted << ",\n";
++        cov << "  \"instructions_unhandled\": " << stats.unhandled << ",\n";
++        cov << "  \"unhandled_fraction\": " << std::fixed << std::setprecision(6)
++            << stats.UnhandledFraction() << ",\n";
++        cov.unsetf(std::ios::floatfield);
++
++        cov << "  \"unhandled_by_group\": {";
++        bool first_group = true;
++        for (const auto& [group, count] : stats.unhandled_by_group) {
++            if (!first_group) cov << ",";
++            first_group = false;
++            cov << "\n    \"" << EncodingGroupName(group) << "\": " << count;
++        }
++        cov << (first_group ? "}" : "\n  }") << ",\n";
++
++        // Ranked, because the only question this file exists to answer is
++        // "what should I implement next".
++        std::vector<std::pair<u32, UnhandledSite>> ranked(stats.unhandled_by_signature.begin(),
++                                                          stats.unhandled_by_signature.end());
++        std::sort(ranked.begin(), ranked.end(),
++                  [](const auto& a, const auto& b) { return a.second.count > b.second.count; });
++
++        cov << "  \"unhandled_by_signature\": [";
++        bool first_sig = true;
++        size_t shown = 0;
++        for (const auto& [sig, site] : ranked) {
++            if (shown++ >= 64) break;
++            if (!first_sig) cov << ",";
++            first_sig = false;
++            char line[256];
++            snprintf(line, sizeof line,
++                     "\n    { \"signature\": \"0x%08X\", \"count\": %zu, "
++                     "\"share\": %.4f, \"example_insn\": \"0x%08X\", "
++                     "\"example_pc\": \"0x%llX\", \"group\": \"%s\" }",
++                     sig, site.count,
++                     stats.unhandled ? double(site.count) / double(stats.unhandled) : 0.0,
++                     site.example_insn, (unsigned long long)site.example_pc,
++                     EncodingGroupName((site.example_insn >> 25) & 0xF));
++            cov << line;
++        }
++        cov << (first_sig ? "]" : "\n  ]") << ",\n";
++        cov << "  \"distinct_signatures\": " << stats.unhandled_by_signature.size() << "\n";
++        cov << "}\n";
++        write("recomp_coverage.json", cov.str());
++    }
++
+     // Bundle text/rodata/data as binary blobs so the exe can load them at startup
+     {
+         std::string data_subdir = out_dir + "/data";

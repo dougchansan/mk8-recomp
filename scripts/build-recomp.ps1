@@ -41,8 +41,14 @@ Write-Host ("module {0}: {1:n1} MB of generated C" -f $Module, ($srcSize / 1MB))
 
 Invoke-InVsEnv "cmake -S `"$Src`" -B `"$Build`" -G Ninja -DCMAKE_BUILD_TYPE=$BuildType"
 
+# The main NSO's shared target is called recompiled_image, not recompiled_main -
+# that is the name suyu's loader looks for when scanning for AOT DLLs
+# (suyu.cpp:524-561 lists recompiled_rtld.dll, recompiled_image.dll,
+# recompiled_subsdk0..9.dll, recompiled_sdk.dll).
+$Target = if ($Module -eq 'main') { 'recompiled_image' } else { "recompiled_$Module" }
+
 $sw = [Diagnostics.Stopwatch]::StartNew()
-Invoke-InVsEnv "cmake --build `"$Build`" --target recompiled_$Module"
+Invoke-InVsEnv "cmake --build `"$Build`" --target $Target"
 $sw.Stop()
 
 Write-Host ("built in {0:n1} min" -f $sw.Elapsed.TotalMinutes) -ForegroundColor Green

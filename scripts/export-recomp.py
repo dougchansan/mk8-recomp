@@ -28,6 +28,10 @@ import time
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from mcp import rpc  # noqa: E402
 
+# Defaults target the target title; override with --rom/--out for another
+# title. the target title has to be exported from its *update* NSP rather
+# than the cartridge: the XCI carries an ARM32 base and an on-cart 2.4.0 update
+# that is also ARM32, while update v4.0.0 is the AArch64 build.
 ROM = r"D:\Games\the target title.xci\the target title.xci"
 OUT = r"G:\mk8-recomp\generated\target"
 
@@ -44,7 +48,20 @@ def fire_and_forget(name, args, wait=3.0):
 
 
 def main():
-    fmt = sys.argv[1] if len(sys.argv) > 1 else "source"
+    global ROM, OUT
+    args = sys.argv[1:]
+    fmt = "source"
+    i = 0
+    while i < len(args):
+        if args[i] == "--rom" and i + 1 < len(args):
+            ROM = args[i + 1]
+            i += 2
+        elif args[i] == "--out" and i + 1 < len(args):
+            OUT = args[i + 1]
+            i += 2
+        else:
+            fmt = args[i]
+            i += 1
     pathlib.Path(OUT).mkdir(parents=True, exist_ok=True)
 
     print(f"rom    : {ROM}")

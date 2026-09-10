@@ -29,7 +29,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from mcp import rpc  # noqa: E402
 
 ROM = r"D:\Games\the target title.xci\the target title.xci"
-OUT = r"G:\mk8-recomp\generated\target-v2"
+OUT = r"G:\mk8-recomp\generated\target"
 
 
 def fire_and_forget(name, args, wait=3.0):

@@ -13,7 +13,7 @@
 [CmdletBinding()]
 param(
     [string]$Root    = 'G:\mk8-recomp',
-    [string]$Target  = 'target-v2',
+    [string]$Target  = 'target',
     [string]$Package = 'THE TARGET TITLE',
     [Parameter(Mandatory)]
     [string]$Module,

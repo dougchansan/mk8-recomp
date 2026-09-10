@@ -13,7 +13,8 @@
 [CmdletBinding()]
 param(
     [string]$Root    = 'G:\mk8-recomp',
-    [string]$Package = 'the target title',
+    [string]$Target  = 'target',
+    [string]$Package = 'THE TARGET TITLE',
     [Parameter(Mandatory)]
     [string]$Module,
     [string]$BuildType = 'Release'
@@ -21,8 +22,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$Src    = Join-Path $Root "generated\$Package\aot_cache\exefs\$Module"
-$Build  = Join-Path $Root "build\recomp\$Module"
+$Src    = Join-Path $Root "generated\$Target\$Package\aot_cache\exefs\$Module"
+# Namespaced by target. build\recomp\<module> alone let one game's build tree be
+# reused for another game's sources, and a stale DLL from a previous target is
+# worse than no DLL at all: it loads, and it executes.
+$Build  = Join-Path $Root "build\recomp\$Target\$Module"
 $VcVars = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat'
 
 if (-not (Test-Path -LiteralPath $Src))    { throw "No generated project at $Src" }
@@ -45,10 +49,10 @@ Invoke-InVsEnv "cmake -S `"$Src`" -B `"$Build`" -G Ninja -DCMAKE_BUILD_TYPE=$Bui
 # that is the name suyu's loader looks for when scanning for AOT DLLs
 # (suyu.cpp:524-561 lists recompiled_rtld.dll, recompiled_image.dll,
 # recompiled_subsdk0..9.dll, recompiled_sdk.dll).
-$Target = if ($Module -eq 'main') { 'recompiled_image' } else { "recompiled_$Module" }
+$CMakeTarget = if ($Module -eq 'main') { 'recompiled_image' } else { "recompiled_$Module" }
 
 $sw = [Diagnostics.Stopwatch]::StartNew()
-Invoke-InVsEnv "cmake --build `"$Build`" --target $Target"
+Invoke-InVsEnv "cmake --build `"$Build`" --target $CMakeTarget"
 $sw.Stop()
 
 Write-Host ("built in {0:n1} min" -f $sw.Elapsed.TotalMinutes) -ForegroundColor Green

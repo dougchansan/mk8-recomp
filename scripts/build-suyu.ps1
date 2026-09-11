@@ -31,7 +31,12 @@ $Glslang   = Join-Path $Root 'local\tools\glslang\bin\glslang.exe'
 $QtDir     = Join-Path $Root 'local\tools\Qt\6.9.3\msvc2022_64'
 
 if (-not (Test-Path -LiteralPath $VcVars)) { throw "vcvars64.bat not found at $VcVars" }
-if (-not (Test-Path -LiteralPath $SuyuSrc)) { throw "Suyu checkout not found at $SuyuSrc" }
+# Testing the directory alone passes on the empty one git leaves for an
+# uninitialised submodule, and the failure then surfaces as an opaque
+# cmake error instead.
+if (-not (Test-Path -LiteralPath (Join-Path $SuyuSrc 'CMakeLists.txt'))) {
+    throw "Suyu checkout not found at $SuyuSrc - run: git submodule update --init --recursive"
+}
 if (-not (Test-Path -LiteralPath $Glslang)) { throw "glslang not found at $Glslang - see scripts/bootstrap.ps1" }
 
 if ($Clean -and (Test-Path -LiteralPath $BuildDir)) {

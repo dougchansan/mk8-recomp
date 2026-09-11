@@ -24,7 +24,13 @@ for arg in "$@"; do
     esac
 done
 
-[ -d "$SRC" ] || { echo "no suyu checkout at $SRC" >&2; exit 1; }
+# -d alone passes on the empty directory git leaves for an uninitialised
+# submodule, and the failure then surfaces as an opaque cmake error.
+[ -f "$SRC/CMakeLists.txt" ] || {
+    echo "no suyu checkout at $SRC" >&2
+    echo "run: git submodule update --init --recursive" >&2
+    exit 1
+}
 mkdir -p "$BUILD"
 
 # suyu's CPMUtil.cmake requires CMake 3.31, and Ubuntu 24.04 ships 3.28. Prefer

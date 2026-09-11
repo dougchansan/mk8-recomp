@@ -5,6 +5,7 @@
 # hit and the "re-export" regenerates nothing, so the run measures the old code.
 set -euo pipefail
 
+[ -f "$HOME/.mk8r-env" ] && . "$HOME/.mk8r-env"
 ROOT="${ROOT:-${MK8R_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)}}"
 TARGET="${TARGET:-${MK8R_TARGET:-}}"
 PACKAGE="${PACKAGE:-${MK8R_PACKAGE:-}}"
@@ -14,6 +15,8 @@ echo '=== 1/4 suyu ==='
 cmake --build "$ROOT/build/suyu" --target suyu -- -j"$(nproc)" 2>&1 | tail -3
 
 echo '=== 2/4 clearing previous export ==='
+[ -n "$TARGET" ] || { echo 'set MK8R_TARGET: without it $GEN is the whole generated tree' >&2; exit 2; }
+[ -n "$PACKAGE" ] || { echo 'set MK8R_PACKAGE' >&2; exit 2; }
 rm -rf "$GEN"
 echo "removed $GEN"
 

@@ -140,12 +140,6 @@ int main() {
         Case{"fccmp d1, d8, #7, eq", 0x1E680427u},
         Case{"fcmp s1, s8", 0x1E282020u},
         Case{"fcmp s1, #0.0", 0x1E202028u},
-        Case{"fcvtzu w8, s10, #30", 0x1E198948u},
-        Case{"fcvtzs w8, s0, #8", 0x1E18E008u},
-        Case{"fcvtzu x8, d10, #40", 0x9E596148u},
-        Case{"fcvtzs x1, d2, #1", 0x9E58FC41u},
-        Case{"scvtf s0, w1, #4", 0x1E02F020u},
-        Case{"ucvtf d0, x1, #12", 0x9E43D020u},
         Case{"ld1r {v0.4s}, [x8]", 0x4D40C900u},
         Case{"ld1r {v0.2d}, [x9]", 0x4D40CD20u},
         Case{"ld1r {v0.16b}, [x8]", 0x4D40C100u},
@@ -177,6 +171,13 @@ int main() {
         Case{"uqshl v2.4s, v2.4s, v4.4s", 0x6EA44C42u},
         Case{"urshl v2.4s, v2.4s, v4.4s", 0x6EA45442u},
         Case{"ushl d0, d1, d2", 0x7EE24420u},
+        // Deliberately not translated: measurably slower than the JIT.
+        Case{"fcvtzu w8, s10, #30", 0x1E198948u},
+        Case{"fcvtzs w8, s0, #8", 0x1E18E008u},
+        Case{"fcvtzu x8, d10, #40", 0x9E596148u},
+        Case{"fcvtzs x1, d2, #1", 0x9E58FC41u},
+        Case{"scvtf s0, w1, #4", 0x1E02F020u},
+        Case{"ucvtf d0, x1, #12", 0x9E43D020u},
     };
 
     std::printf("\nencodings that must NOT be translated\n\n");

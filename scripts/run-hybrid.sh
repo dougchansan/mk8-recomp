@@ -67,6 +67,23 @@ if [ "$UNLIMITED" = 1 ] && [ -f "$CFG" ]; then
     echo 'UNLIMITED: frame limiter and vsync off'
 fi
 
+# Nobody is here to answer "Are you sure you want to close suyu?". Until it is
+# answered the session sits on the modal and then dies when the KILL lands,
+# which looks like a crash, loses the coverage report, and - because the modal
+# blocks the emulation thread - quietly corrupts any measurement taken across
+# it. Ask_Never is the only setting under which an unattended run is honest.
+if [ -f "$CFG" ]; then
+    python3 - "$CFG" <<'PYCFG'
+import sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8", errors="replace").read()
+if "\nconfirmStop=" not in text:
+    entry = "[UI]\n" + "confirmStop" + chr(92) + "default=false\nconfirmStop=2\n"
+    text = text.replace("[UI]\n", entry, 1)
+    open(path, "w", encoding="utf-8").write(text)
+PYCFG
+fi
+
 rm -f "$SUYU_LOG"
 
 if ! pgrep -f "[X]vfb $DISPLAY_NUM" >/dev/null 2>&1; then

@@ -2,11 +2,12 @@
 set -euo pipefail
 
 ROOT="${ROOT:-$HOME/mk8-recomp}"
-ROM="${ROM:-$HOME/roms/target-update.nsp}"
-OUT="${OUT:-$ROOT/generated/target}"
+ROM="${ROM:-${MK8R_ROM:-}}"
+OUT="${OUT:-$ROOT/generated/${MK8R_TARGET:-target}}"
 FMT="${FMT:-source}"
 LOG="${LOG:-/tmp/export-drive.log}"
 
+[ -n "$ROM" ] || { echo "set MK8R_ROM or ROM" >&2; exit 1; }
 [ -f "$ROM" ] || { echo "no such rom: $ROM" >&2; exit 1; }
 
 setsid python3 "$ROOT/scripts/export-recomp.py" \

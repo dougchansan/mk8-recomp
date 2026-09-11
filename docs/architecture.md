@@ -3,7 +3,7 @@
 ## The pipeline as it actually exists in suyu v0.0.4
 
 ```
-the target XCI
+target XCI
   |
   | FileSys::XCI -> secure partition NSP -> Program NCA -> ExeFS
   | (needs prod.keys; does NOT need firmware)

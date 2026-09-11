@@ -6,8 +6,8 @@
 set -euo pipefail
 
 ROOT="${ROOT:-$HOME/mk8-recomp}"
-TARGET="${TARGET:-target}"
-PACKAGE="${PACKAGE:-target-update.AppDir/usr/bin}"
+TARGET="${TARGET:-${MK8R_TARGET:-}}"
+PACKAGE="${PACKAGE:-${MK8R_PACKAGE:-}}"
 GEN="$ROOT/generated/$TARGET"
 
 echo '=== 1/4 suyu ==='

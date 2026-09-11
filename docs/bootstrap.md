@@ -1,4 +1,4 @@
-# Recomp — Bootstrap Record
+# Bootstrap Record
 
 Session 1. All values below were measured on this machine, not assumed.
 
@@ -19,7 +19,7 @@ sufficient for the Suyu build plus generated C.
 
 | | |
 |---|---|
-| Path | `D:\Games\the target title.xci\the target title.xci` |
+| Path | `$MK8R_ROM` (not recorded here) |
 | Size | 15,971,909,632 bytes (14.87 GiB) |
 | SHA-256 | `REDACTED` |
 | LastWriteTime | 2024-09-07 18:16:56 |

@@ -20,6 +20,7 @@ title, so this polls the log rather than waiting on a response.
 """
 
 import json
+import os
 import pathlib
 import socket
 import sys
@@ -28,12 +29,11 @@ import time
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from mcp import rpc  # noqa: E402
 
-# Defaults target the target title; override with --rom/--out for another
-# title. the target title has to be exported from its *update* NSP rather
-# than the cartridge: the XCI carries an ARM32 base and an on-cart 2.4.0 update
-# that is also ARM32, while update v4.0.0 is the AArch64 build.
-ROM = r"D:\Games\the target title.xci\the target title.xci"
-OUT = r"G:\mk8-recomp\generated\target"
+# No committed default: set MK8R_ROM/MK8R_OUT, or pass --rom/--out. A title
+# whose 64-bit build ships only in an update has to be exported from the update
+# package rather than the cartridge, since an update replaces the ExeFS whole.
+ROM = os.environ.get("MK8R_ROM", "")
+OUT = os.environ.get("MK8R_OUT", "")
 
 
 def fire_and_forget(name, args, wait=3.0):
@@ -62,6 +62,9 @@ def main():
         else:
             fmt = args[i]
             i += 1
+    if not ROM or not OUT:
+        print("set MK8R_ROM and MK8R_OUT, or pass --rom/--out")
+        return 2
     pathlib.Path(OUT).mkdir(parents=True, exist_ok=True)
 
     print(f"rom    : {ROM}")

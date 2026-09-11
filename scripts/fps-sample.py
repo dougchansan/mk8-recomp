@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Boot a ROM and sample FPS repeatedly, reporting a distribution.
 
-A single reading says almost nothing here. The the target attract sequence cycles
+A single reading says almost nothing here. The attract sequence cycles
 between the title screen and demo gameplay, which are very different workloads,
 and early samples land while shaders are still compiling. Screenshots of the
 status bar taken at arbitrary moments produced a 71-522 FPS spread on the same

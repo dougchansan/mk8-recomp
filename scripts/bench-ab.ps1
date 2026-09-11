@@ -4,7 +4,7 @@
 # interval, frame limiter and vsync off. That matters more than it sounds -
 # earlier single-screenshot readings gave 473 FPS hybrid against 522 baseline,
 # which was meaningless, because the two captures landed on different parts of
-# the target's attract sequence. The title screen and the demo race are very different
+# The attract sequence. The title screen and the demo race are very different
 # workloads and the distribution is bimodal, so a single number cannot compare
 # two builds.
 #
@@ -17,7 +17,7 @@
 param(
     [string]$Root    = 'G:\mk8-recomp',
     [string]$Target  = 'target',
-    [string]$Rom     = 'D:\Games\the target title.xci\the target title.xci',
+    [string]$Rom     = $env:MK8R_ROM,
     [int]$Warmup     = 90,
     [int]$Samples    = 60,
     [double]$Interval = 2.0,

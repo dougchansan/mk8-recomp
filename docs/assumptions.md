@@ -3,7 +3,7 @@
 ## Legal / hygiene
 
 - The game dump at
-  `D:\Games\the target title.xci\the target title.xci`
+  the path given by `MK8R_ROM`
   is **read-only**. It is never moved, renamed, patched, truncated, or copied into
   this repository. Its SHA-256 is recorded in `docs/bootstrap.md` and re-verified
   before any run that touches it.
@@ -28,7 +28,7 @@
 | The AOT path will initially be *slower* than plain dynarmic on the target | high | NEON gaps are the hot path; see findings doc |
 | Export needs prod.keys but not firmware | high | `KeyManager` in NCA ctor; no firmware reference in the export path |
 | The 15.0.1-era prod.keys on this machine can decrypt this XCI | **unverified** | key generation vs. cartridge master key not yet checked |
-| the target's ExeFS is the usual rtld / main / subsdk* / sdk set | **unverified** | to be detected, not assumed — Phase 6 |
+| The target's ExeFS is the usual rtld / main / subsdk* / sdk set | **unverified** | to be detected, not assumed — Phase 6 |
 | `aot_test_export` RPC gives us a scriptable export without GUI clicking | medium | `main.cpp:5529-5558`; the RPC transport itself not yet exercised |
 | Build-mode export will fail on this machine as shipped | medium-high | it shells out to a hardcoded VS2022 *Community* vcvars path; this machine has VS2026 Community + VS2022 *Build Tools* |
 

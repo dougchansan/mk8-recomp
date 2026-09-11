@@ -4,8 +4,8 @@
 set -euo pipefail
 
 ROOT="${ROOT:-$HOME/mk8-recomp}"
-TARGET="${TARGET:-target}"
-ROM="${ROM:-$HOME/roms/target.xci}"
+TARGET="${TARGET:-${MK8R_TARGET:-}}"
+ROM="${ROM:-${MK8R_ROM:-}}"
 RUN_SECONDS="${RUN_SECONDS:-60}"
 DISPLAY_NUM="${DISPLAY_NUM:-:78}"
 LOG="${LOG:-/tmp/suyu-hybrid.log}"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare two FPS sample sets from bench-ab.ps1.
 
-the target's attract sequence alternates between a static title screen and a demo
+The attract sequence alternates between a static title screen and a demo
 race, so the distribution is bimodal and a mean is close to meaningless - it
 mostly reports how much of each phase a run happened to catch. Percentiles are
 compared instead, and the two clusters are split out, because the low cluster is

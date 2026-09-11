@@ -7,12 +7,12 @@
 # whatever the platform's shared library happens to be called.
 #
 #   ./scripts/build-recomp.sh main
-#   ./scripts/build-recomp.sh --target target --package "THE TARGET TITLE" rtld
+#   ./scripts/build-recomp.sh --target <target> --package "<package dir>" rtld
 set -euo pipefail
 
 ROOT="${ROOT:-$HOME/mk8-recomp}"
-TARGET="${TARGET:-target}"
-PACKAGE="${PACKAGE:-the target title [REDACTED][v1441792][US][Up v4.0.0]}"
+TARGET="${TARGET:-${MK8R_TARGET:-}}"
+PACKAGE="${PACKAGE:-${MK8R_PACKAGE:-}}"
 BUILD_TYPE="${BUILD_TYPE:-Release}"
 
 MODULE=""

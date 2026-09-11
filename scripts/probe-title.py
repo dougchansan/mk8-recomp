@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M1 probe: ask a running suyu what it actually sees in the the target dump.
+"""M1 probe: ask a running suyu what it actually sees in the target dump.
 
 Answers the baseline questions the file logger cannot (issue #17), by going
 through suyu's own MCP server rather than parsing an empty log.
@@ -10,13 +10,14 @@ up. See scripts/run-gui.ps1.
 """
 
 import json
+import os
 import sys
 import pathlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from mcp import rpc  # noqa: E402
 
-ROM = r"D:\Games\the target title.xci\the target title.xci"
+ROM = os.environ.get("MK8R_ROM", "")
 
 
 def call(name, args=None, timeout=300.0):

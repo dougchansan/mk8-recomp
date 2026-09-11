@@ -1,6 +1,6 @@
 # Report the CPU architecture of every title in a library.
 #
-# suyu's static recompiler is AArch64-only, so an ARM32 title can never be
+# suyu's static recompiler is 64-bit-only, so a 32-bit title can never be
 # targeted no matter how complete the translator becomes. This answers "which of
 # my games could this project ever work on" without booting anything.
 #
@@ -14,8 +14,8 @@
 [CmdletBinding()]
 param(
     [string]$Root    = 'G:\mk8-recomp',
-    [string]$Library = 'D:\Games',
-    [string]$OutCsv  = 'G:\mk8-recomp\manifests\library-isa.csv'
+    [string]$Library = $env:MK8R_LIBRARY,
+    [string]$OutCsv  = 'G:\mk8-recomp\local\library-isa.csv'
 )
 
 $ErrorActionPreference = 'Stop'

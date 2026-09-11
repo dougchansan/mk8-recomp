@@ -20,7 +20,7 @@
 param(
     [string]$Root   = 'G:\mk8-recomp',
     [string]$Target = 'target',
-    [string]$Rom    = 'D:\Games\the target title.xci\the target title.xci',
+    [string]$Rom    = $env:MK8R_ROM,
     [switch]$Baseline
 )
 

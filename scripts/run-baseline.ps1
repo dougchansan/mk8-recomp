@@ -6,7 +6,7 @@
 [CmdletBinding()]
 param(
     [string]$Root = 'G:\mk8-recomp',
-    [string]$Game = 'D:\Games\the target title.xci\the target title.xci',
+    [string]$Game = $env:MK8R_ROM,
     [string]$KeysSource = '<your prod.keys>',
     [switch]$InstallKeys,
     [switch]$Gui,

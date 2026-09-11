@@ -68,8 +68,11 @@ while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 2
 }
 
-$romJson = (@{ path = $Rom } | ConvertTo-Json -Compress)
-python (Join-Path $Root 'scripts\mcp.py') call launch_game_path $romJson 2>&1 | Out-Null
+# Errors are deliberately not swallowed here. The first version piped this to
+# Out-Null and the launch failed silently: the script printed its instructions,
+# the game never booted, and there was nothing to say so.
+python (Join-Path $Root 'scripts\mcp-call.py') launch_game_path --path $Rom
+if ($LASTEXITCODE -ne 0) { throw "launch_game_path failed (exit $LASTEXITCODE)" }
 Write-Host ''
 Write-Host 'Game booting. Once it is at the title screen:' -ForegroundColor Cyan
 Write-Host '  1. Ctrl+F7        start recording'

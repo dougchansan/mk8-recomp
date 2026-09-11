@@ -5,7 +5,7 @@
 # hit and the "re-export" regenerates nothing, so the run measures the old code.
 set -euo pipefail
 
-ROOT="${ROOT:-${MK8R_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
+ROOT="${ROOT:-${MK8R_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)}}"
 TARGET="${TARGET:-${MK8R_TARGET:-}}"
 PACKAGE="${PACKAGE:-${MK8R_PACKAGE:-}}"
 GEN="$ROOT/generated/$TARGET"

@@ -3,7 +3,7 @@
 # SUYU_RECOMP_DIR must be set before launch; the backend is picked at start.
 set -euo pipefail
 
-ROOT="${ROOT:-${MK8R_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
+ROOT="${ROOT:-${MK8R_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)}}"
 TARGET="${TARGET:-${MK8R_TARGET:-}}"
 ROM="${ROM:-${MK8R_ROM:-}}"
 RUN_SECONDS="${RUN_SECONDS:-60}"

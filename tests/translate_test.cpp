@@ -140,6 +140,22 @@ int main() {
         Case{"fccmp d1, d8, #7, eq", 0x1E680427u},
         Case{"fcmp s1, s8", 0x1E282020u},
         Case{"fcmp s1, #0.0", 0x1E202028u},
+        Case{"fcvtzu w8, s10, #30", 0x1E198948u},
+        Case{"fcvtzs w8, s0, #8", 0x1E18E008u},
+        Case{"fcvtzu x8, d10, #40", 0x9E596148u},
+        Case{"fcvtzs x1, d2, #1", 0x9E58FC41u},
+        Case{"scvtf s0, w1, #4", 0x1E02F020u},
+        Case{"ucvtf d0, x1, #12", 0x9E43D020u},
+        Case{"ld1r {v0.4s}, [x8]", 0x4D40C900u},
+        Case{"ld1r {v0.2d}, [x9]", 0x4D40CD20u},
+        Case{"ld1r {v0.16b}, [x8]", 0x4D40C100u},
+        Case{"ld1r {v0.8h}, [x8]", 0x4D40C500u},
+        Case{"ld1r {v0.8b}, [x8]", 0x0D40C100u},
+        Case{"ushl v2.4s, v2.4s, v4.4s", 0x6EA44442u},
+        Case{"sshl v2.4s, v2.4s, v4.4s", 0x4EA44442u},
+        Case{"ushl v0.16b, v1.16b, v2.16b", 0x6E224420u},
+        Case{"ushl v0.2d, v1.2d, v2.2d", 0x6EE24420u},
+        Case{"sshl v0.8h, v1.8h, v2.8h", 0x4E624420u},
     };
 
     std::printf("emitter decode coverage\n\n");
@@ -156,6 +172,11 @@ int main() {
         Case{"smlal v0.4s, v1.4h, v2.h[0]", 0x0F422020u},
         Case{"sqdmulh v0.4s, v1.4s, v2.s[0]", 0x4F82C020u},
         Case{"fmulx v2.4s, v7.4s, v0.s[1]", 0x6FA090E2u},
+        Case{"ld2r {v0.4s, v1.4s}, [x8]", 0x4D60C900u},
+        Case{"ld1 {v1.s}[0], [x8]", 0x0D408101u},
+        Case{"uqshl v2.4s, v2.4s, v4.4s", 0x6EA44C42u},
+        Case{"urshl v2.4s, v2.4s, v4.4s", 0x6EA45442u},
+        Case{"ushl d0, d1, d2", 0x7EE24420u},
     };
 
     std::printf("\nencodings that must NOT be translated\n\n");

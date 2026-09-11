@@ -52,6 +52,7 @@ def main():
     print("  ", json.dumps(call("trigger_ui_action", {"action": "tas_start_stop"})))
     start = time.monotonic()
     samples = []
+    vsamples = []
     peak = 0
     stalled = 0
     done_at = None
@@ -66,8 +67,11 @@ def main():
         frame = st.get("tas_frame") or 0
         running = st.get("tas_running")
         fps = st.get("fps") or 0.0
+        vps = st.get("vps") or 0.0
         if fps:
             samples.append(fps)
+        if vps:
+            vsamples.append(vps)
 
         if peak > 0 and (frame < peak or not running):
             done_at = elapsed
@@ -81,7 +85,8 @@ def main():
         else:
             stalled = 0
             if int(elapsed * 2) % 4 == 0:
-                print(f"   {elapsed:6.1f}s  frame {frame:>6}/{total}  fps={fps:.1f}")
+                print(f"   {elapsed:6.1f}s  frame {frame:>6}/{total}"
+                      f"  fps={fps:.1f} vps={vps:.1f}")
         peak = max(peak, frame)
         if elapsed > budget:
             break
@@ -90,7 +95,9 @@ def main():
     print(f"RESULT {outcome} frames={peak}/{total} "
           f"seconds={elapsed:.2f} "
           f"mean_fps={statistics.mean(samples) if samples else 0:.1f} "
-          f"median_fps={statistics.median(samples) if samples else 0:.1f}")
+          f"median_fps={statistics.median(samples) if samples else 0:.1f} "
+          f"mean_vps={statistics.mean(vsamples) if vsamples else 0:.1f} "
+          f"median_vps={statistics.median(vsamples) if vsamples else 0:.1f}")
 
     call("stop_emulation", timeout=120.0)
     time.sleep(8)

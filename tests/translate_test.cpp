@@ -123,6 +123,23 @@ int main() {
         Case{"fcvtmu w1, s2", 0x1E310041u},
         Case{"fcvtpu w1, s2", 0x1E290041u},
         Case{"fcvtms x1, d2", 0x9E700041u},
+        Case{"neg v4.4s, v4.4s", 0x6EA0B884u},
+        Case{"abs v1.4s, v1.4s", 0x4EA0B821u},
+        Case{"neg v1.16b, v1.16b", 0x6E20B821u},
+        Case{"neg v1.8h, v1.8h", 0x6E60B821u},
+        Case{"neg v1.2d, v1.2d", 0x6EE0B821u},
+        Case{"abs v1.2d, v1.2d", 0x4EE0B821u},
+        Case{"neg d1, d1", 0x7EE0B821u},
+        Case{"abs v1.8b, v1.8b", 0x0E20B821u},
+        Case{"fmla v2.4s, v7.4s, v0.s[1]", 0x4FA010E2u},
+        Case{"fmls v2.4s, v7.4s, v0.s[1]", 0x4FA050E2u},
+        Case{"fmul v2.4s, v7.4s, v0.s[1]", 0x4FA090E2u},
+        Case{"fmla v2.2d, v7.2d, v0.d[1]", 0x4FC018E2u},
+        Case{"fccmp s1, s8, #4, ls", 0x1E289424u},
+        Case{"fccmpe s1, s8, #4, ls", 0x1E289434u},
+        Case{"fccmp d1, d8, #7, eq", 0x1E680427u},
+        Case{"fcmp s1, s8", 0x1E282020u},
+        Case{"fcmp s1, #0.0", 0x1E202028u},
     };
 
     std::printf("emitter decode coverage\n\n");
@@ -133,6 +150,12 @@ int main() {
     const std::vector<Case> must_fall_back = {
         Case{"dc zva, x10", 0xD50B742Au},
         Case{"ic ivau, x10", 0xD50B752Au},
+        Case{"cmlt v1.4s, v1.4s, #0", 0x4EA0A821u},
+        Case{"mul v0.4s, v1.4s, v2.s[0]", 0x4F828020u},
+        Case{"mla v0.4s, v1.4s, v2.s[0]", 0x6F820020u},
+        Case{"smlal v0.4s, v1.4h, v2.h[0]", 0x0F422020u},
+        Case{"sqdmulh v0.4s, v1.4s, v2.s[0]", 0x4F82C020u},
+        Case{"fmulx v2.4s, v7.4s, v0.s[1]", 0x6FA090E2u},
     };
 
     std::printf("\nencodings that must NOT be translated\n\n");

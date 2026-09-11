@@ -71,7 +71,7 @@ void CheckFallsBack(const Case& c) {
 } // namespace
 
 int main() {
-    // Encodings taken from the recorded examples in the the target title
+    // Encodings taken from the recorded examples in the target title's
     // coverage histogram, so these are instructions the title actually runs.
     const std::vector<Case> cases = {
         Case{"ror w21, w9, #0x1d", 0x13897535u},

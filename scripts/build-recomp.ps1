@@ -13,8 +13,8 @@
 [CmdletBinding()]
 param(
     [string]$Root    = 'G:\mk8-recomp',
-    [string]$Target  = 'target',
-    [string]$Package = 'THE TARGET TITLE',
+    [string]$Target  = $env:MK8R_TARGET,
+    [string]$Package = $env:MK8R_PACKAGE,
     [Parameter(Mandatory)]
     [string]$Module,
     [string]$BuildType = 'Release'

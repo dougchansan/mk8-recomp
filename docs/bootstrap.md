@@ -26,8 +26,7 @@ sufficient for the Suyu build plus generated C.
 | Filesystem | NTFS (F:, 9.09 TiB total, 3.19 TiB free) |
 
 Sibling files present and untouched:
-- `the target title (Certificate).bin`
-- `the target title (Initial Data).bin`
+- the cartridge's sibling `(Certificate).bin` and `(Initial Data).bin`
 
 Neither is used unless Suyu's loader demands it.
 

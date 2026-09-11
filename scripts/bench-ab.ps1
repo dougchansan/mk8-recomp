@@ -16,7 +16,7 @@
 [CmdletBinding()]
 param(
     [string]$Root    = 'G:\mk8-recomp',
-    [string]$Target  = 'target',
+    [string]$Target  = $env:MK8R_TARGET,
     [string]$Rom     = $env:MK8R_ROM,
     [int]$Warmup     = 90,
     [int]$Samples    = 60,

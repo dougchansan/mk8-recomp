@@ -7,7 +7,7 @@
 # cleared buffer.
 #
 #   .\scripts\capture-window.ps1 -Out shot.png
-#   .\scripts\capture-window.ps1 -Repeat 6 -IntervalSeconds 15 -OutDir G:\temp\shots
+#   .\scripts\capture-window.ps1 -Repeat 6 -IntervalSeconds 15 -OutDir $env:TEMP\mk8r-shots
 
 [CmdletBinding()]
 param(

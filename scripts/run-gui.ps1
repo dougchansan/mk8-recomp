@@ -7,12 +7,16 @@
 
 [CmdletBinding()]
 param(
-    [string]$Root = 'G:\mk8-recomp',
+    [string]$Root = $env:MK8R_ROOT,
     [ValidateSet('hacker','gamer','programmer')]
     [string]$Mode = 'hacker',
     [int]$WaitSeconds = 90,
     [switch]$DebugLog
 )
+
+# $PSScriptRoot is not populated while parameter defaults are bound under
+# -File, so the fallback lives here rather than in the param block.
+if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
 
 $ErrorActionPreference = 'Stop'
 

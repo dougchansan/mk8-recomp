@@ -6,12 +6,16 @@
 
 [CmdletBinding()]
 param(
-    [string]$Root = 'G:\mk8-recomp'
+    [string]$Root = $env:MK8R_ROOT
 )
+
+# $PSScriptRoot is not populated while parameter defaults are bound under
+# -File, so the fallback lives here rather than in the param block.
+if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
 
 $ErrorActionPreference = 'Stop'
 
-$VcVars = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat'
+$VcVars = & (Join-Path $PSScriptRoot 'find-vcvars.ps1')
 if (-not (Test-Path -LiteralPath $VcVars)) { throw "vcvars64.bat not found at $VcVars" }
 
 $Build = Join-Path $Root 'build'

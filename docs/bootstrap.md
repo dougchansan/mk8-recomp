@@ -6,14 +6,14 @@ Session 1. All values below were measured on this machine, not assumed.
 
 | | |
 |---|---|
-| Repo root | `G:\mk8-recomp` |
-| Pinned upstream | `G:\mk8-recomp\third_party\suyu` (gitignored) |
-| Build output | `G:\mk8-recomp\build\suyu` |
+| Repo root | wherever the clone lives; scripts derive it from their own location, or `MK8R_ROOT` |
+| Pinned upstream | `<root>/third_party/suyu` (gitignored) |
+| Build output | `<root>/build/suyu` |
 | Public remote | https://github.com/dougchansan/mk8-recomp |
 
-Note: the original brief suggested `<alternate workspace>`. The session's working
-directory is `G:\mk8-recomp`, which is what was used. G: is NTFS with 627 GiB free,
-sufficient for the Suyu build plus generated C.
+The workspace needs room for the Suyu build plus generated C - budget a few
+hundred GiB on whichever volume the clone sits on.
+
 
 ## Input title (READ ONLY — never modified)
 
@@ -51,7 +51,7 @@ Neither is used unless Suyu's loader demands it.
 | cmake | 4.3.2 |
 | ninja | 1.13.0 |
 | python | 3.12.10 |
-| MSVC | 14.50.35717 (VS 2026 Community, `C:\Program Files\Microsoft Visual Studio\18\Community`) |
+| MSVC | 14.50.35717 (VS 2026 Community; located at run time via `vswhere`, or `MK8R_VCVARS`) |
 | MSVC (alt) | 14.44.35207 (VS 2022 Build Tools) |
 | Windows SDK | 10.0.26100.0 |
 

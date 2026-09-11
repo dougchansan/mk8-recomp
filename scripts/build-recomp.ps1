@@ -12,13 +12,17 @@
 
 [CmdletBinding()]
 param(
-    [string]$Root    = 'G:\mk8-recomp',
+    [string]$Root    = $env:MK8R_ROOT,
     [string]$Target  = $env:MK8R_TARGET,
     [string]$Package = $env:MK8R_PACKAGE,
     [Parameter(Mandatory)]
     [string]$Module,
     [string]$BuildType = 'Release'
 )
+
+# $PSScriptRoot is not populated while parameter defaults are bound under
+# -File, so the fallback lives here rather than in the param block.
+if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
 
 $ErrorActionPreference = 'Stop'
 
@@ -27,7 +31,7 @@ $Src    = Join-Path $Root "generated\$Target\$Package\aot_cache\exefs\$Module"
 # reused for another game's sources, and a stale DLL from a previous target is
 # worse than no DLL at all: it loads, and it executes.
 $Build  = Join-Path $Root "build\recomp\$Target\$Module"
-$VcVars = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat'
+$VcVars = & (Join-Path $PSScriptRoot 'find-vcvars.ps1')
 
 if (-not (Test-Path -LiteralPath $Src))    { throw "No generated project at $Src" }
 if (-not (Test-Path -LiteralPath $VcVars)) { throw "vcvars64.bat not found at $VcVars" }

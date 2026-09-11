@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${ROOT:-$HOME/mk8-recomp}"
+ROOT="${ROOT:-${MK8R_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
 ROM="${ROM:-${MK8R_ROM:-}}"
 OUT="${OUT:-$ROOT/generated/${MK8R_TARGET:-target}}"
 FMT="${FMT:-source}"

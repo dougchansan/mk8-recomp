@@ -10,7 +10,7 @@
 #   ./scripts/build-recomp.sh --target <target> --package "<package dir>" rtld
 set -euo pipefail
 
-ROOT="${ROOT:-$HOME/mk8-recomp}"
+ROOT="${ROOT:-${MK8R_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
 TARGET="${TARGET:-${MK8R_TARGET:-}}"
 PACKAGE="${PACKAGE:-${MK8R_PACKAGE:-}}"
 BUILD_TYPE="${BUILD_TYPE:-Release}"

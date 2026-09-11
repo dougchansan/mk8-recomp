@@ -15,7 +15,7 @@
 #   ./scripts/run-gui.sh --stop       # stop suyu and Xvfb
 set -euo pipefail
 
-ROOT="${ROOT:-$HOME/mk8-recomp}"
+ROOT="${ROOT:-${MK8R_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
 EXE="$ROOT/build/suyu/bin/suyu"
 DISPLAY_NUM="${DISPLAY_NUM:-:78}"
 MODE="${MODE:-hacker}"

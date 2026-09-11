@@ -15,19 +15,23 @@
 
 [CmdletBinding()]
 param(
-    [string]$Root    = 'G:\mk8-recomp',
+    [string]$Root    = $env:MK8R_ROOT,
     [string]$Target  = $env:MK8R_TARGET,
     [string]$Rom     = $env:MK8R_ROM,
     [int]$Warmup     = 90,
     [int]$Samples    = 60,
     [double]$Interval = 2.0,
-    [string]$OutDir  = 'G:\temp\work\bench',
+    [string]$OutDir  = $(Join-Path $env:TEMP 'mk8r-bench'),
     # Replay a recorded TAS script instead of measuring whatever the attract
     # sequence happens to be showing. That sequence alternates between a static
     # title screen and a demo race and does not repeat identically between runs,
     # which is the source of most of the noise these measurements fight.
     [switch]$Tas
 )
+
+# $PSScriptRoot is not populated while parameter defaults are bound under
+# -File, so the fallback lives here rather than in the param block.
+if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
 
 $ErrorActionPreference = 'Stop'
 

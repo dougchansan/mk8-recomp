@@ -13,10 +13,16 @@
 
 [CmdletBinding()]
 param(
-    [string]$Root    = 'G:\mk8-recomp',
+    [string]$Root    = $env:MK8R_ROOT,
     [string]$Library = $env:MK8R_LIBRARY,
-    [string]$OutCsv  = 'G:\mk8-recomp\local\library-isa.csv'
+    [string]$OutCsv
 )
+
+# $PSScriptRoot is not populated while parameter defaults are bound under
+# -File, so the fallback lives here rather than in the param block.
+if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
+
+if (-not $OutCsv) { $OutCsv = Join-Path $Root 'local\library-isa.csv' }
 
 $ErrorActionPreference = 'Stop'
 

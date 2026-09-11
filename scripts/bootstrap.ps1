@@ -4,11 +4,15 @@
 
 [CmdletBinding()]
 param(
-    [string]$Root = 'G:\mk8-recomp',
+    [string]$Root = $env:MK8R_ROOT,
     [string]$Game = $env:MK8R_ROM,
     [string]$ExpectedSha = 'REDACTED',
     [switch]$SkipHash
 )
+
+# $PSScriptRoot is not populated while parameter defaults are bound under
+# -File, so the fallback lives here rather than in the param block.
+if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
 
 $ErrorActionPreference = 'Stop'
 $SuyuCommit = 'd1d09321d7ab84252291e05b3efbc8a8dfa57481'

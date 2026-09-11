@@ -9,18 +9,21 @@
 
 [CmdletBinding()]
 param(
-    [string]$Root      = 'G:\mk8-recomp',
+    [string]$Root      = $env:MK8R_ROOT,
     [string]$BuildType = 'Release',
     [switch]$Configure,
     [switch]$Clean
 )
 
+# $PSScriptRoot is not populated while parameter defaults are bound under
+# -File, so the fallback lives here rather than in the param block.
+if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
+
 $ErrorActionPreference = 'Stop'
 
 $SuyuSrc   = Join-Path $Root 'third_party\suyu'
 $BuildDir  = Join-Path $Root 'build\suyu'
-$VsRoot    = 'C:\Program Files\Microsoft Visual Studio\18\Community'
-$VcVars    = Join-Path $VsRoot 'VC\Auxiliary\Build\vcvars64.bat'
+$VcVars    = & (Join-Path $PSScriptRoot 'find-vcvars.ps1')
 # glslang 16.x renamed glslangValidator to glslang; suyu's find_program still
 # looks for the old name, so point the cache variable at the new binary rather
 # than installing the whole Vulkan SDK for one shader compiler.

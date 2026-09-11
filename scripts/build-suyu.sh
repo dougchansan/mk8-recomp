@@ -10,7 +10,7 @@
 #   ./scripts/build-suyu.sh --clean      # start from scratch
 set -euo pipefail
 
-ROOT="${ROOT:-$HOME/mk8-recomp}"
+ROOT="${ROOT:-${MK8R_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}}"
 BUILD="$ROOT/build/suyu"
 SRC="$ROOT/third_party/suyu"
 BUILD_TYPE="${BUILD_TYPE:-Release}"

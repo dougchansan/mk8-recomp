@@ -9,13 +9,17 @@
 
 [CmdletBinding()]
 param(
-    [string]$Root = 'G:\mk8-recomp',
+    [string]$Root = $env:MK8R_ROOT,
     [Parameter(Mandatory)]
     [string[]]$Only,
     [int]$RunSeconds = 100,
     [int]$ShotAt = 70,
-    [string]$ShotDir = 'G:\temp\work\bisect'
+    [string]$ShotDir = $(Join-Path $env:TEMP 'mk8r-bisect')
 )
+
+# $PSScriptRoot is not populated while parameter defaults are bound under
+# -File, so the fallback lives here rather than in the param block.
+if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
 
 $ErrorActionPreference = 'Stop'
 

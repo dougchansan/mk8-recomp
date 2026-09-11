@@ -14,7 +14,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$Root   = 'G:\mk8-recomp',
+    [string]$Root   = $env:MK8R_ROOT,
     [string]$Target = $env:MK8R_TARGET,
     [string]$Rom    = $env:MK8R_ROM,
     [int]$RunSeconds = 60,
@@ -34,6 +34,10 @@ param(
     # JIT or merely fast enough.
     [switch]$Unlimited
 )
+
+# $PSScriptRoot is not populated while parameter defaults are bound under
+# -File, so the fallback lives here rather than in the param block.
+if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
 
 $ErrorActionPreference = 'Stop'
 

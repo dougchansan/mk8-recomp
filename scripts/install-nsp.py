@@ -40,8 +40,22 @@ _spec.loader.exec_module(_mod)
 parse_pfs0 = _mod.parse_pfs0
 
 
+def suyu_data_dir():
+    """Where suyu keeps its NAND, per platform.
+
+    Windows uses %APPDATA%\\suyu; Linux follows XDG, so ~/.local/share/suyu
+    unless XDG_DATA_HOME says otherwise. Hardcoding APPDATA meant this script
+    could only ever run on the machine it was written on.
+    """
+    if os.name == "nt":
+        return pathlib.Path(os.environ["APPDATA"]) / "suyu"
+    xdg = os.environ.get("XDG_DATA_HOME")
+    base = pathlib.Path(xdg) if xdg else pathlib.Path.home() / ".local" / "share"
+    return base / "suyu"
+
+
 def registered_dir():
-    return pathlib.Path(os.environ["APPDATA"]) / "suyu" / "nand" / "user" / "Contents" / "registered"
+    return suyu_data_dir() / "nand" / "user" / "Contents" / "registered"
 
 
 def nca_relative_path(nca_id_hex):

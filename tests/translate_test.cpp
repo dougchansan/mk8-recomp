@@ -115,6 +115,14 @@ int main() {
         Case{"dc cvac, x10", 0xD50B7A2Au},
         Case{"dc cvau, x10", 0xD50B7B2Au},
         Case{"dc civac, x10", 0xD50B7E2Au},
+        Case{"fcvtms w18, s3", 0x1E300072u},
+        Case{"fcvtps w1, s2", 0x1E280041u},
+        Case{"fcvtns w1, s2", 0x1E200041u},
+        Case{"fcvtas w1, s2", 0x1E240041u},
+        Case{"fcvtau w1, s2", 0x1E250041u},
+        Case{"fcvtmu w1, s2", 0x1E310041u},
+        Case{"fcvtpu w1, s2", 0x1E290041u},
+        Case{"fcvtms x1, d2", 0x9E700041u},
     };
 
     std::printf("emitter decode coverage\n\n");

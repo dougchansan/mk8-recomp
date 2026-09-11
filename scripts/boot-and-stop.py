@@ -30,8 +30,10 @@ def call(name, args=None, timeout=300.0):
 
 
 def main():
-    rom = sys.argv[1]
-    seconds = int(sys.argv[2]) if len(sys.argv) > 2 else 60
+    argv = [a for a in sys.argv[1:] if a != "--tas"]
+    tas = "--tas" in sys.argv
+    rom = argv[0]
+    seconds = int(argv[1]) if len(argv) > 1 else 60
 
     print(f"booting {pathlib.Path(rom).name} ...")
     try:
@@ -39,6 +41,19 @@ def main():
     except Exception as e:
         print(f"   launch failed: {type(e).__name__}: {e}")
         return 1
+
+    if tas:
+        # pause_tas_on_load holds the script at frame 0 until this fires, so the
+        # replay starts from a known frame rather than wherever boot happened to
+        # be. OnTasStartStop is a no-op unless emulation is already running.
+        for _ in range(30):
+            time.sleep(2)
+            try:
+                if call("get_emulator_state", timeout=30.0).get("game_running"):
+                    break
+            except Exception:
+                pass
+        print("  ", json.dumps(call("trigger_ui_action", {"action": "tas_start_stop"})))
 
     for elapsed in range(0, seconds, 10):
         time.sleep(10)

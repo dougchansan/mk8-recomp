@@ -150,6 +150,13 @@ int main() {
         Case{"ushl v0.16b, v1.16b, v2.16b", 0x6E224420u},
         Case{"ushl v0.2d, v1.2d, v2.2d", 0x6EE24420u},
         Case{"sshl v0.8h, v1.8h, v2.8h", 0x4E624420u},
+        Case{"movi v1.4s, #0x10", 0x4F000601u},
+        Case{"movi v24.4s, #0xbf, lsl #24", 0x4F0567F8u},
+        Case{"mvni v2.4s, #0x10", 0x6F000602u},
+        Case{"movi v3.8b, #0xff", 0x0F07E7E3u},
+        Case{"movi v4.2d, #0xffffffffffffffff", 0x6F07E7E4u},
+        Case{"movi v5.8h, #0x20", 0x4F018405u},
+        Case{"movi v6.4s, #0x7f, msl #8", 0x4F03C7E6u},
     };
 
     std::printf("emitter decode coverage\n\n");
@@ -171,6 +178,18 @@ int main() {
         Case{"uqshl v2.4s, v2.4s, v4.4s", 0x6EA44C42u},
         Case{"urshl v2.4s, v2.4s, v4.4s", 0x6EA45442u},
         Case{"ushl d0, d1, d2", 0x7EE24420u},
+        Case{"orr v7.4s, #0x10", 0x4F001607u},
+        Case{"bic v8.4s, #0x10", 0x6F001608u},
+        Case{"fmov v9.4s, #1.0", 0x4F03F609u},
+        Case{"sqshl v5.4s, v3.4s, #3", 0x4F237465u},
+        Case{"ushr v5.4s, v3.4s, #3", 0x6F3D0465u},
+        Case{"sshr v5.4s, v3.4s, #3", 0x4F3D0465u},
+        Case{"shrn v5.4h, v3.4s, #3", 0x0F1D8465u},
+        Case{"shl v5.4s, v3.4s, #3", 0x4F235465u},
+        Case{"shl v0.16b, v1.16b, #1", 0x4F095420u},
+        Case{"shl v0.2d, v1.2d, #40", 0x4F685420u},
+        Case{"shl v0.8h, v1.8h, #5", 0x4F155420u},
+        Case{"shl v0.8b, v1.8b, #2", 0x0F0A5420u},
         // Deliberately not translated: measurably slower than the JIT.
         Case{"fcvtzu w8, s10, #30", 0x1E198948u},
         Case{"fcvtzs w8, s0, #8", 0x1E18E008u},

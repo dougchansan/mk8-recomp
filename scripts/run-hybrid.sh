@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Boot the target with AOT images loaded, headless. --baseline runs dynarmic only.
-#
-# SUYU_RECOMP_DIR must be set before launch: the CPU backend is picked once at
-# process start, so attaching to a running suyu silently gets the JIT.
+# SUYU_RECOMP_DIR must be set before launch; the backend is picked at start.
 set -euo pipefail
 
 ROOT="${ROOT:-$HOME/mk8-recomp}"
@@ -59,9 +57,8 @@ else
     find "$RECOMP_IN" -name '*.so' -printf '    %-14f %10s bytes\n'
 fi
 
-# suyu rewrites qt-config.ini on exit, so these are set per run. A setting whose
-# \default companion is true is ignored, which is how this silently did nothing
-# the first time it was tried.
+# Set per run: suyu rewrites qt-config.ini on exit, and a setting whose \default
+# companion is true is ignored.
 if [ "$UNLIMITED" = 1 ] && [ -f "$CFG" ]; then
     sed -i -e 's/use_speed_limit\\default=true/use_speed_limit\\default=false/' \
            -e 's/use_speed_limit=true/use_speed_limit=false/' \
@@ -90,13 +87,12 @@ done
 
 if [ "$TAS" = 1 ]; then
     [ -f "$HOME/.local/share/suyu/tas/script0-1.txt" ]         || { echo 'no script0-1.txt in the tas directory' >&2; exit 1; }
-    python3 "$ROOT/scripts/boot-and-stop.py" --tas "$ROM" "$RUN_SECONDS"
+    python3 "$ROOT/scripts/tas-bench.py" "$ROM" "$RUN_SECONDS"
 else
     python3 "$ROOT/scripts/boot-and-stop.py" "$ROM" "$RUN_SECONDS"
 fi
 
-# The execution-coverage report prints from the last ArmRecomp destructor, which
-# only runs on a real teardown. Killing suyu here loses the whole report.
+# The coverage report prints from the last ArmRecomp destructor, so TERM not KILL.
 echo 'closing suyu ...'
 pkill -x -TERM suyu 2>/dev/null || true
 for _ in $(seq 1 120); do pgrep -x suyu >/dev/null || break; sleep 2; done

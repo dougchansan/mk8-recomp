@@ -28,33 +28,57 @@ third_party/  suyu submodule, pinned to a commit on our fork
 
 ## Building
 
-Clone with submodules, then run one script per platform. Neither builds or
-fetches a game, keys, or firmware.
+One command per platform, from nothing to built. Each installs the toolchain,
+clones with submodules and builds. Neither fetches a game, keys, or firmware.
 
-**Linux** — system Qt 6, GCC, CMake 3.31 or newer (the script will tell you if
-yours is older and where it looks for a newer one):
+**Linux** — any distro with `apt`, `dnf`/`yum`, `pacman`, `zypper`, `apk`,
+`xbps` or `eopkg`. Package names are per-distro; unknown ones are reported and
+skipped rather than aborting the install:
 
 ```bash
-sudo apt install -y qt6-base-dev qt6-base-private-dev libqt6svg6-dev libqt6charts6-dev qt6-multimedia-dev libqt6opengl6-dev libboost-dev libboost-filesystem-dev libboost-system-dev libboost-context-dev libusb-1.0-0-dev libssl-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libzstd-dev liblz4-dev nasm autoconf pkg-config
+curl -fsSL https://raw.githubusercontent.com/dougchansan/mk8-recomp/main/scripts/setup-linux.sh | bash
 ```
+
+**Windows** — an Administrator PowerShell, because the MSVC C++ toolset needs
+one. Everything comes from `winget`; an existing Visual Studio with the C++
+workload is reused rather than duplicated:
+
+```powershell
+irm https://raw.githubusercontent.com/dougchansan/mk8-recomp/main/scripts/setup-windows.ps1 | iex
+```
+
+Both clone into `./mk8-recomp` (`MK8R_ROOT` overrides), or build in place if
+you run them from inside a clone you already have. To stop partway:
+`--deps-only` / `--no-build` on Linux, `$env:MK8R_SETUP='deps'` or `'nobuild'`
+on Windows. `./scripts/setup-linux.sh --dry-run` lists the packages it would
+install without touching the system.
+
+<details>
+<summary>Doing it by hand</summary>
+
+The setup scripts are a wrapper around three steps. Clone with submodules, then
+on Linux install Qt 6, GCC, nasm, glslang and the codec/Boost development
+packages and run the build script — it needs CMake 3.31 or newer, and tells you
+where to put one if yours is older:
 
 ```bash
 git clone --recursive https://github.com/dougchansan/mk8-recomp && cd mk8-recomp && ./scripts/build-suyu.sh
 ```
 
-**Windows** — MSVC. `bootstrap.ps1` downloads the pinned glslang and Qt into
-`local/tools`; it also verifies a dump, so point `MK8R_ROM` at your own before
-running it, or place glslang and Qt there yourself and skip straight to
-`build-suyu.ps1`:
+On Windows, `bootstrap.ps1` downloads the pinned glslang and Qt into
+`local/tools`. It verifies a dump when `MK8R_ROM` points at one and skips that
+step with `-SkipGame`:
 
 ```powershell
-git clone --recursive https://github.com/dougchansan/mk8-recomp; cd mk8-recomp; .\scripts\bootstrap.ps1; .\scripts\build-suyu.ps1
+git clone --recursive https://github.com/dougchansan/mk8-recomp; cd mk8-recomp; .\scripts\bootstrap.ps1 -SkipGame; .\scripts\build-suyu.ps1
 ```
 
 Both build scripts take `--clean` / `-Clean` to start from scratch and
 `--configure` / `-Configure` to force a reconfigure. If you cloned without
 `--recursive`, run `git submodule update --init --recursive` first; the scripts
 stop with that instruction rather than failing inside cmake.
+
+</details>
 
 Building a generated module into a loadable image is a separate step, once you
 have exported one locally:

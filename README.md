@@ -4,18 +4,30 @@ Static recompilation of Nintendo Switch AArch64 CPU code to native x86-64, using
 [suyu v0.0.4](https://github.com/suyu-emu/suyu-v0.0.4)'s AOT recompiler as the
 starting point and its HLE stack for everything above the CPU.
 
+The recompiler is **AArch64-only**, and the pipeline is target-agnostic: which
+title is surveyed comes from `MK8R_TARGET`, and nothing is hardcoded to one.
+The name is historical — the project began aimed at Mario Kart 8 Deluxe, which
+turned out to be an AArch32 title and therefore outside what the emitter can
+translate. See [`docs/aarch32.md`](docs/aarch32.md).
+
 **Status.** The pipeline runs end to end: a target boots and renders with
 recompiled AArch64 code executing, alongside the fallback JIT for what the
-emitter does not yet translate. Nothing here is a playable port.
+emitter does not yet translate. It is currently slower than the JIT it augments.
+Nothing here is a playable port, and it is not a way to play anything you do not
+already own.
 
 ## What this repository contains
 
 Our own code, build tooling and documentation. It contains no game data, no
-Nintendo code, no keys, and no generated C — that material is produced locally
-and gitignored. See [`docs/assumptions.md`](docs/assumptions.md).
+Nintendo code, no keys, no firmware, and no generated C — that material is
+produced locally and gitignored.
 
 You need your own legally dumped game and your own keys. This project will not
-help you obtain either.
+help you obtain either, and will not answer requests to.
+
+The rules the project holds itself to, including why recompiler output is never
+published, are in [`LEGAL.md`](LEGAL.md). Working assumptions and their
+confidence levels are in [`docs/assumptions.md`](docs/assumptions.md).
 
 ## Layout
 

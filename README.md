@@ -26,6 +26,47 @@ tests/        differential validation
 third_party/  suyu submodule, pinned to a commit on our fork
 ```
 
+## Building
+
+Clone with submodules, then run one script per platform. Neither builds or
+fetches a game, keys, or firmware.
+
+**Linux** — system Qt 6, GCC, CMake 3.31 or newer (the script will tell you if
+yours is older and where it looks for a newer one):
+
+```bash
+sudo apt install -y qt6-base-dev qt6-base-private-dev libqt6svg6-dev libqt6charts6-dev qt6-multimedia-dev libqt6opengl6-dev libboost-dev libboost-filesystem-dev libboost-system-dev libboost-context-dev libusb-1.0-0-dev libssl-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libzstd-dev liblz4-dev nasm autoconf pkg-config
+```
+
+```bash
+git clone --recursive https://github.com/dougchansan/mk8-recomp && cd mk8-recomp && ./scripts/build-suyu.sh
+```
+
+**Windows** — MSVC. `bootstrap.ps1` downloads the pinned glslang and Qt into
+`local/tools`; it also verifies a dump, so point `MK8R_ROM` at your own before
+running it, or place glslang and Qt there yourself and skip straight to
+`build-suyu.ps1`:
+
+```powershell
+git clone --recursive https://github.com/dougchansan/mk8-recomp; cd mk8-recomp; .\scripts\bootstrap.ps1; .\scripts\build-suyu.ps1
+```
+
+Both build scripts take `--clean` / `-Clean` to start from scratch and
+`--configure` / `-Configure` to force a reconfigure. If you cloned without
+`--recursive`, run `git submodule update --init --recursive` first; the scripts
+stop with that instruction rather than failing inside cmake.
+
+Building a generated module into a loadable image is a separate step, once you
+have exported one locally:
+
+```bash
+./scripts/build-recomp.sh main       # Windows: .\scripts\build-recomp.ps1 -Module main
+```
+
+Paths come from the environment — `MK8R_ROOT`, `MK8R_ROM`, `MK8R_TARGET`,
+`MK8R_PACKAGE` — and default to the repository root where they can. Nothing is
+hardcoded to a particular machine.
+
 ## Start here
 
 1. [`docs/suyu-recompiler-findings.md`](docs/suyu-recompiler-findings.md) — what

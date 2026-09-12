@@ -10,6 +10,10 @@ firmware/
 local/
 generated/
 traces/
+# Per-target working directories. Coverage manifests written here quote
+# instruction encodings and addresses out of the game, so this is game-derived
+# output like generated/ and traces/, not documentation.
+targets/
 build/
 exefs/
 romfs/

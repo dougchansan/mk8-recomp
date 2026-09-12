@@ -26,6 +26,8 @@ third_party/*
 # meant the modified tree existed only on one disk and the patch files under
 # src/patches were a hand-reconstructed substitute for it.
 !third_party/suyu
+__pycache__/
+*.pyc
 *.obj
 *.exe
 *.dll

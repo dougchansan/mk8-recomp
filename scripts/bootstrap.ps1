@@ -7,7 +7,8 @@ param(
     [string]$Root = $env:MK8R_ROOT,
     [string]$Game = $env:MK8R_ROM,
     [string]$ExpectedSha = 'REDACTED',
-    [switch]$SkipHash
+    [switch]$SkipHash,
+    [switch]$SkipGame
 )
 
 # $PSScriptRoot is not populated while parameter defaults are bound under
@@ -21,19 +22,26 @@ $QtVersion  = '6.9.3'
 
 # --- input verification -----------------------------------------------------
 # The containing directory also ends in .xci, so every path touch is -LiteralPath.
+#
+# -SkipGame exists because everything below this block is toolchain setup: a
+# machine can be prepared before a dump is on it.
 
-if (-not (Test-Path -LiteralPath $Game)) { throw "Game dump not found: $Game" }
-$item = Get-Item -LiteralPath $Game
-Write-Host "ROM  : $($item.FullName)"
-Write-Host "Size : $($item.Length) bytes"
+if ($SkipGame -or -not $Game) {
+    Write-Host 'ROM  : not supplied, skipping verification (-SkipGame)'
+} else {
+    if (-not (Test-Path -LiteralPath $Game)) { throw "Game dump not found: $Game" }
+    $item = Get-Item -LiteralPath $Game
+    Write-Host "ROM  : $($item.FullName)"
+    Write-Host "Size : $($item.Length) bytes"
 
-if (-not $SkipHash) {
-    Write-Host 'Hashing (15 GiB, takes a minute)...'
-    $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $Game).Hash
-    if ($sha -ne $ExpectedSha) {
-        throw "SHA-256 mismatch.`n  expected $ExpectedSha`n  actual   $sha"
+    if (-not $SkipHash) {
+        Write-Host 'Hashing (15 GiB, takes a minute)...'
+        $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $Game).Hash
+        if ($sha -ne $ExpectedSha) {
+            throw "SHA-256 mismatch.`n  expected $ExpectedSha`n  actual   $sha"
+        }
+        Write-Host "SHA256: $sha (matches)" -ForegroundColor Green
     }
-    Write-Host "SHA256: $sha (matches)" -ForegroundColor Green
 }
 
 # --- directories ------------------------------------------------------------
@@ -45,14 +53,23 @@ foreach ($d in 'docs','scripts','src\runtime','src\bridge','src\instrumentation'
 
 # --- pinned upstream --------------------------------------------------------
 
+# third_party/suyu is a submodule of the fork, pinned by the superproject. A
+# clone here is only the fallback for a tree that was never a git checkout -
+# checking out $SuyuCommit unconditionally would throw away the fork's commits.
 $SuyuSrc = Join-Path $Root 'third_party\suyu'
-if (-not (Test-Path -LiteralPath (Join-Path $SuyuSrc '.git'))) {
-    git clone --quiet https://github.com/suyu-emu/suyu-v0.0.4.git $SuyuSrc
+if (Test-Path -LiteralPath (Join-Path $Root '.gitmodules')) {
+    git -C $Root submodule update --init --recursive --jobs 8
+} elseif (Test-Path -LiteralPath (Join-Path $SuyuSrc '.git')) {
+    Push-Location $SuyuSrc
+    git checkout --quiet $SuyuCommit
+    git submodule update --init --recursive --depth 1 --jobs 8
+    Pop-Location
+} else {
+    git clone --quiet https://github.com/dougchansan/suyu-v0.0.4.git -b mk8-recomp $SuyuSrc
+    Push-Location $SuyuSrc
+    git submodule update --init --recursive --depth 1 --jobs 8
+    Pop-Location
 }
-Push-Location $SuyuSrc
-git checkout --quiet $SuyuCommit
-git submodule update --init --recursive --depth 1 --jobs 8
-Pop-Location
 
 # --- glslang ----------------------------------------------------------------
 # suyu needs glslangValidator to compile its host shaders. That normally means
@@ -63,14 +80,17 @@ Pop-Location
 # glslang 16.x renamed the executable to glslang.exe, so build-suyu.ps1 passes
 # -DGLSLANGVALIDATOR explicitly instead of relying on find_program.
 
+#
+# The asset is fetched over plain HTTPS rather than through `gh`: the release
+# is public, and gh would demand an authenticated CLI on a fresh machine.
+
 $GlslangExe = Join-Path $Root 'local\tools\glslang\bin\glslang.exe'
 if (-not (Test-Path -LiteralPath $GlslangExe)) {
-    Push-Location (Join-Path $Root 'local\tools')
-    gh release download $GlslangTag --repo KhronosGroup/glslang `
-        --pattern "glslang-$GlslangTag-windows-x86_64-release.zip" --clobber
-    Expand-Archive -LiteralPath "glslang-$GlslangTag-windows-x86_64-release.zip" `
-        -DestinationPath 'glslang' -Force
-    Pop-Location
+    $zipName = "glslang-$GlslangTag-windows-x86_64-release.zip"
+    $zip = Join-Path $Root "local\tools\$zipName"
+    Invoke-WebRequest -UseBasicParsing -OutFile $zip `
+        "https://github.com/KhronosGroup/glslang/releases/download/$GlslangTag/$zipName"
+    Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $Root 'local\tools\glslang') -Force
 }
 & $GlslangExe --version | Select-Object -First 1
 

@@ -61,6 +61,17 @@ fi
 # MSVC does. On a 24-thread box with 23 GB that is enough to invoke the OOM
 # killer partway through a link, so cap parallelism by available memory rather
 # than by core count.
+# suyu's host_shaders CMakeLists still looks for glslangValidator by name.
+# glslang 16 dropped that executable, so on a distro shipping it the configure
+# aborts with "Required program `glslangValidator` not found" even though the
+# compiler is installed - point the cache variable at whichever name exists.
+GLSLANG="${GLSLANG:-$(command -v glslangValidator || command -v glslang || true)}"
+[ -n "$GLSLANG" ] || {
+    echo "glslangValidator not found - install your distro's glslang package" >&2
+    echo "(glslang-tools on Debian/Ubuntu, glslang elsewhere)" >&2
+    exit 1
+}
+
 mem_gb=$(awk '/MemTotal/ {printf "%d", $2/1048576}' /proc/meminfo)
 cores=$(nproc)
 jobs=$(( mem_gb / 2 ))
@@ -73,6 +84,7 @@ if [ "$configure" = 1 ] || [ ! -f "$BUILD/build.ninja" ]; then
     "$CMAKE" -S "$SRC" -B "$BUILD" -G Ninja \
         -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
         -DENABLE_QT=ON \
+        -DGLSLANGVALIDATOR="$GLSLANG" \
         -DYUZU_USE_BUNDLED_QT=OFF \
         -DYUZU_CMD=ON \
         -DYUZU_TESTS=OFF \

@@ -18,9 +18,16 @@
 #     so a one-second poll overshoots by a different ~700 frames each run and
 #     puts that same spread straight back.
 #
-# Take the median: the replay occasionally diverges, and when it does cycles and
-# instructions both rise together while IPC holds - that is the guest doing
-# different work, not the measurement wobbling.
+# Reps are written to /tmp/cyc-<label>.tsv as well as printed, so a run can be
+# filtered afterwards. Filter on Mins/frame, not on cycles: when the replay
+# diverges it executes a different amount of work, and cycles and instructions
+# rise together while IPC holds. A rep whose Mins/frame is off the median did
+# different work and does not belong in the same average - averaging it in is
+# what leaves a 6-10% spread in a metric meant to resolve a few percent.
+#
+#   awk -F'	' 'NR>1{print}' /tmp/cyc-<label>.tsv | sort -k3 -n
+#
+# Take the median of the reps that survive that filter.
 set -euo pipefail
 
 . "$HOME/.mk8r-env"
@@ -89,15 +96,24 @@ for i in $(seq 1 "$REPS"); do
     pkill -x suyu 2>/dev/null || true
     wait "$runner" 2>/dev/null || true
 
-    python3 - "$ARM" "$i" "$L" "${f0:-0}" "${f1:-0}" "${cyc:-0}" "${ins:-0}" <<'PY'
+    python3 - "$ARM" "$i" "$L" "${f0:-0}" "${f1:-0}" "${cyc:-0}" "${ins:-0}" "$LABEL" <<'PY'
+import pathlib
 import sys
-arm, i, load, f0, f1, cyc, ins = sys.argv[1:8]
+arm, i, load, f0, f1, cyc, ins, label = sys.argv[1:9]
 f0, f1, cyc, ins = int(f0), int(f1), int(cyc), int(ins)
 d = f1 - f0
 if d <= 0 or cyc <= 0:
     print(f"{arm} rep{i} FAILED range={f0}->{f1} cycles={cyc}")
 else:
+    mcyc, mins = cyc / d / 1e6, ins / d / 1e6
     print(f"{arm:8s} rep{i} load={load:5s} {f0}->{f1} ({d} frames) "
-          f"Mcyc/frame={cyc/d/1e6:8.4f} Mins/frame={ins/d/1e6:8.4f} IPC={ins/cyc:.3f}")
+          f"Mcyc/frame={mcyc:8.4f} Mins/frame={mins:8.4f} IPC={ins/cyc:.3f}")
+    tsv = pathlib.Path(f"/tmp/cyc-{label}.tsv")
+    if not tsv.exists():
+        tsv.write_text("arm	rep	mcyc_frame	mins_frame	ipc	load	frames
+")
+    with tsv.open("a") as f:
+        f.write(f"{arm}	{i}	{mcyc:.4f}	{mins:.4f}	{ins/cyc:.4f}	{load}	{d}
+")
 PY
 done

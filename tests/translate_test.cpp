@@ -206,6 +206,12 @@ int main() {
         Case{"crc32cb w8, w8, w9", 0x1AC95108u},
         Case{"faddp s3, v5.2s", 0x7E30D8A3u},
         Case{"faddp d0, v1.2d", 0x7E70D820u},
+        Case{"sha256su0 v1.4s, v2.4s", 0x5E282841u},
+        Case{"sha256su1 v1.4s, v3.4s, v0.4s", 0x5E006061u},
+        Case{"st2 {v4.2s, v5.2s}, [x0], #16", 0x0C9F8804u},
+        Case{"st4 {v16.2s-v19.2s}, [x13]", 0x0C0009B0u},
+        Case{"ld2 {v0.16b, v1.16b}, [x12]", 0x4C408180u},
+        Case{"ld1 {v0.16b, v1.16b}, [x12]", 0x4C40A180u},
     };
 
     std::printf("emitter decode coverage\n\n");

@@ -51,13 +51,25 @@ $admin = ([Security.Principal.WindowsPrincipal] `
 
 # Windows ships App Execution Alias stubs under WindowsApps - python.exe is one
 # - which resolve through Get-Command and then open the Store instead of
-# running anything. They are zero-byte reparse points, so size tells them apart
-# from a real install without executing them and popping the Store open.
+# running anything. They are zero-byte reparse points.
+#
+# Size alone is not enough to spot them: winget installs portable packages
+# (ninja among them) as symlinks under WinGet\Links, and those report zero
+# length too, so a size-only test rejects a package that installed correctly.
+# The stubs are distinguished by living under WindowsApps as well.
+#
+# A genuine Store-installed Python is also an alias there and would be called
+# absent, which costs an extra install of a real Python. That is the safe
+# direction to be wrong in: the other way fails later inside cmake, where the
+# cause is no longer visible.
 function Test-RealCommand ($Name) {
     $c = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue |
          Select-Object -First 1
     if (-not $c) { return $false }
-    try { if ((Get-Item -LiteralPath $c.Source).Length -eq 0) { return $false } } catch { }
+    try {
+        $i = Get-Item -LiteralPath $c.Source -Force
+        if ($i.Length -eq 0 -and $c.Source -like '*\WindowsApps\*') { return $false }
+    } catch { }
     return $true
 }
 

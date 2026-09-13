@@ -187,6 +187,17 @@ int main() {
         Case{"ld1 {v1.b}[5], [x2]", 0x0D401441u},
         Case{"ld1 {v3.d}[1], [x4]", 0x4D408483u},
         Case{"ld1 {v1.s}[0], [x8]", 0x0D408101u},
+        Case{"bit v2.16b, v1.16b, v0.16b", 0x6EA01C22u},
+        Case{"bif v2.16b, v1.16b, v0.16b", 0x6EE01C22u},
+        Case{"bsl v2.16b, v1.16b, v0.16b", 0x6E601C22u},
+        Case{"eor v2.16b, v1.16b, v0.16b", 0x6E201C22u},
+        Case{"xtn v0.4h, v0.4s", 0x0E612800u},
+        Case{"xtn2 v16.8h, v7.4s", 0x4E6128F0u},
+        Case{"fneg v0.2d, v0.2d", 0x6EE0F800u},
+        Case{"fneg v0.4s, v0.4s", 0x6EA0F800u},
+        Case{"fabs v0.4s, v0.4s", 0x4EA0F800u},
+        Case{"fcvtzu v3.2s, v3.2s", 0x2EA1B863u},
+        Case{"fcvtzs v3.4s, v3.4s", 0x4EA1B863u},
     };
 
     std::printf("emitter decode coverage\n\n");

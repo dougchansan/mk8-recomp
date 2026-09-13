@@ -51,6 +51,9 @@ skipped rather than aborting the install:
 curl -fsSL https://raw.githubusercontent.com/dougchansan/mk8-recomp/main/scripts/setup-linux.sh | bash
 ```
 
+The script is bash, and Alpine and Void do not ship bash — install it first there
+(`apk add bash`, `xbps-install -y bash`). Every other distro tested has it.
+
 **Windows** — an Administrator PowerShell, because the MSVC C++ toolset needs
 one. Everything comes from `winget`; an existing Visual Studio with the C++
 workload is reused rather than duplicated:

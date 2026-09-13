@@ -78,9 +78,9 @@ pacman)
           qt6-base qt6-svg qt6-charts qt6-multimedia
           boost libusb openssl ffmpeg zstd lz4" ;;
 zypper)
-    PKGS="gcc gcc-c++ make pkg-config git curl cmake ninja nasm autoconf python3 python3-pip glslang
+    PKGS="gcc gcc-c++ make pkg-config git curl cmake ninja nasm autoconf python3 python3-pip glslang-devel
           qt6-base-devel qt6-base-private-devel qt6-svg-devel qt6-charts-devel qt6-multimedia-devel
-          libboost_headers-devel libboost_filesystem-devel libboost_system-devel libboost_context-devel
+          libboost_headers-devel libboost_filesystem-devel libboost_context-devel
           libusb-1_0-devel libopenssl-devel
           libavcodec-devel libavformat-devel libavutil-devel libswscale-devel
           libzstd-devel liblz4-devel Mesa-libGL-devel" ;;
@@ -136,6 +136,10 @@ EOF
     case "$PM" in
         apt)    $SUDO apt-get update -qq ;;
         pacman) $SUDO pacman -Sy --noconfirm >/dev/null ;;
+        # xbps refuses to install anything while xbps itself is older than the
+        # repository's copy, and says so instead of proceeding. Update it first.
+        xbps)   $SUDO xbps-install -Sy >/dev/null 2>&1 || true
+                $SUDO xbps-install -uy xbps >/dev/null 2>&1 || true ;;
     esac
 
     # One transaction where it works. Package names drift between releases -
@@ -151,6 +155,11 @@ EOF
         if [ -n "$missing" ]; then
             warn "not available on this release:$missing"
             warn 'the build will say so if any of them was actually needed'
+            # On Void a system older than the repository cannot take new
+            # packages at all - the transaction aborts on a broken dependency
+            # rather than on a missing one. A full upgrade is the user's call,
+            # not this script's, so say so rather than doing it.
+            [ "$PM" = xbps ] && warn 'on Void this usually means the system is behind the repository: run `sudo xbps-install -Suy`, then re-run this script'
         fi
     fi
     say 'dependencies installed'

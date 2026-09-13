@@ -28,7 +28,9 @@ while [ $# -gt 0 ]; do
 done
 
 EXE="$ROOT/build/suyu/bin/suyu"
-RECOMP_IN="$ROOT/build/recomp/$TARGET"
+# Overridable so two module trees can be interleaved in one round rather than
+# compared across rounds, which the load on this box makes meaningless.
+RECOMP_IN="${RECOMP_IN:-$ROOT/build/recomp/$TARGET}"
 [ -x "$EXE" ] || { echo "not built: $EXE" >&2; exit 1; }
 [ -f "$ROM" ] || { echo "no rom: $ROM" >&2; exit 1; }
 

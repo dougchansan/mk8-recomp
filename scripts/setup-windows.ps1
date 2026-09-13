@@ -49,13 +49,28 @@ $admin = ([Security.Principal.WindowsPrincipal] `
 # and $ErrorActionPreference does not cover native exit codes, so each install
 # is checked explicitly. A missing command is the real test either way.
 
+# Windows ships App Execution Alias stubs under WindowsApps - python.exe is one
+# - which resolve through Get-Command and then open the Store instead of
+# running anything. They are zero-byte reparse points, so size tells them apart
+# from a real install without executing them and popping the Store open.
+function Test-RealCommand ($Name) {
+    $c = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue |
+         Select-Object -First 1
+    if (-not $c) { return $false }
+    try { if ((Get-Item -LiteralPath $c.Source).Length -eq 0) { return $false } } catch { }
+    return $true
+}
+
 function Install-Winget ($Id, $Probe, $Override) {
-    if ($Probe -and (Get-Command $Probe -ErrorAction SilentlyContinue)) {
+    if ($Probe -and (Test-RealCommand $Probe)) {
         Say "$Probe already installed"
         return
     }
     Say "installing $Id"
-    $wargs = @('install', '--id', $Id, '--exact', '--silent',
+    # --source winget is not optional: when a package also matches in msstore,
+    # winget refuses the install and asks for a source rather than picking one,
+    # so without this every install fails while the script carries on.
+    $wargs = @('install', '--id', $Id, '--exact', '--source', 'winget', '--silent',
                '--accept-package-agreements', '--accept-source-agreements',
                '--disable-interactivity')
     if ($Override) { $wargs += @('--override', $Override) }
@@ -63,6 +78,15 @@ function Install-Winget ($Id, $Probe, $Override) {
     # 0x8A150061 = already installed, 0x8A15002B = no applicable upgrade.
     if ($LASTEXITCODE -notin 0, -1978335135, -1978335189) {
         Warn "winget returned $LASTEXITCODE for $Id"
+    }
+    # Whatever winget reported, the package either landed or it did not. Fail
+    # here rather than three steps later inside cmake, where the cause is gone.
+    if ($Probe) {
+        $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
+                    [Environment]::GetEnvironmentVariable('Path', 'User')
+        if (-not (Test-RealCommand $Probe)) {
+            throw "$Id did not install - '$Probe' is still not on PATH. Install it by hand and re-run."
+        }
     }
 }
 

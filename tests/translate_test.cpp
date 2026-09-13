@@ -198,6 +198,14 @@ int main() {
         Case{"fabs v0.4s, v0.4s", 0x4EA0F800u},
         Case{"fcvtzu v3.2s, v3.2s", 0x2EA1B863u},
         Case{"fcvtzs v3.4s, v3.4s", 0x4EA1B863u},
+        Case{"aesimc v1.16b, v1.16b", 0x4E287821u},
+        Case{"pmull v0.1q, v1.1d, v0.1d", 0x0EE0E020u},
+        Case{"pmull2 v8.1q, v8.2d, v0.2d", 0x4EE0E108u},
+        Case{"crc32b w8, w8, w9", 0x1AC94108u},
+        Case{"crc32x w8, w8, x12", 0x9ACC4D08u},
+        Case{"crc32cb w8, w8, w9", 0x1AC95108u},
+        Case{"faddp s3, v5.2s", 0x7E30D8A3u},
+        Case{"faddp d0, v1.2d", 0x7E70D820u},
     };
 
     std::printf("emitter decode coverage\n\n");
@@ -216,6 +224,8 @@ int main() {
         Case{"fmulx v2.4s, v7.4s, v0.s[1]", 0x6FA090E2u},
         Case{"ld2r {v0.4s, v1.4s}, [x8]", 0x4D60C900u},
         Case{"ld2 {v0.s, v1.s}[0], [x0]", 0x0D608000u},
+        Case{"aese v1.16b, v2.16b", 0x4E284841u},
+        Case{"pmull v0.8h, v1.8b, v0.8b", 0x0E20E020u},
         Case{"uqshl v2.4s, v2.4s, v4.4s", 0x6EA44C42u},
         Case{"urshl v2.4s, v2.4s, v4.4s", 0x6EA45442u},
         Case{"ushl d0, d1, d2", 0x7EE24420u},

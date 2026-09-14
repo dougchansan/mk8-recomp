@@ -42,19 +42,46 @@ emitter cannot translate.
 
 ## What it means for Mario Kart 8 Deluxe
 
-MK8D is an AArch32 title (NPDM `flags=0x04`). It is therefore outside what this
-recompiler can translate, and no amount of emitter coverage work changes that.
-The project began aimed at it, which is where the name comes from; the working
-targets since have been AArch64 titles, and the tooling takes the target from
-`MK8R_TARGET` rather than assuming one.
+**Corrected 2026-09-13.** This section previously said the title was AArch32 and
+therefore permanently out of scope. That is true of one of its two programs and
+false of the one that runs.
 
-Supporting MK8D would mean writing an AArch32 front end — a separate decoder and
-a separate translation strategy, not an extension of the existing one. That is a
-project in its own right and is not currently planned.
+The cartridge carries a base program flagged AArch32, and the v4.0.0 update
+carries a program flagged AArch64. Booting the cartridge normally loads both
+NPDMs and runs the update:
+
+```
+DIAG NPDM name='main.npdm' ... flags=0x04 is64=0    <- cartridge base
+DIAG NPDM name='main.npdm' ... flags=0x07 is64=1    <- update, and what loads
+```
+
+Both were booted to confirm it. With the update applied the AArch64 program
+loads and renders; with the update disabled through `DisabledAddOns` the
+AArch32 base loads and also renders, on the 32-bit JIT. Neither fails to boot —
+the difference is only which instruction set is executing, and therefore whether
+this recompiler has anything to say about it.
+
+So the working target is the update, it is AArch64, and it is what every
+measurement in this project has been taken against. The evidence that it is
+genuinely being translated rather than misdecoded is in the numbers themselves:
+a misdecoded module produces a flood of unhandled instructions, and this one
+produces almost none, executes billions of blocks, and completes a recorded
+replay.
+
+Export from the update, not the cartridge. `MK8R_EXPORT_ROM` exists for exactly
+this reason and is separate from `MK8R_ROM` for exactly this reason.
+
+Supporting the *base* program would still mean writing an AArch32 front end — a
+separate decoder and a separate translation strategy, not an extension of the
+existing one. That remains unplanned, and there is no reason to want it: the
+update supersedes the base.
 
 ## Consequences for reading old measurements
 
-Any measurement taken against an AArch32 target before this was understood is
-invalid and should not be compared against current numbers. Coverage figures,
-block counts and instruction totals are all affected. Timing measurements taken
-through the fallback path are measuring the JIT, not the recompiler.
+Any measurement taken against an AArch32 target is invalid and should not be
+compared against current numbers. Coverage figures, block counts and instruction
+totals are all affected, and timing taken through the fallback path measures the
+JIT rather than the recompiler.
+
+The probe still matters for any *new* target, and for any title where no update
+is installed. Check `is64` before spending an export on it.

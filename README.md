@@ -1,5 +1,11 @@
 # mk8-recomp
 
+**Static rendering fix:** reciprocal and reciprocal-square-root estimates were
+decoded as integer conversions, corrupting 3D transforms. Update to the fixed
+emitter, then **re-export and rebuild every static module**. Updating the emulator
+alone cannot repair previously generated code. See
+[the upgrade instructions](docs/static-rendering-fix.md).
+
 Static recompilation of Nintendo Switch AArch64 CPU code to native x86-64, using
 [suyu v0.0.4](https://github.com/suyu-emu/suyu-v0.0.4)'s AOT recompiler as the
 starting point and its HLE stack for everything above the CPU.
@@ -87,9 +93,11 @@ there, and nothing executes them.
 
 **What this is not.** There is no differential harness running both engines and
 stopping at the first divergence in guest register state. Until there is, the
-correctness claim is "a long recorded replay produces the same frame count and
-the same visible result", which is strong evidence and not proof. That harness
-is the next item on the roadmap.
+historical replay measurements establish execution coverage and frame counts,
+not visual correctness. The rendering fix now has a separate visual A/B check:
+the original arithmetic corrupts geometry, native estimates render correctly,
+and restoring the original arithmetic restores the corruption. This does not
+establish correctness for every instruction or title.
 
 ## Doing a JIT-free build
 

@@ -5,8 +5,10 @@ Static recompilation of Nintendo Switch AArch64 CPU code to native x86-64, using
 starting point and its HLE stack for everything above the CPU.
 
 **The recompiled image now runs without a JIT behind it.** A full recorded input
-replay executes entirely from statically recompiled C, reaching the dynamic
-recompiler once — for one address — across the whole run.
+replay executes entirely from statically recompiled C — 1.8 billion blocks, zero
+transitions to the dynamic recompiler. Run with the fallback refused outright
+(`SUYU_RECOMP_STRICT=1`) the replay completes unchanged, so this is not a JIT
+that happened not to be needed: nothing ever asks for it.
 
 The emitter is **AArch64-only** and the pipeline is target-agnostic: which title
 is exported comes from `MK8R_TARGET`, and nothing is hardcoded to one. Check a
@@ -70,6 +72,7 @@ its own, so each piece is checked against something independent of the emitter.
 | AES | generated S-box against FIPS-197, and a round trip | matches |
 | saturating fixed-point conversion | 16.7M float values plus every boundary, against the form it replaced | 0 mismatches |
 | dispatch coverage | every address the dispatcher could not resolve is recorded and fed back as a discovery root | 0 misses |
+| JIT independence | the same replay with the fallback refused outright, so reaching it would be a fatal error naming the address | completes, 0 requests |
 | decode coverage | fraction of decoded instructions with no translation | 0.002%, all of them non-instructions |
 
 The crypto families needed the end-to-end check because there is no software
@@ -144,6 +147,14 @@ The coverage report written to `~/.local/share/suyu/log/recomp_coverage.txt`
 says whether it worked. `static -> JIT` is the number that matters; a JIT-free
 image reports 0 lookup misses and 0 unimplemented opcodes.
 
+**6. Prove it.** A count of zero is an observation about one run. Run it again
+with the fallback refused, and reaching the JIT becomes a fatal error that names
+the address rather than a silent transition:
+
+```bash
+SUYU_RECOMP_STRICT=1 ./scripts/run-hybrid.sh --tas --unlimited
+```
+
 ### Knobs
 
 | variable | what it does |
@@ -154,6 +165,7 @@ image reports 0 lookup misses and 0 unimplemented opcodes.
 | `SUYU_RECOMP_DIR` | directory of built module images to load |
 | `SUYU_RECOMP_CHAIN_BUDGET` | blocks a chain may run before returning to the dispatcher |
 | `RECOMP_OPT_FLAGS` | optimisation flags for the generated block bodies |
+| `SUYU_RECOMP_STRICT` | refuse the JIT fallback; an uncovered address becomes a fatal error instead of a silent transition |
 
 The export can also be driven from the emulator directly:
 
@@ -166,7 +178,8 @@ The export can also be driven from the emulator directly:
 - [x] **Dispatch.** Reach every block that executes, including those only
       reachable through computed targets. Done: 0 lookup misses, via recorded
       roots fed back into discovery.
-- [x] **Run without a JIT.** Done: one transition across a full replay.
+- [x] **Run without a JIT.** Done: zero transitions across a full replay, and
+      the replay still completes with the fallback refused outright.
 - [x] **Beat the JIT.** Done: 1.70x hybrid, 1.55x JIT-free.
 - [ ] **Prove it, rather than demonstrate it.** A differential harness running
       both engines in lockstep and stopping at the first divergence in guest

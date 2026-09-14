@@ -27,7 +27,9 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-EXE="$ROOT/build/suyu/bin/suyu"
+# Overridable so a differently-configured emulator - a build with no JIT in it,
+# say - can be run against the same images without swapping binaries around.
+EXE="${EXE:-$ROOT/build/suyu/bin/suyu}"
 # Overridable so two module trees can be interleaved in one round rather than
 # compared across rounds, which the load on this box makes meaningless.
 RECOMP_IN="${RECOMP_IN:-$ROOT/build/recomp/$TARGET}"

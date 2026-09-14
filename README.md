@@ -4,11 +4,11 @@ Static recompilation of Nintendo Switch AArch64 CPU code to native x86-64, using
 [suyu v0.0.4](https://github.com/suyu-emu/suyu-v0.0.4)'s AOT recompiler as the
 starting point and its HLE stack for everything above the CPU.
 
-**The recompiled image now runs without a JIT behind it.** A full recorded input
-replay executes entirely from statically recompiled C — 1.8 billion blocks, zero
-transitions to the dynamic recompiler. Run with the fallback refused outright
-(`SUYU_RECOMP_STRICT=1`) the replay completes unchanged, so this is not a JIT
-that happened not to be needed: nothing ever asks for it.
+**There is no JIT.** Built with `-DSUYU_NO_JIT=ON` the emulator contains no
+dynamic recompiler at all — `libdynarmic.a` is never built and the binary has
+zero `Dynarmic::` symbols — and a full recorded input replay still completes:
+1.7 billion blocks of statically recompiled C, nothing to fall back to, nothing
+asking for it.
 
 The emitter is **AArch64-only** and the pipeline is target-agnostic: which title
 is exported comes from `MK8R_TARGET`, and nothing is hardcoded to one. Check a
@@ -73,6 +73,7 @@ its own, so each piece is checked against something independent of the emitter.
 | saturating fixed-point conversion | 16.7M float values plus every boundary, against the form it replaced | 0 mismatches |
 | dispatch coverage | every address the dispatcher could not resolve is recorded and fed back as a discovery root | 0 misses |
 | JIT independence | the same replay with the fallback refused outright, so reaching it would be a fatal error naming the address | completes, 0 requests |
+| no JIT at all | the same replay on a binary built without dynarmic linked in | completes, 0 `Dynarmic::` symbols |
 | decode coverage | fraction of decoded instructions with no translation | 0.002%, all of them non-instructions |
 
 The crypto families needed the end-to-end check because there is no software
@@ -155,6 +156,26 @@ the address rather than a silent transition:
 SUYU_RECOMP_STRICT=1 ./scripts/run-hybrid.sh --tas --unlimited
 ```
 
+### No JIT at all
+
+The steps above produce an image that does not *use* the JIT. To build an
+emulator that does not *contain* one:
+
+```bash
+cmake -S third_party/suyu -B build/suyu-nojit -G Ninja -DSUYU_NO_JIT=ON ...
+```
+
+That drops dynarmic from every target, so the CPU comes entirely from
+statically recompiled images. Three things go with it, by design: a title
+without a complete static image has no engine that can run it, AArch32 titles
+cannot run at all, and the guest-facing `jit:u` plugin service is not
+registered — a title that asks for it gets "no such service" rather than a
+wrong answer.
+
+Keep the JIT-capable build around. It is the one that tells you *what* is
+missing when something is: a build with no JIT can only tell you that something
+was.
+
 ### Knobs
 
 | variable | what it does |
@@ -178,8 +199,9 @@ The export can also be driven from the emulator directly:
 - [x] **Dispatch.** Reach every block that executes, including those only
       reachable through computed targets. Done: 0 lookup misses, via recorded
       roots fed back into discovery.
-- [x] **Run without a JIT.** Done: zero transitions across a full replay, and
-      the replay still completes with the fallback refused outright.
+- [x] **Run without a JIT.** Done: zero transitions across a full replay, the
+      replay still completes with the fallback refused outright, and it still
+      completes on a binary with no dynamic recompiler linked into it.
 - [x] **Beat the JIT.** Done: 1.70x hybrid, 1.55x JIT-free.
 - [ ] **Prove it, rather than demonstrate it.** A differential harness running
       both engines in lockstep and stopping at the first divergence in guest

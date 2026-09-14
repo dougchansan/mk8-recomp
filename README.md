@@ -284,8 +284,8 @@ locally:
 
 ## The emulator
 
-`third_party/suyu` is a submodule of [`dougchansan/suyu-v0.0.4`][fork], pinned to
-an exact commit.
+`third_party/suyu` is a submodule of [`dougchansan/suyu-v0.0.4`][fork], branch
+`mk8-recomp`, pinned to an exact commit.
 
 suyu was archived upstream, so this is a continuation rather than a temporary
 divergence: the name and numbering carry on, `0.0.4` becomes `0.0.5`. The base
@@ -296,7 +296,7 @@ licensing, and the significant changes.
 The change set is:
 
 ```
-git -C third_party/suyu diff d1d09321d7ab84252291e05b3efbc8a8dfa57481..main
+git -C third_party/suyu diff d1d09321d7ab84252291e05b3efbc8a8dfa57481..mk8-recomp
 ```
 
 Several of those commits fix defects in suyu itself and are not
@@ -310,8 +310,8 @@ so it built on one machine. That repository is *not* archived, so unlike the
 suyu changes it could reasonably go upstream as a PR.
 
 [dyn]: https://github.com/dougchansan/dynarmic/tree/mk8-recomp
-[fork]: https://github.com/dougchansan/suyu-v0.0.4
-[prov]: https://github.com/dougchansan/suyu-v0.0.4/blob/main/PROVENANCE.md
+[fork]: https://github.com/dougchansan/suyu-v0.0.4/tree/mk8-recomp
+[prov]: https://github.com/dougchansan/suyu-v0.0.4/blob/mk8-recomp/PROVENANCE.md
 
 ## Licence
 

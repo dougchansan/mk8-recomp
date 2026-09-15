@@ -56,7 +56,9 @@ else
     CMAKE_TARGET="recompiled_$MODULE"
 fi
 
-"$CMAKE" -S "$SRC" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DRECOMP_OPT_FLAGS="${RECOMP_OPT_FLAGS:--O1 -foptimize-sibling-calls}"
+"$CMAKE" -S "$SRC" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+    -DRECOMP_OPT_FLAGS="${RECOMP_OPT_FLAGS:--O1 -foptimize-sibling-calls}" \
+    -DCMAKE_C_FLAGS="-Werror=shift-count-overflow"
 start=$(date +%s)
 "$CMAKE" --build "$BUILD" --target "$CMAKE_TARGET" -- -j"$jobs"
 echo "=== built in $(( ($(date +%s) - start) / 60 )) min ==="

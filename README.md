@@ -1,230 +1,60 @@
 # mk8-recomp
 
-**Static rendering fix:** reciprocal and reciprocal-square-root estimates were
-decoded as integer conversions, corrupting 3D transforms. Update to the fixed
-emitter, then **re-export and rebuild every static module**. Updating the emulator
-alone cannot repair previously generated code. See
-[the upgrade instructions](docs/static-rendering-fix.md).
+[**suyu v0.0.9 � static experimental checkpoint**](https://github.com/dougchansan/suyu-v0.0.4/releases/tag/v0.0.9)
 
-Static recompilation of Nintendo Switch AArch64 CPU code to native x86-64, using
-[suyu v0.0.4](https://github.com/suyu-emu/suyu-v0.0.4)'s AOT recompiler as the
-starting point and its HLE stack for everything above the CPU.
+Ahead-of-time recompilation of Nintendo Switch AArch64 CPU code to native x86-64, using suyu's HLE stack for everything above the CPU. **Use Hybrid AOT + JIT for best performance.** Static execution is experimental: it runs tested title/menu/attract paths with no JIT, but loading and gameplay can be slower.
 
-**There is no JIT.** Built with `-DSUYU_NO_JIT=ON` the emulator contains no
-dynamic recompiler at all — `libdynarmic.a` is never built and the binary has
-zero `Dynarmic::` symbols — and a full recorded input replay still completes:
-1.7 billion blocks of statically recompiled C, nothing to fall back to, nothing
-asking for it.
-
-The emitter is **AArch64-only** and the pipeline is target-agnostic: which title
-is exported comes from `MK8R_TARGET`, and nothing is hardcoded to one. Check a
-new target's `is64` flag before spending an export on it — see
-[`docs/aarch32.md`](docs/aarch32.md).
-
-![The recompile pane](docs/images/recompile-pane.png)
-
-## Performance
-
-Fixed work, not frames per second at equal wall-clock: a recorded 10,692-frame
-input sequence is replayed at unlimited speed and timed to completion, so both
-engines execute the same guest work and the only variable is how fast they do
-it. Linux, Ryzen 9 5900X, GCC, four reps with the three arms interleaved inside
-each rep.
-
-| engine | reps (ms/frame) | mean | vs dynarmic |
-|---|---|---|---|
-| dynarmic (JIT only) | 2.800 2.842 2.812 2.793 | 2.812 | 1.00x |
-| hybrid (static + JIT) | 1.679 1.642 1.618 1.659 | **1.650** | **1.70x** |
-| JIT-free (static only) | 1.847 1.837 1.787 1.794 | **1.816** | **1.55x** |
-
-The distributions do not overlap. Every rep waits for the machine to go idle
-first and records the load average it ran under; a round taken under load is
-discarded rather than averaged in.
-
-The hybrid image is faster than the JIT-free one because two instruction
-families are deliberately left untranslated there: the JIT compiles those
-particular blocks better than the emitter does, and paying a transition to stay
-on it is cheaper than owning them. A JIT-free image has no such option, so it
-translates them and accepts the cost. Closing that 10% is the current work.
-
-### How it got there
-
-Each step measured the same way, interleaved against the build before it:
-
-| change | effect on the JIT-free build |
+| Mode | When to use it |
 |---|---|
-| per-thread executed-block counter | 10.7% |
-| resolve indirect branch targets inside the image | 7.6% |
-| resolve branch conditions and flag updates at translation time | 6.4% |
-| pair helpers for `LDP`/`STP` and 128-bit access | ~3% |
+| suyu static (Experimental) | Test ahead-of-time execution. The separate no-JIT host binaries contain no Dynarmic. |
+| Dynarmic JIT (Baseline) | Compare behavior and retain general compatibility. |
+| Hybrid AOT + JIT | Recommended for normal play and performance; uncovered code may use Dynarmic. |
 
-Measured and rejected: `-O2` on the generated modules, `-fno-stack-protector`, a
-branchless fixed-point conversion, and raising the block-chaining budget from 32
-to 256 with real tail calls. None of them moved the benchmark.
+[Release notes](https://github.com/dougchansan/suyu-v0.0.4/blob/v0.0.9/docs/releases/v0.0.9.md) explain the regular and `no-jit` downloads. **Regenerate older static modules for ABI 4.** Updating the host alone cannot update generated code. The earlier [rendering correction](docs/static-rendering-fix.md) remains included.
 
-## Correctness
+## What is verified
 
-There is no substitute for running the thing, but running it is not evidence on
-its own, so each piece is checked against something independent of the emitter.
+Guarded no-JIT runs reach controller prompts, menus, attract rendering and the race starting grid with zero fallback attempts. The latest race-start fixture is visually confirmed on Dynarmic. Static reaches the grid during a bounded idle observation after EOF; exact EOF image matching remains failed because progress is delayed. This is limited path coverage, not full-race or universal-library correctness.
 
-| what | how it is checked | result |
-|---|---|---|
-| instruction decode | 224 cases, every encoding assembled by `aarch64-linux-gnu-as` and confirmed with `objdump` before use | 224/224 |
-| decoder masks | negative cases pin each mask, so a mask that grew too wide and swallowed a neighbouring encoding fails the suite | included above |
-| condition codes | all 16 codes x all 16 flag states against the reference implementation | 0 mismatches |
-| NZCV | 8,000,324 add and subtract cases, both widths, edges and random | 0 mismatches |
-| SHA-1 | a real padded block driven through all six instructions, compared to the published digest of `"abc"` | matches |
-| SHA-256 | same, through the schedule and round instructions | matches |
-| AES | generated S-box against FIPS-197, and a round trip | matches |
-| saturating fixed-point conversion | 16.7M float values plus every boundary, against the form it replaced | 0 mismatches |
-| dispatch coverage | every address the dispatcher could not resolve is recorded and fed back as a discovery root | 0 misses |
-| JIT independence | the same replay with the fallback refused outright, so reaching it would be a fatal error naming the address | completes, 0 requests |
-| no JIT at all | the same replay on a binary built without dynarmic linked in | completes, 0 `Dynarmic::` symbols |
-| decode coverage | fraction of decoded instructions with no translation | 0.002%, all of them non-instructions |
+The no-JIT build uses `-DSUYU_NO_JIT=ON`. Dynarmic is excluded from its build graph and executable symbols; runtime telemetry also reports `jit_available=false`. Merely selecting static export mode in an ordinary host disables fallback in the generated launcher but does not remove the compiler from the ordinary host binary.
 
-The crypto families needed the end-to-end check because there is no software
-reference to compare against: the JIT implements them with the host's own
-hardware instructions and asserts on the CPU feature, so reading its source
-proves nothing about a C implementation.
+Synthetic tests cover decoder masks, integer/FP state, condition flags, crypto vectors, code guards, branch side entries and bounded module slices. The [differential harness](tests/differential_README.md) checks selected single instructions against Dynarmic; known oracle flag disagreements remain visible. Whole-block memory and concurrency equivalence remain open.
 
-"All of them non-instructions" means what is left is module header bytes that
-block discovery walks as though they were code. There is nothing to translate
-there, and nothing executes them.
+## What changed since v0.0.8
 
-**What this is not.** There is no differential harness running both engines and
-stopping at the first divergence in guest register state. Until there is, the
-historical replay measurements establish execution coverage and frame counts,
-not visual correctness. The rendering fix now has a separate visual A/B check:
-the original arithmetic corrupts geometry, native estimates render correctly,
-and restoring the original arithmetic restores the corruption. This does not
-establish correctness for every instruction or title.
+Automatic bundles validate title identity, hashes, ABI and code bytes. Library launches use the active hosted bundle. Per-CPU relocation initialization avoids the boot regression caused by sharing one process-pointer gate. ABI 4 exposes aligned instruction entries and runs a bounded nonrecursive loop inside each module to reduce host dispatch.
 
-## Doing a JIT-free build
+Recording and replay can be armed before the emulation thread starts. Exact command completion and screenshots are retained separately. See the [campaign summary and regression safeguards](docs/static-campaign.md) for why the old title-screen fixture was retired and how future changes are checked.
 
-The steps below assume a working checkout and your own legally dumped title.
-Paths come from the environment: `MK8R_ROOT`, `MK8R_TARGET`, `MK8R_PACKAGE`,
-`MK8R_ROM` (what you boot) and `MK8R_EXPORT_ROM` (what you export from).
+## Build and validate a static title
 
-Those last two are not the same thing and the difference matters. A cartridge
-can carry a base program built for a different architecture than the update that
-actually runs, in which case exporting from the boot image silently produces the
-wrong module set.
+Supply your configured local dumps, keys and firmware. The boot source can differ from the update executable being exported: `MK8R_ROM` is the boot path and `MK8R_EXPORT_ROM` is the matching export source. The emitter supports AArch64; [AArch32](docs/aarch32.md) remains out of scope.
 
-**1. Translate everything.** Two instruction families are off by default because
-they lose to the JIT. A JIT-free image has nothing to lose to, so turn them on:
+On the primary Windows workflow:
 
-```bash
-export SUYU_AOT_TRANSLATE_ALL=1
+```powershell
+.\scripts\build-suyu.ps1 -NoJit
+.\scripts\export-static-title.ps1 -Target $env:MK8R_TARGET -Rom $env:MK8R_EXPORT_ROM
+.\scripts\stage-static-title.ps1 -Target $env:MK8R_TARGET -TitleId <title-id>
 ```
 
-**2. Export, then build every module.**
+The exporter rebuilds the host before exporting, builds every module and rejects stale output. ABI 4 supplies aligned side entries in discovered fixed modules; an empty roots directory is the initial export. Miss recording remains useful for genuinely missing code.
 
-```bash
-./scripts/reexport-rebuild.sh
+```powershell
+.\scripts\playtest-static-title.ps1 -Target $env:MK8R_TARGET -Rom $env:MK8R_ROM `
+  -SuyuExe build\suyu-nojit\bin\suyu.exe -RequireNoJit -TasReplay `
+  -TasFixtureDirectory local\tas-fixtures\static-profile -TasObserveAfterSeconds 120
 ```
 
-This rebuilds the emulator, clears the previous export, runs a fresh one, and
-compiles each generated module. It refuses to report success if any built image
-is older than the emitter — every measurement this project has had to throw away
-was a build that silently did not happen.
+Keep baseline and static timing fixtures in separate local directories. The driver copies the chosen fixture for a run and preserves the existing recording. The idle observation is opt-in and cannot turn a failed exact-EOF test into a pass. Visual milestone review is still required. See [library playtesting](docs/library-playtesting.md) for recording, manifests and limitations.
 
-**3. Find what block discovery could not reach.** Discovery follows branches it
-can see, so a block only ever reached through a computed target is invisible to
-it and never gets emitted. Run once with the dispatcher recording every address
-it could not cover:
+## Performance and next work
 
-```bash
-SUYU_RECOMP_RECORD_MISSES=$MK8R_ROOT/local/roots ./scripts/run-hybrid.sh --tas --unlimited
-```
+Static remains slower in current observed loading and rendering paths. The Linux profiling work pins source and module hashes, waits for an idle machine and samples the actual current build. No current speedup ratio is claimed. Earlier ratios used an older emitter and a retired title-screen fixture; they should not be used to compare v0.0.9 gameplay.
 
-**4. Feed them back and re-export.**
+Functional timing profiles can differ. Performance comparisons must execute identical work, interleave arms within a round, record pre-run load below 1.0, and reject stale builds. Do not infer a small speedup from noise or compare differently timed replays as equivalent workloads.
 
-```bash
-SUYU_AOT_EXTRA_ROOTS=$MK8R_ROOT/local/roots ./scripts/reexport-rebuild.sh
-```
-
-Repeat 3 and 4 until a run records nothing new. A newly reachable block can
-expose further ones; in our case it converged on the fourth round.
-
-**5. Run it.**
-
-```bash
-SUYU_RECOMP_DIR=$MK8R_ROOT/build/recomp/$MK8R_TARGET ./scripts/run-hybrid.sh --tas --unlimited
-```
-
-The coverage report written to `~/.local/share/suyu/log/recomp_coverage.txt`
-says whether it worked. `static -> JIT` is the number that matters; a JIT-free
-image reports 0 lookup misses and 0 unimplemented opcodes.
-
-**6. Prove it.** A count of zero is an observation about one run. Run it again
-with the fallback refused, and reaching the JIT becomes a fatal error that names
-the address rather than a silent transition:
-
-```bash
-SUYU_RECOMP_STRICT=1 ./scripts/run-hybrid.sh --tas --unlimited
-```
-
-### No JIT at all
-
-The steps above produce an image that does not *use* the JIT. To build an
-emulator that does not *contain* one:
-
-```bash
-cmake -S third_party/suyu -B build/suyu-nojit -G Ninja -DSUYU_NO_JIT=ON ...
-```
-
-That drops dynarmic from every target, so the CPU comes entirely from
-statically recompiled images. Three things go with it, by design: a title
-without a complete static image has no engine that can run it, AArch32 titles
-cannot run at all, and the guest-facing `jit:u` plugin service is not
-registered — a title that asks for it gets "no such service" rather than a
-wrong answer.
-
-Keep the JIT-capable build around. It is the one that tells you *what* is
-missing when something is: a build with no JIT can only tell you that something
-was.
-
-### Knobs
-
-| variable | what it does |
-|---|---|
-| `SUYU_AOT_TRANSLATE_ALL` | translate the families that are off by default |
-| `SUYU_AOT_EXTRA_ROOTS` | directory of recorded addresses to seed block discovery |
-| `SUYU_RECOMP_RECORD_MISSES` | directory to record addresses the dispatcher could not cover |
-| `SUYU_RECOMP_DIR` | directory of built module images to load |
-| `SUYU_RECOMP_CHAIN_BUDGET` | blocks a chain may run before returning to the dispatcher |
-| `RECOMP_OPT_FLAGS` | optimisation flags for the generated block bodies |
-| `SUYU_RECOMP_STRICT` | refuse the JIT fallback; an uncovered address becomes a fatal error instead of a silent transition |
-
-The export can also be driven from the emulator directly:
-
-![A finished export](docs/images/export-complete.png)
-
-## Roadmap
-
-- [x] **Decode.** Translate the instruction set the title actually uses. Done:
-      the only gaps left are non-instructions.
-- [x] **Dispatch.** Reach every block that executes, including those only
-      reachable through computed targets. Done: 0 lookup misses, via recorded
-      roots fed back into discovery.
-- [x] **Run without a JIT.** Done: zero transitions across a full replay, the
-      replay still completes with the fallback refused outright, and it still
-      completes on a binary with no dynamic recompiler linked into it.
-- [x] **Beat the JIT.** Done: 1.70x hybrid, 1.55x JIT-free.
-- [ ] **Prove it, rather than demonstrate it.** A differential harness running
-      both engines in lockstep and stopping at the first divergence in guest
-      state. This is the gap between "runs correctly as far as anyone can see"
-      and "is correct".
-- [ ] **Close the JIT-free gap.** 1.55x against the hybrid build's 1.70x. The
-      remaining cost is guest memory access and the dispatcher, not the
-      translated arithmetic — individual generated blocks are each under 0.3% of
-      run time.
-- [ ] **One binary.** Link the runtime into the generated image so a recompiled
-      title runs without an emulator process around it.
-- [ ] **A second title.** The pipeline takes its target from the environment and
-      hardcodes nothing, but that has only been exercised against one.
-- [ ] **AArch32.** Not planned. It would mean a second decoder and a second
-      translation strategy, not an extension of this one.
+Next priorities are profiling-led optimization, reliable visual race-entry/full-race fixtures, broader per-title execution coverage, and block/memory/concurrency differential checks. Runtime-loaded NROs and arbitrary generated guest code remain outside the fixed-module builder.
 
 ## What this repository contains
 

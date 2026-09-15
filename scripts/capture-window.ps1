@@ -14,7 +14,9 @@ param(
     [string]$Out = '',
     [string]$OutDir = '',
     [int]$Repeat = 1,
-    [int]$IntervalSeconds = 10
+    [int]$IntervalSeconds = 10,
+    [int]$ProcessId = 0,
+    [switch]$Activate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -36,19 +38,41 @@ public class Win32Rect {
     public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int command);
+    [DllImport("user32.dll")]
+    public static extern bool BringWindowToTop(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y,
+                                           int width, int height, uint flags);
 }
 '@
 }
 
 function Get-SuyuWindow {
-    $p = Get-Process suyu -ErrorAction SilentlyContinue |
-         Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+    $p = if ($ProcessId -gt 0) {
+        Get-Process -Id $ProcessId -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowHandle -ne 0 }
+    } else {
+        Get-Process suyu -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+    }
     if (-not $p) { throw 'no suyu window found' }
     return $p
 }
 
 function Capture-One([string]$path) {
     $p = Get-SuyuWindow
+
+    if ($Activate) {
+        [Win32Rect]::ShowWindow($p.MainWindowHandle, 9) | Out-Null
+        [Win32Rect]::SetWindowPos($p.MainWindowHandle, [IntPtr](-1), 0, 0, 0, 0, 0x0013) | Out-Null
+        [Win32Rect]::BringWindowToTop($p.MainWindowHandle) | Out-Null
+        [Win32Rect]::SetForegroundWindow($p.MainWindowHandle) | Out-Null
+        Start-Sleep -Milliseconds 500
+    }
 
     # Never steal focus, and never capture unless suyu is already frontmost.
     #
@@ -61,7 +85,7 @@ function Capture-One([string]$path) {
     # Screen copy is still the method - PrintWindow does not capture the Vulkan
     # surface - so the only safe rule is to skip the shot when suyu is not on
     # top rather than to force it there.
-    if ([Win32Rect]::GetForegroundWindow() -ne $p.MainWindowHandle) {
+    if (-not $Activate -and [Win32Rect]::GetForegroundWindow() -ne $p.MainWindowHandle) {
         throw 'suyu is not the foreground window; skipping capture'
     }
 
@@ -89,6 +113,9 @@ function Capture-One([string]$path) {
         }
     }
     $bmp.Dispose()
+    if ($Activate) {
+        [Win32Rect]::SetWindowPos($p.MainWindowHandle, [IntPtr](-2), 0, 0, 0, 0, 0x0013) | Out-Null
+    }
 
     [pscustomobject]@{
         Path     = $path

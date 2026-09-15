@@ -24,7 +24,13 @@
 
 #include "core/recompiler/arm64_to_c.h"
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc == 2 && std::string_view{argv[1]} == "--all") {
+        suyu::recomp::g_translate_all = true;
+    } else if (argc != 1) {
+        std::fprintf(stderr, "usage: decode_sweep [--all]\n");
+        return 2;
+    }
     char line[64];
     while (std::fgets(line, sizeof(line), stdin)) {
         const unsigned long insn = std::strtoul(line, nullptr, 16);

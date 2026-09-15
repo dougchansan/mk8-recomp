@@ -35,6 +35,10 @@ if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
 
 $ErrorActionPreference = 'Stop'
 
+if ($Tas) {
+    throw '-Tas is retired: boot-synchronized replays are fixed-work EOF tests; use playtest-static-title.ps1 -TasReplay'
+}
+
 $Exe      = Join-Path $Root 'build\suyu\bin\suyu.exe'
 $RecompIn = Join-Path $Root "build\recomp\$Target"
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -100,24 +104,8 @@ function Invoke-Arm([string]$name, [bool]$hybrid) {
         }
     } -ArgumentList $Root, $shots, $Warmup, 8, 30
 
-    if ($Tas) {
-        # Boot, let it settle, then start playback explicitly. pause_tas_on_load
-        # keeps the script from firing while the game is still loading, so the
-        # start has to be triggered rather than waited for.
-        # Arguments as argv, not JSON: PowerShell strips the inner quotes from a
-        # JSON string before python sees it, so the call silently fails to parse.
-        python (Join-Path $Root 'scripts\mcp-call.py') launch_game_path --path $Rom
-        if ($LASTEXITCODE -ne 0) { throw "launch_game_path failed (exit $LASTEXITCODE)" }
-        Start-Sleep -Seconds $Warmup
-        python (Join-Path $Root 'scripts\mcp-call.py') trigger_ui_action --action tas_start_stop
-        if ($LASTEXITCODE -ne 0) { throw "tas_start_stop failed (exit $LASTEXITCODE)" }
-        Write-Host 'TAS playback started' -ForegroundColor Green
-        python (Join-Path $Root 'scripts\fps-sample.py') $Rom `
-            --warmup 0 --samples $Samples --interval $Interval --out $json --no-launch
-    } else {
-        python (Join-Path $Root 'scripts\fps-sample.py') $Rom `
-            --warmup $Warmup --samples $Samples --interval $Interval --out $json
-    }
+    python (Join-Path $Root 'scripts\fps-sample.py') $Rom `
+        --warmup $Warmup --samples $Samples --interval $Interval --out $json
 
     Stop-Job -Job $capture -ErrorAction SilentlyContinue
     Remove-Job -Job $capture -Force -ErrorAction SilentlyContinue

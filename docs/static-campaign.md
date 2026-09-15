@@ -1,6 +1,6 @@
 # Static recompilation checkpoint
 
-v0.0.9 keeps the suyu HLE, GPU, audio and service stack while running ahead-of-time AArch64 code. Static is experimental and can be substantially slower. Use Hybrid AOT + JIT for best performance; retain Dynarmic JIT as the baseline.
+v0.0.10 keeps the suyu HLE, GPU, audio and service stack while running ahead-of-time AArch64 code. Static is experimental and can be substantially slower. Use Hybrid AOT + JIT for best performance; retain Dynarmic JIT as the baseline.
 
 ## What the campaign added
 
@@ -34,4 +34,4 @@ Boot synchronization aligns input origin, but it cannot make different CPU/rende
 
 Local guarded no-JIT tests reach controller prompts, menus, attract rendering and the race starting grid. The grid was visually verified during bounded idle observation after EOF, with zero fallback attempts and no JIT available. Race entry takes longer than the JIT fixture allows; frame-exact timing and full-race validation are still open. A completed replay proves only the paths observed. Fixed NSO coverage does not include arbitrary runtime-loaded/generated code, and AArch32 is unsupported.
 
-Historical speedup numbers predate the current guards and expanded floating-point semantics and used a retired title-screen fixture. They are not v0.0.9 gameplay performance measurements. Release notes recommend Hybrid while static optimization continues.
+Historical speedup numbers predate the current guards and expanded floating-point semantics and used a retired title-screen fixture. They are not v0.0.10 gameplay performance measurements. Release notes recommend Hybrid while static optimization continues.

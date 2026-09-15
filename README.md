@@ -1,6 +1,6 @@
 # mk8-recomp
 
-[**suyu v0.0.9 — static experimental checkpoint**](https://github.com/dougchansan/suyu-v0.0.4/releases/tag/v0.0.9)
+[**suyu v0.0.10 — static experimental checkpoint**](https://github.com/dougchansan/suyu-v0.0.4/releases/tag/v0.0.10)
 
 Ahead-of-time recompilation of Nintendo Switch AArch64 CPU code to native x86-64, using suyu's HLE stack for everything above the CPU. **Use Hybrid AOT + JIT for best performance.** Static execution is experimental: it runs tested title/menu/attract paths with no JIT, but loading and gameplay can be slower.
 
@@ -10,7 +10,7 @@ Ahead-of-time recompilation of Nintendo Switch AArch64 CPU code to native x86-64
 | Dynarmic JIT (Baseline) | Compare behavior and retain general compatibility. |
 | Hybrid AOT + JIT | Recommended for normal play and performance; uncovered code may use Dynarmic. |
 
-[Release notes](https://github.com/dougchansan/suyu-v0.0.4/blob/v0.0.9/docs/releases/v0.0.9.md) explain the regular and `no-jit` downloads. **Regenerate older static modules for ABI 4.** Updating the host alone cannot update generated code. The earlier [rendering correction](docs/static-rendering-fix.md) remains included.
+[Release notes](https://github.com/dougchansan/suyu-v0.0.4/blob/v0.0.10/docs/releases/v0.0.10.md) explain the regular and `no-jit` downloads. **Regenerate older static modules for ABI 4.** Updating the host alone cannot update generated code. The earlier [rendering correction](docs/static-rendering-fix.md) remains included.
 
 ## What is verified
 
@@ -50,7 +50,7 @@ Keep baseline and static timing fixtures in separate local directories. The driv
 
 ## Performance and next work
 
-Static remains slower in current observed loading and rendering paths. The Linux profiling work pins source and module hashes, waits for an idle machine and samples the actual current build. No current speedup ratio is claimed. Earlier ratios used an older emitter and a retired title-screen fixture; they should not be used to compare v0.0.9 gameplay.
+Static remains slower in current observed loading and rendering paths. The Linux profiling work pins source and module hashes, waits for an idle machine and samples the actual current build. No current speedup ratio is claimed. Earlier ratios used an older emitter and a retired title-screen fixture; they should not be used to compare v0.0.10 gameplay.
 
 Functional timing profiles can differ. Performance comparisons must execute identical work, interleave arms within a round, record pre-run load below 1.0, and reject stale builds. Do not infer a small speedup from noise or compare differently timed replays as equivalent workloads.
 

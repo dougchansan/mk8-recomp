@@ -45,7 +45,12 @@ param(
     [string]$OutDir = '',
     # Run the fixture against a different emulator build - an archived exe, say -
     # to tell a regression we introduced apart from one we inherited.
-    [string]$SuyuExe = ''
+    [string]$SuyuExe = '',
+    # Allow JIT fallback on the static arm. Required when the staged image set is
+    # deliberately incomplete: under strict, a module with no image returns
+    # PrefetchAbort and kills the thread instead of falling back, so a partial
+    # set cannot run at all. Transitions are expected and are not a failure.
+    [switch]$NoStrict
 )
 
 if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
@@ -95,7 +100,15 @@ foreach ($arm in $Arms) {
     }
     if ($ObserveAfterSeconds -gt 0) { $runArgs['TasObserveAfterSeconds'] = $ObserveAfterSeconds }
     if ($arm -eq 'baseline') { $runArgs['Baseline'] = $true }
+    elseif ($NoStrict) { $runArgs['NoStrict'] = $true }
     if ($SuyuExe) { $runArgs['SuyuExe'] = $SuyuExe }
+    # The milestone check. frozen_tail only catches a byte-identical tail, and
+    # that is not the same question: MK8's title screen animates its fireworks
+    # and the logo splash has a moving lens flare, so both defeat byte equality
+    # while going nowhere. Consuming every command proves nothing about where
+    # the run arrived - only this does.
+    $expected = Join-Path $TasFixtureDirectory 'expected-final.png'
+    if (Test-Path -LiteralPath $expected) { $runArgs['TasExpectedFinalImage'] = $expected }
     $armLog = Join-Path $OutDir "$arm-run.log"
     try {
         & (Join-Path $Root 'scripts\playtest-static-title.ps1') @runArgs *>&1 |

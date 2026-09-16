@@ -69,6 +69,22 @@ not a single pass flag.
 `SUYU_RECOMP_MAIN_HOLE=<lo>-<hi>`, so an arm needs neither a re-export nor a
 module rebuild.
 
+### A re-export invalidates an address hole
+
+Module-level bisection survives a re-export - it names modules, and module
+identity is stable. An address-range hole does **not**: regenerating the source
+moves block addresses, so a hole derived from an earlier export stops covering
+what it was derived to cover. Measured: after re-exporting with a changed
+emitter, the hole below produced a black screen with `tas_peak_frame` 0, exactly
+as if no hole were set.
+
+Re-derive the range after any re-export, or keep the old generated tree if the
+configuration still matters. And **archive the module DLLs before re-exporting**
+if the current build is a measurement baseline - an export overwrites them in
+place, and without the old binaries a before/after comparison cannot be
+interleaved and so cannot be separated from this title's ordinary 0.85x-0.97x
+run-to-run spread.
+
 ### Where the Smash fault sits
 
 21 arms. Both controls behaved: no hole reproduced the black screen (319M

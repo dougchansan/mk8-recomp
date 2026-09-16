@@ -69,6 +69,29 @@ not a single pass flag.
 `SUYU_RECOMP_MAIN_HOLE=<lo>-<hi>`, so an arm needs neither a re-export nor a
 module rebuild.
 
+### Correction: MK8's "title-screen stall" was a mis-export
+
+An earlier version of this document recorded MK8 static stalling at the title
+screen as an older, independent bug, reproduced on a pre-session build and
+unaffected by the chain budget. **That was wrong.**
+
+The exporter resolved ExeFS only from inside the ROM container, so MK8 Deluxe's
+64-bit build - which ships in the installed update - was invisible to it and the
+cartridge's **32-bit ARM (NX32)** base program was recompiled instead. The
+AArch64 decoder never rejects A32, since every word decodes as *something*, so
+the export reported success. Measured: `main.npdm` META flags `0x04`
+(Is64BitInstruction=0) against `0x07` for a good export, rodata build paths
+reading `NX32` rather than `NX64`, and 87% of blocks unhandled against 0.0003%.
+
+Every MK8 static result in this document predating the fix used modules built
+either from that misread or from before it. With the exporter running ExeFS
+through `PatchManager::PatchExeFS` - the same call the loader makes - MK8 runs
+**fully static, 8.43 billion blocks, zero fallbacks, and renders a race**.
+
+The 4,669 undefined shifted-register encodings were the fingerprint of A32 read
+as A64, not a decoder defect. The guard that rejects them is still correct, and
+it is what made the wrong input visible instead of silent.
+
 ### A re-export invalidates an address hole
 
 Module-level bisection survives a re-export - it names modules, and module

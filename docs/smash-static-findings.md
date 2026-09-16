@@ -54,7 +54,51 @@ over at all, because strict returns `PrefetchAbort` instead of falling back.
 
 The JIT transition count doubles as a per-arm self-check: an arm whose holed
 range was never executed reports zero transitions and is uninformative,
-regardless of whether it rendered.
+regardless of whether it rendered. **This is not a formality** - four of the
+Smash arms reported zero transitions, including the one that appeared to clear
+atomics. They establish nothing about the ranges they holed.
+
+The milestone is also not binary. Smash produced three distinct outcomes - no
+frame at all, reaching the versus splash, and a real match - and an arm can
+satisfy one without the others. Arm 8 holed five files and reached the versus
+splash; only holing all nineteen produced a match, which is the signature of
+**more than one faulty region**. Judge with `tas_peak_frame` plus the captures,
+not a single pass flag.
+
+`scripts/bisect-hole.ps1` drives this. The hole is read at runtime from
+`SUYU_RECOMP_MAIN_HOLE=<lo>-<hi>`, so an arm needs neither a re-export nor a
+module rebuild.
+
+### Where the Smash fault sits
+
+21 arms. Both controls behaved: no hole reproduced the black screen (319M
+blocks, zero frames); a full hole reached a match (peak frame 5559).
+
+The narrowest **working** hole was `0x2a1683c-0x2a6b7e0` - about 348 KB, some
+87,000 instructions, inside translation unit 133:
+
+```
+SUYU_RECOMP_MAIN_HOLE=0x2a1683c-0x2a6b7e0
+```
+
+That configuration completed the replay to frame 5568 with **7.19 billion
+static blocks** and 405k JIT transitions - roughly 55x more static execution
+than routing all of `main` to the JIT, which is the next best working setup at
+130M blocks.
+
+| arm | peak frame | static blocks | transitions |
+|---|---:|---:|---:|
+| full hole (all of `main` on JIT) | 5559 | 130 M | 939k |
+| b14 | 5559 | 1.11 B | 112k |
+| b6 (19 files holed) | 5560 | 1.69 B | 728k |
+| b7 | 5560 | 4.55 B | 308k |
+| **b12** | **5568** | **7.19 B** | 405k |
+
+The fault was not narrowed below that range before the work stopped. Candidate
+files were 132 (30 `LDAR`, 22 `STLR`, 16 `LDAXR`, 27 `STLXR`) and 133 (32
+`STLXR`, no `LDAR`/`STLR` at all); the surviving range is in 133. An early
+guess that this corroborated the `LDAR`/`STLR` barrier gap does **not** hold -
+that gap is real, but it is in the file the search moved away from.
 
 ## Two bugs fixed
 

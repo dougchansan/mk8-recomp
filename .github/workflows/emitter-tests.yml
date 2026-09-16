@@ -1,0 +1,67 @@
+# Synthetic emitter regression tests.
+#
+# The emitter is compiled into the exporter, so a change to arm64_to_c.h changes
+# the code every title generates. Nothing re-exports automatically, so a module
+# set built before the change keeps working and hides the breakage: the emitter
+# changed on 2026-09-15, MK8's modules were from 09-14, and the first re-export
+# two days later produced 4,669 compile errors from shifted-register encodings
+# that are architecturally undefined.
+#
+# These tests need no ROM, keys or firmware. They generate C from the emitter,
+# compile it, and execute it against references, so they catch that whole class
+# of defect in CI.
+#
+# WHAT THIS CANNOT DO: prove a title still runs. That needs game content, which
+# never goes near CI. After any emitter change, re-export locally and run the
+# three arms - see scripts/check-emitter.ps1. A green run here is necessary and
+# not sufficient: the load crash that followed the shifted-register fix passed
+# every synthetic test.
+
+name: emitter tests
+
+on:
+  push:
+    paths:
+      - 'third_party/suyu/src/core/recompiler/arm64_to_c.h'
+      - 'tests/**'
+      - 'scripts/run-*.ps1'
+      - 'scripts/run-*.sh'
+      - '.github/workflows/emitter-tests.yml'
+  pull_request:
+    paths:
+      - 'third_party/suyu/src/core/recompiler/arm64_to_c.h'
+      - 'tests/**'
+  workflow_dispatch:
+
+jobs:
+  synthetic:
+    name: synthetic emitter tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: shifted-register width
+        shell: pwsh
+        run: |
+          # Undefined encodings must be refused, and the legal forms must compile
+          # with C4293 fatal and match hand-written rotate references. The second
+          # half is what stops a future "just mask the shift count" fix passing.
+          ./scripts/run-shifted-register-test.ps1
+
+      - name: translate
+        shell: pwsh
+        run: ./scripts/run-translate-test.ps1
+
+      - name: side entry
+        shell: pwsh
+        run: ./scripts/run-side-entry-test.ps1
+
+      - name: staleness report
+        if: always()
+        shell: pwsh
+        run: |
+          # Advisory in CI - there are no built modules in a fresh checkout, so
+          # this reports rather than gates. It is the local run that matters.
+          ./scripts/check-emitter.ps1 -TestsOnly

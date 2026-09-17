@@ -41,6 +41,11 @@ param(
     [string]$TasFixtureDirectory = '',
     [string]$Lo = '',
     [string]$Hi = '',
+    # Substring of the module the offsets belong to. Modules register under the
+    # NSO's own name, so this is `cross2_Release.nss` for Smash's main, not
+    # `main`. Empty holes every module, which is what the all-to-JIT control
+    # wants but is wrong for a search arm.
+    [string]$Module = '',
     [switch]$Controls,
     [int]$RunSeconds = 600,
     [string]$OutDir = ''
@@ -50,6 +55,26 @@ if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
 $ErrorActionPreference = 'Stop'
 if (-not $OutDir) { $OutDir = Join-Path $Root "local\bench\hole-$Target" }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+
+# Preflight: prove the binary reads the hole at all.
+#
+# This script was committed against an implementation that only ever existed in
+# an uncommitted working tree. Every arm it ran afterwards was an ordinary
+# all-static run: suyu ignored the variable, nothing fell through to the JIT,
+# and each arm reported zero transitions - indistinguishable from an arm whose
+# range simply never executed. A whole bisection can be spent on that.
+$exe = Join-Path $Root 'build\suyu\bin\suyu.exe'
+if (Test-Path -LiteralPath $exe) {
+    $bytes = [System.IO.File]::ReadAllBytes($exe)
+    $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
+    if ($ascii -notmatch 'SUYU_RECOMP_MAIN_HOLE') {
+        throw ("$exe does not contain SUYU_RECOMP_MAIN_HOLE. The hole would be " +
+               'ignored and every arm would report zero transitions. Rebuild suyu.')
+    }
+    Write-Host "preflight ok: $exe reads SUYU_RECOMP_MAIN_HOLE" -ForegroundColor DarkGray
+} else {
+    Write-Host "preflight skipped: $exe not found" -ForegroundColor Yellow
+}
 
 function Invoke-Hole([string]$label, [string]$range) {
     Get-Process suyu* -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -66,6 +91,8 @@ function Invoke-Hole([string]$label, [string]$range) {
     Write-Host "=== $label  hole=$(if ($range) { $range } else { '(none)' }) ===" -ForegroundColor Cyan
     if ($range) { $env:SUYU_RECOMP_MAIN_HOLE = $range }
     else { Remove-Item Env:\SUYU_RECOMP_MAIN_HOLE -ErrorAction SilentlyContinue }
+    if ($Module) { $env:SUYU_RECOMP_HOLE_MODULE = $Module }
+    else { Remove-Item Env:\SUYU_RECOMP_HOLE_MODULE -ErrorAction SilentlyContinue }
 
     $evidence = Join-Path $OutDir $label
     $a = @{
@@ -78,18 +105,34 @@ function Invoke-Hole([string]$label, [string]$range) {
     }
     try { & (Join-Path $Root 'scripts\playtest-static-title.ps1') @a *> (Join-Path $OutDir "$label.log") }
     catch { Write-Host "  threw: $_" -ForegroundColor Yellow }
-    finally { Remove-Item Env:\SUYU_RECOMP_MAIN_HOLE -ErrorAction SilentlyContinue }
+    finally {
+        Remove-Item Env:\SUYU_RECOMP_MAIN_HOLE -ErrorAction SilentlyContinue
+        Remove-Item Env:\SUYU_RECOMP_HOLE_MODULE -ErrorAction SilentlyContinue
+    }
 
     $run = Get-ChildItem $evidence -Directory -ErrorAction SilentlyContinue |
            Where-Object { $_.Name -match '^\d{8}T\d{6}Z$' } |
            Sort-Object Name -Descending | Select-Object -First 1
     if (-not $run) { Write-Host '  no evidence'; return $null }
     $o = Get-Content (Join-Path $run.FullName 'observation.json') -Raw | ConvertFrom-Json
+    # Did suyu actually arm the hole? An unarmed hole reports exactly what a
+    # range that never executes reports, and the two were confused for a whole
+    # bisection once. The emulator says so in its own log; read it rather than
+    # inferring it from the counters.
+    $slog = Join-Path $run.FullName 'suyu_log.txt'
+    $armed = $null
+    if ($range -and (Test-Path -LiteralPath $slog)) {
+        $armed = [bool](Select-String -LiteralPath $slog -Pattern 'main hole .* armed on' -Quiet)
+    }
     $r = [pscustomobject]@{
         Arm = $label; Hole = $range; Outcome = $o.tas_outcome
         FirstFrame = $o.first_frame; PeakFrame = $o.tas_peak_frame
         Blocks = $o.max_static_blocks; JitTr = $o.max_jit_transitions
+        Armed = $armed
         Informative = ($o.max_jit_transitions -gt 0); Evidence = $run.Name
+    }
+    if ($range -and $armed -eq $false) {
+        Write-Host '  HOLE NEVER ARMED - suyu did not apply it. Arm is void, not innocent.' -ForegroundColor Red
     }
     Write-Host ("  frame={0} peak={1} blocks={2} jit={3}{4}" -f `
         $r.FirstFrame, $r.PeakFrame, $r.Blocks, $r.JitTr,

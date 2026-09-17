@@ -36,7 +36,22 @@ Module bisection stops at module granularity. To go finer, punch an
 **address-range hole** in the module's lookup index: addresses inside the hole
 are absent, so in hybrid mode they fall through to the JIT while everything else
 stays static. Binary search on the hole boundary narrows the faulty code without
-a re-export - the module DLL is rebuilt from already-generated source.
+a re-export and without rebuilding the module: `SUYU_RECOMP_MAIN_HOLE=<lo>-<hi>`
+is read by suyu at dispatch time and forces the lookup to miss inside the range.
+Offsets are module-relative and scoped to `main`, because module bases are
+picked by the loader and differ per run.
+
+**The lever must be present in the suyu binary you are running.** An earlier
+version of this document said the module DLL was rebuilt per arm, which was
+wrong, and the implementation it described had only ever existed in an
+uncommitted working tree - `scripts/bisect-hole.ps1` was committed against it
+and no commit on any branch defined the variable. Every arm run in that window
+was an ordinary all-static run: suyu ignored the variable, nothing fell through
+to the JIT, and each arm reported zero transitions, which is exactly what an arm
+whose range never executed reports. The 21 arms below predate that gap and are
+real, but they were not reproducible until the lever was reimplemented.
+`bisect-hole.ps1` now refuses to start unless the string is present in
+`build\suyu\bin\suyu.exe`.
 
 **Validate the lever at both extremes before trusting any arm.** Measured:
 
@@ -92,23 +107,123 @@ The 4,669 undefined shifted-register encodings were the fingerprint of A32 read
 as A64, not a decoder defect. The guard that rejects them is still correct, and
 it is what made the wrong input visible instead of silent.
 
-### A re-export invalidates an address hole
+### A re-export may or may not invalidate an address hole - check, do not assume
 
 Module-level bisection survives a re-export - it names modules, and module
-identity is stable. An address-range hole does **not**: regenerating the source
-moves block addresses, so a hole derived from an earlier export stops covering
-what it was derived to cover. Measured: after re-exporting with a changed
-emitter, the hole below produced a black screen with `tas_peak_frame` 0, exactly
-as if no hole were set.
+identity is stable. An address-range hole is conditional, and an earlier version
+of this document overstated it as "a re-export invalidates an address hole".
 
-Re-derive the range after any re-export, or keep the old generated tree if the
+Block addresses are **guest** addresses. They do not move because the emitter
+changed. They move when the **set of discovered blocks** changes, because
+translation units are packed at a fixed 20,000 blocks each and any change to
+discovery shifts every boundary after it. Two things do that: reading a
+different input image, and an emitter change that alters what gets handled
+versus routed to `put_unhandled`.
+
+Both outcomes are measured here:
+
+- **Invalidated.** MK8's hole stopped covering its range after the exporter was
+  fixed to resolve ExeFS through the update - the exporter began reading a
+  different binary entirely (NX32 to NX64), so every address moved.
+- **Survived.** Smash was re-exported on 2026-09-16 with an emitter carrying the
+  FP scan optimization and the shifted-register guard. TU boundaries came back
+  byte-identical - 132 = `0x29d9794-0x2a16830`, 133 = `0x2a1683c-0x2a6b7ac`,
+  134 = `0x2a6b7e4-0x2acebdc` - so the 21-arm result below still stands without
+  re-deriving. The shifted-register guard changes nothing on a clean ARM64
+  title, so discovery was identical.
+
+The check is cheap and settles it in seconds, so run it instead of assuming in
+either direction: grep the generated tree for the hole's low endpoint as a
+`blk_main_<16 hex>` symbol and confirm the enclosing TU's first and last block
+still match. A low endpoint that is absent, or a TU whose bounds have shifted,
+means re-derive. (The high endpoint is an exclusive bound and is normally *not*
+itself a block start - `0x2a6b7e0` sits between TU133's last block and TU134's
+first. Its absence is expected and is not evidence of invalidation.)
+
+Re-derive the range when that check fails, or keep the old generated tree if the
 configuration still matters. And **archive the module DLLs before re-exporting**
 if the current build is a measurement baseline - an export overwrites them in
 place, and without the old binaries a before/after comparison cannot be
 interleaved and so cannot be separated from this title's ordinary 0.85x-0.97x
 run-to-run spread.
 
-### Where the Smash fault sits
+### Inside TU133: three faults, not one
+
+13 further arms on 2026-09-16, after the lever was reimplemented. Both controls
+behaved: full hole reached a match (peak 5556, 855k transitions, verified by
+opening the capture); no hole reproduced the black screen (279M blocks, zero
+transitions).
+
+The prior search stopped exactly at a TU boundary because **no single sub-range
+ever produces a clean pass** - TU133 holds at least three independent defects,
+and fixing any one leaves the others. They are distinguishable only by what the
+captures show:
+
+| fault | range | size | symptom when static |
+|---|---|---:|---|
+| A1 | `0x2a56ffc-0x2a582e4` | ~5 KB | sleep spin, no frame at all |
+| B | `0x2a286c8-0x2a39dac` | ~73 KB | renders menus, never enters a match |
+| C | `0x2a5ed88-0x2a62b36` | ~55 KB | loading screen, only visible once B is bypassed |
+
+Narrowest hole still reaching a full match: `0x2a286c8-0x2a62b36` (238 KB),
+down from the 348 KB of the earlier result.
+
+**`tas_peak_frame` does not separate these.** Measured in the same session:
+a real match scored 5548 and 5568; the stage-select screen scored 5551 and 5555.
+The match runs *bracket* the menu runs. The replay is frame-indexed and consumes
+every command whether or not a match started, so in the 5548-5568 band the
+number carries no information and only the image does. Peak frame still
+separates gross failures (0, 447) from "ran to the end of the script".
+
+The outcome ladder is also finer than three rungs. Observed, in order: black
+with nothing; black with a live loading spinner (the render path works, content
+never arrives); stage select; real match.
+
+### Density comparison against a proven-innocent span
+
+Once a span is guilty and another span in the same TU is proven innocent, the
+generated C answers "what is different about this code" without a ROM or a
+disassembler: every block carries its original ARM64 words in the `_expected[]`
+code-guard array, so the guest instruction stream can be recovered exactly and
+counted. Q1 (`0x2a1683c-0x2a286c8`) is the innocent control - arm 5 held it
+static and still reached a full match.
+
+This was productive at **eliminating**, and eliminated every standing
+hypothesis. Measured in the guilty span:
+
+| hypothesis | result |
+|---|---|
+| atomics, `LDAXR`/`STLXR` | **0** in guilty; all 44 in TU133 are in the innocent span |
+| `LDAR`/`STLR` barrier gap | 0 occurrences |
+| `LDNP`/`STNP` unimplemented | 0 occurrences |
+| FP/SIMD, and the FP scan optimization | 0 FP instructions (245 in the innocent span) |
+| shifted-register guard | 0 undefined `sf=0 amt>=32` encodings; `unhandled` = 0 |
+| `LSLV`/`LSRV` shift masking | correct - emits `& 31` / `& 63` |
+| `CLZ` | correct, including `CLZ(0)` = width |
+| `BFM` wraparound (`immr>imms`) | correct - right mask, right shift, other bits preserved |
+
+The last three were checked by reading the emitted C, not by inference. The
+`LDAR`/`STLR` gap is real but is **not** this fault, which settles the earlier
+guess that the bisection corroborated it.
+
+What the span *is*: shifts, `CLZ`, bitfield inserts, no FP, no atomics, fewer
+loads than average, and `BFM` enriched ~33x with every instance in the
+wraparound form. Reading it shows successive `recomp_load8` at descending
+offsets shifted into place - a byte-by-byte big-endian deserializer. That agrees
+with the original spin-site finding, where the polled object carries
+`rom:/data.arc`. The remaining defect is a wrong **value** computed in archive
+parsing.
+
+Next probe should be differential rather than statistical: run the blocks in
+`0x2a56ffc-0x2a582e4` under the static image and under dynarmic from the same
+entry state and compare registers. `tests/differential_*` already does this for
+synthetic input; the gap is driving it from a recorded guest state.
+
+Unrelated performance find: `CLZ` is emitted as a bounded per-bit loop, the same
+shape the FP scan optimization replaced for floating point. 12 sites in this
+5 KB span alone, in hot parsing code. `recomp_bit_index64` already exists.
+
+### Where the Smash fault sits (earlier 21-arm result)
 
 21 arms. Both controls behaved: no hole reproduced the black screen (319M
 blocks, zero frames); a full hole reached a match (peak frame 5559).

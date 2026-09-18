@@ -19,10 +19,12 @@ are generous by default.
 """
 
 import json
+import os
 import socket
 import sys
 
-HOST, PORT = "127.0.0.1", 9742
+HOST = "127.0.0.1"
+PORT = int(os.environ.get("SUYU_MCP_PORT", "9742"))
 
 
 def rpc(method, params=None, timeout=1800.0):

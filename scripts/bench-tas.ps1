@@ -59,7 +59,7 @@ $ErrorActionPreference = 'Stop'
 $Arms = @($Arms | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } |
           Where-Object { $_ })
 foreach ($arm in $Arms) {
-    if (@('baseline', 'static') -notcontains $arm) { throw "unknown arm '$arm'" }
+    if (@('baseline', 'hybrid', 'static') -notcontains $arm) { throw "unknown arm '$arm'" }
 }
 if (-not $OutDir) { $OutDir = Join-Path $Root "local\bench\tas-$Target" }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -99,8 +99,12 @@ foreach ($arm in $Arms) {
         CaptureSeconds = @(60)
     }
     if ($ObserveAfterSeconds -gt 0) { $runArgs['TasObserveAfterSeconds'] = $ObserveAfterSeconds }
+    # baseline is dynarmic only; static refuses fallback; hybrid allows it.
+    # hybrid and static run the same images - the difference is whether a miss
+    # is permitted to reach the JIT, so for a title with complete coverage they
+    # execute identically and the transition count says which happened.
     if ($arm -eq 'baseline') { $runArgs['Baseline'] = $true }
-    elseif ($NoStrict) { $runArgs['NoStrict'] = $true }
+    elseif ($arm -eq 'hybrid' -or $NoStrict) { $runArgs['NoStrict'] = $true }
     if ($SuyuExe) { $runArgs['SuyuExe'] = $SuyuExe }
     # The milestone check. frozen_tail only catches a byte-identical tail, and
     # that is not the same question: MK8's title screen animates its fireworks

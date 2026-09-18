@@ -12,7 +12,8 @@ param(
     [string]$Root      = $env:MK8R_ROOT,
     [string]$BuildType = 'Release',
     [switch]$Configure,
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$NoJit
 )
 
 # $PSScriptRoot is not populated while parameter defaults are bound under
@@ -22,7 +23,7 @@ if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
 $ErrorActionPreference = 'Stop'
 
 $SuyuSrc   = Join-Path $Root 'third_party\suyu'
-$BuildDir  = Join-Path $Root 'build\suyu'
+$BuildDir  = Join-Path $Root $(if ($NoJit) { 'build\suyu-nojit' } else { 'build\suyu' })
 $VcVars    = & (Join-Path $PSScriptRoot 'find-vcvars.ps1')
 # glslang 16.x renamed glslangValidator to glslang; suyu's find_program still
 # looks for the old name, so point the cache variable at the new binary rather
@@ -78,6 +79,7 @@ $cmakeArgs = @(
     # where suyu is crashing.
     '-DCMAKE_EXE_LINKER_FLAGS=/MAP'
     '-DCMAKE_SHARED_LINKER_FLAGS=/MAP' 
+    $(if ($NoJit) { '-DSUYU_NO_JIT=ON' } else { '-DSUYU_NO_JIT=OFF' })
 ) -join ' '
 
 if ($Configure -or -not (Test-Path -LiteralPath (Join-Path $BuildDir 'build.ninja'))) {

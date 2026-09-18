@@ -17,7 +17,8 @@ param(
     [string]$Package = $env:MK8R_PACKAGE,
     [Parameter(Mandatory)]
     [string]$Module,
-    [string]$BuildType = 'Release'
+    [string]$BuildType = 'Release',
+    [switch]$ForceRebuild
 )
 
 # $PSScriptRoot is not populated while parameter defaults are bound under
@@ -36,6 +37,22 @@ $VcVars = & (Join-Path $PSScriptRoot 'find-vcvars.ps1')
 if (-not (Test-Path -LiteralPath $Src))    { throw "No generated project at $Src" }
 if (-not (Test-Path -LiteralPath $VcVars)) { throw "vcvars64.bat not found at $VcVars" }
 
+# Reuse the build for convergence rounds when the generated source path is the
+# same. If an export's package directory changed, discard only this module's
+# cache; CMake caches absolute source paths and cannot retarget it safely.
+$cache = Join-Path $Build 'CMakeCache.txt'
+if (Test-Path -LiteralPath $cache) {
+    $cachedHomeLine = Get-Content -LiteralPath $cache |
+                      Where-Object { $_ -like 'CMAKE_HOME_DIRECTORY:INTERNAL=*' } |
+                      Select-Object -First 1
+    if ($cachedHomeLine) {
+        $cachedSource = [IO.Path]::GetFullPath(($cachedHomeLine -split '=', 2)[1])
+        if (-not $cachedSource.Equals([IO.Path]::GetFullPath($Src), [StringComparison]::OrdinalIgnoreCase)) {
+            Remove-Item -LiteralPath $Build -Recurse -Force
+        }
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $Build | Out-Null
 
 function Invoke-InVsEnv([string]$Command) {
@@ -47,7 +64,9 @@ $srcSize = (Get-ChildItem -LiteralPath (Join-Path $Src 'src') -File |
             Measure-Object -Property Length -Sum).Sum
 Write-Host ("module {0}: {1:n1} MB of generated C" -f $Module, ($srcSize / 1MB)) -ForegroundColor Cyan
 
-Invoke-InVsEnv "cmake -S `"$Src`" -B `"$Build`" -G Ninja -DCMAKE_BUILD_TYPE=$BuildType"
+# Invalid constant shifts in generated C are correctness bugs, even when MSVC
+# would otherwise compile them as warnings. Fail the module build immediately.
+Invoke-InVsEnv "cmake -S `"$Src`" -B `"$Build`" -G Ninja -DCMAKE_BUILD_TYPE=$BuildType -DCMAKE_C_FLAGS=/we4293"
 
 # The main NSO's shared target is called recompiled_image, not recompiled_main -
 # that is the name suyu's loader looks for when scanning for AOT DLLs
@@ -56,7 +75,8 @@ Invoke-InVsEnv "cmake -S `"$Src`" -B `"$Build`" -G Ninja -DCMAKE_BUILD_TYPE=$Bui
 $CMakeTarget = if ($Module -eq 'main') { 'recompiled_image' } else { "recompiled_$Module" }
 
 $sw = [Diagnostics.Stopwatch]::StartNew()
-Invoke-InVsEnv "cmake --build `"$Build`" --target $CMakeTarget"
+$clean = if ($ForceRebuild) { ' --clean-first' } else { '' }
+Invoke-InVsEnv "cmake --build `"$Build`" --target $CMakeTarget$clean"
 $sw.Stop()
 
 Write-Host ("built in {0:n1} min" -f $sw.Elapsed.TotalMinutes) -ForegroundColor Green

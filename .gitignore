@@ -38,3 +38,6 @@ __pycache__/
 # belonging to whatever tool happens to be driving the session.
 .claude/
 .omc/
+
+# Local orchestration state
+.omx/

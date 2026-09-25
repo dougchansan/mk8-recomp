@@ -48,8 +48,8 @@ int main(int argc, char** argv) {
         reinterpret_cast<RunSliceFn>(GetProcAddress(dll, "recomp_image_run_slice"));
     const auto guard = reinterpret_cast<GuardFn>(GetProcAddress(dll, "recomp_image_guard_v2"));
     const auto image_abi = reinterpret_cast<AbiFn>(GetProcAddress(dll, "recomp_image_abi"));
-    if (!lookup || !set_base || !run_slice || !guard || !image_abi || image_abi() != 4) {
-        std::fputs("generated image does not export side-entry ABI 4\n", stderr);
+    if (!lookup || !set_base || !run_slice || !guard || !image_abi || (image_abi() != 5 && image_abi() != 6)) {
+        std::fputs("generated image does not export side-entry ABI 5 or 6\n", stderr);
         return 1;
     }
     // Before set_base builds the flat index, the interval-table fallback must

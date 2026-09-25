@@ -97,10 +97,18 @@ public static class RecompImageAbiProbe {
 }
 '@
 }
+# suyu accepts ABI 5 or ABI 6 images, but never both in one bundle: ABI 6
+# extends the shared GuestContext, so the manifest records the single ABI.
+$bundleAbi = 0
 foreach ($image in $images) {
     $abi = [RecompImageAbiProbe]::Read($image.File.FullName)
-    if ($abi -ne 4) {
-        throw "$($image.File.FullName) exports image ABI $abi; regenerate it with the current emitter"
+    if ($abi -ne 5 -and $abi -ne 6) {
+        throw "$($image.File.FullName) exports image ABI $abi, not 5 or 6; regenerate it with the current emitter"
+    }
+    if ($bundleAbi -eq 0) {
+        $bundleAbi = $abi
+    } elseif ($abi -ne $bundleAbi) {
+        throw "$($image.File.FullName) exports image ABI $abi but the bundle is ABI $bundleAbi; re-export every module together"
     }
 }
 
@@ -127,13 +135,13 @@ foreach ($image in $images) {
 $manifest = [ordered]@{
     title_id = $normalizedTitleId
     target = $Target
-    image_abi = 4
+    image_abi = $bundleAbi
     staged_utc = (Get-Date).ToUniversalTime().ToString('o')
     images = $manifestImages
 }
 $manifest | ConvertTo-Json -Depth 5 |
     Set-Content -LiteralPath (Join-Path $destination 'bundle.json') -Encoding utf8
 
-Write-Host "staged $($images.Count) AOT image(s) for $normalizedTitleId"
+Write-Host "staged $($images.Count) ABI $bundleAbi AOT image(s) for $normalizedTitleId"
 Write-Host $destination
 $destination

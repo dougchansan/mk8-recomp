@@ -35,9 +35,10 @@ cache and launches without `SUYU_RECOMP_DIR`:
 
 `BootGame` reads the program ID; `LoadROM` stops any previous guest, selects the
 bundle, and only then creates the next guest process. Automatic
-loading requires generated-image ABI 4 and guard-v2, so older or mixed bundles
-are refused. `bundle.json` is checked as an exact image set, including every
-DLL's size and SHA-256, before anything loads. Stage an
+loading requires generated-image ABI 5 or 6 and guard-v2. Every image in a
+bundle must report the same ABI, so older or mixed bundles are refused.
+`bundle.json` is checked as an exact image set, including every DLL's size and
+SHA-256, before anything loads. Stage an
 individual build with:
 
 ```powershell

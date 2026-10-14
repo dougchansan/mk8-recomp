@@ -6,7 +6,7 @@ The current goal is a standalone native Mario Kart 8 Deluxe application: statica
 
 See [native runtime progress](docs/native-runtime-progress.md) for verified results and remaining work. This repository is `dougchansan/mk8-recomp`.
 
-The [native foundations prerelease](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-20261014) contains 13 verified Windows x64 tools and synthetic fixtures. Its source checkpoint is `src/patches/native-runtime.patch` against suyu revision `347fcf91d95cd39cb5c3db50f1b6d827ad699311`. [Build instructions](docs/native-builds.md) and [binary/source verification](native-checkpoint/verification.json) accompany it. A fresh checkout reproduced all 81 checkpoint files and passed the component tests on the development host; clean-machine portability remains unverified.
+The [native foundations v3 prerelease](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v3-20261014) contains 24 verified Windows x64 tools and synthetic fixtures, including native event waits, window observations, scheduled API transport, texture conversion and packed 10-bit rendering tests. Its source checkpoint is `src/patches/native-runtime.patch` against suyu revision `347fcf91d95cd39cb5c3db50f1b6d827ad699311`. [Build instructions](docs/native-builds.md) and [binary/source verification](native-checkpoint/verification.json) accompany it. A fresh checkout reproduced all 133 checkpoint files; a matching source mirror rebuilt and passed the component tests on the development host. Clean-machine portability remains unverified. The [earlier v2 release](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-20261014) remains available.
 
 ## Historical static-recompiler release (September 2026)
 

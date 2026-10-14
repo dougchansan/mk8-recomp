@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--sirit-root", type=Path, required=True)
     parser.add_argument("--sirit-license", type=Path, required=True)
     parser.add_argument("--sirit-source-archive", type=Path, required=True)
+    parser.add_argument("--fmt-root", type=Path, required=True, help="Existing fmt12.1.0 headers and LICENSE")
     args = parser.parse_args()
     directory = Path(__file__).resolve().parent
     project = directory.parent if directory.name == "scripts" else directory
@@ -38,11 +39,13 @@ def main():
         raise RuntimeError("Package output must be a new directory")
     if os.name != "nt":
         raise RuntimeError("This checkpoint packages the verified Windows x64 targets")
-    vulkan, sirit = args.vulkan_include.resolve(), args.sirit_root.resolve()
+    vulkan, sirit, fmt = args.vulkan_include.resolve(), args.sirit_root.resolve(), args.fmt_root.resolve()
     for dependency in (vulkan / "vulkan/vulkan.h", sirit / "lib/sirit-static.lib",
-                       args.sirit_license, args.sirit_source_archive):
+                       args.sirit_license, args.sirit_source_archive, fmt / "include/fmt/base.h", fmt / "LICENSE"):
         if not dependency.is_file():
             raise RuntimeError(f"Missing existing dependency: {dependency}")
+    if "#define FMT_VERSION 120100" not in (fmt / "include/fmt/base.h").read_text():
+        raise RuntimeError("Texture checkpoint requires existing fmt12.1.0 headers")
     build.mkdir(parents=True, exist_ok=True)
     records = []
 
@@ -56,7 +59,7 @@ def main():
         if result.returncode:
             raise RuntimeError(f"{label} failed ({result.returncode}); see {log}")
         replacements = {str(source): "<source>", str(build): "<build>",
-                        str(vulkan): "<vulkan-include>", str(sirit): "<sirit-root>"}
+                        str(vulkan): "<vulkan-include>", str(sirit): "<sirit-root>", str(fmt): "<fmt-root>"}
         public_command = []
         for word in command:
             for local, portable in replacements.items():
@@ -81,6 +84,10 @@ def main():
     run("native_api", [sys.executable, source / "tests/native_api/run.py", "--build", build / "native_api",
                        "--vulkan-include", vulkan])
     run("buffer_init", [executable(build / "native_api/test", "buffer_init_test")])
+    run("native_pending", [sys.executable, source / "tests/native_pending/run.py", "--build", build / "native_pending",
+                           "--native-profile"])
+    run("native_pending_host", [sys.executable, source / "tests/native_pending_host/run.py", "--build", build / "native_pending_host",
+                                "--generated", build / "native_pending/generated"])
     for suite in ("native_nvn", "native_nvn_builders"):
         run(f"{suite}-configure", ["cmake", "-S", source / f"tests/{suite}", "-B", build / suite])
         run(f"{suite}-build", ["cmake", "--build", build / suite, "--config", "Release", "--parallel", "2"])
@@ -91,13 +98,22 @@ def main():
         run(f"{component}-configure", command)
         run(f"{component}-build", ["cmake", "--build", build / component, "--config", "Release", "--parallel", "2"])
         run(f"{component}-test", ["ctest", "--test-dir", build / component, "-C", "Release", "--output-on-failure"])
+    for component in ("window", "textures"):
+        run(f"{component}-configure", ["cmake", "-S", source / f"native-runtime/{component}", "-B", build / component,
+                                      f"-DNATIVE_TEXTURE_FMT_ROOT={fmt}"])
+        run(f"{component}-build", ["cmake", "--build", build / component, "--config", "Release", "--parallel", "2"])
+        run(f"{component}-test", ["ctest", "--test-dir", build / component, "-C", "Release", "--output-on-failure"])
     tools = {
         "platform": ("native_emit", "native_admit", "native_platform_test", "native_primitive_test",
-                     "native_loader_test", "native_ipc_test"),
+                     "native_loader_test", "native_ipc_test", "native_event_test", "native_wait_test"),
         "graphics": ("native_graphics_probe", "native_graphics_resource_test"),
-        "nvn": ("native_nvn_resource_test", "native_nvn_draw_test", "native_nvn_pipeline_check"),
-        "services": ("native_services_test",),
+        "nvn": ("native_nvn_resource_test", "native_nvn_draw_test", "native_nvn_pipeline_check", "native_nvn_frame_test", "native_nvn_state_test"),
+        "services": ("native_services_test", "native_services_event_test", "native_services_lifecycle_test"),
         "native_api/test": ("buffer_init_test",),
+        "native_pending/test-on": ("pending_test",),
+        "native_pending_host/on": ("native_pending_host_test",),
+        "window": ("window_test",),
+        "textures": ("native_texture_probe", "native_texture_test"),
     }
     output.mkdir(parents=True)
     binary = output / "bin"
@@ -112,6 +128,9 @@ def main():
     shutil.copy2(args.sirit_source_archive, output / "Sirit-v1.0.5-source.tar.gz")
     shutil.copytree(sirit / "include", output / "dependencies/sirit/include")
     shutil.copytree(vulkan, output / "dependencies/vulkan/include")
+    shutil.copytree(fmt / "include", output / "dependencies/fmt/include")
+    shutil.copy2(fmt / "LICENSE", output / "dependencies/fmt/LICENSE")
+    shutil.copy2(source / "LICENSES/MPL-2.0.txt", output / "BC-decoder-MPL-2.0.txt")
     for notice in (vulkan.parent / "LICENSES").glob("*.txt"):
         destination = output / "dependencies/vulkan/LICENSES" / notice.name
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -140,6 +159,10 @@ def main():
         "game_code_or_assets_included": False, "full_native_gameplay": False,
         "verification": records,
         "dependencies": {"Vulkan-Headers": {"version": "v1.4.345", "header_sha256": sha(vulkan / "vulkan/vulkan.h")},
+                         "fmt-headers": {"version": "12.1.0", "header_sha256": sha(fmt / "include/fmt/base.h"),
+                                         "license_sha256": sha(fmt / "LICENSE"), "library_linked": False},
+                         "BC-decoder": {"source": "Existing base-source externals/bc_decoder; Skyline/SwiftShader derived",
+                                        "source_sha256": sha(source / "externals/bc_decoder/bc_decoder.cpp"), "license": "MPL-2.0"},
                          "Sirit": {"version": "v1.0.5", "static_library_sha256": sha(sirit / "lib/sirit-static.lib"),
                                    "source_archive_sha256": sha(args.sirit_source_archive),
                                    "source": "https://github.com/eden-emulator/sirit/tree/v1.0.5"}},

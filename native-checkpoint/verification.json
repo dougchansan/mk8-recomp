@@ -1,14 +1,14 @@
 {
   "schema": 1,
-  "release": "native-foundations-20261014",
+  "release": "native-foundations-v3-20261014",
   "status": "verified foundations prerelease",
   "source_base_commit": "347fcf91d95cd39cb5c3db50f1b6d827ad699311",
-  "source_patch_sha256": "8b237998a3a3f70da5571c152c86bafe34a6d768bfa491af174eb4564a6262f1",
-  "archive_name": "native-foundations-windows-x64-20261014.zip",
-  "archive_sha256": "769d96bbd16ea8a148b0f43cf3821c9086ef3c6617fd314d4da6b71581151421",
-  "archive_size_bytes": 24419260,
-  "package_build_manifest_sha256": "cda6843929f47a22595a792985d6bd79b6ece469cbffa1b0a30afa98a1c152b9",
-  "source_prepare": "New detached worktree, patch check/apply and all 81 checkpoint file hashes verified",
+  "source_patch_sha256": "6aa6bfb4f6670484d03261a23e4bbd36cd57234fd5c9e98f6f8dd4f40044cd05",
+  "archive_name": "native-foundations-v3-windows-x64-20261014.zip",
+  "archive_sha256": "f4fb0ff162bb3b4e9b022d53aa1ce5d8e51f024f40593574e91e950c4cf38988",
+  "archive_size_bytes": 25583034,
+  "package_build_manifest_sha256": "6f93429f379aa06fe3e08318adb303caecdf8951fbde05ae8535ea0c918f463f",
+  "source_prepare": "New detached worktree, patch check/apply and all 133 checkpoint file hashes verified; incremental build mirror matched every fresh-source hash before rebuilding",
   "cmake_version": "cmake version 4.3.2",
   "python_version": "3.12.10",
   "toolchains": {
@@ -70,6 +70,54 @@
       },
       "configuration": "Release",
       "parallel_jobs": 2
+    },
+    "window": {
+      "compiler_id": "MSVC",
+      "compiler_version": "19.50.35723.0",
+      "cmake_configuration": {
+        "CMAKE_CXX_FLAGS": "/DWIN32 /D_WINDOWS /EHsc",
+        "CMAKE_CXX_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_GENERATOR": "Visual Studio 18 2026"
+      },
+      "configuration": "Release",
+      "parallel_jobs": 2
+    },
+    "textures": {
+      "compiler_id": "MSVC",
+      "compiler_version": "19.50.35723.0",
+      "cmake_configuration": {
+        "CMAKE_CXX_FLAGS": "/DWIN32 /D_WINDOWS /EHsc",
+        "CMAKE_CXX_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_GENERATOR": "Visual Studio 18 2026"
+      },
+      "configuration": "Release",
+      "parallel_jobs": 2
+    },
+    "native_pending/test-on": {
+      "compiler_id": "MSVC",
+      "compiler_version": "19.50.35723.0",
+      "cmake_configuration": {
+        "CMAKE_CXX_FLAGS": "/DWIN32 /D_WINDOWS /EHsc",
+        "CMAKE_CXX_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_C_FLAGS": "/DWIN32 /D_WINDOWS",
+        "CMAKE_C_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_GENERATOR": "Visual Studio 18 2026"
+      },
+      "configuration": "Release",
+      "parallel_jobs": 2
+    },
+    "native_pending_host/on": {
+      "compiler_id": "MSVC",
+      "compiler_version": "19.50.35723.0",
+      "cmake_configuration": {
+        "CMAKE_CXX_FLAGS": "/DWIN32 /D_WINDOWS /EHsc",
+        "CMAKE_CXX_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_C_FLAGS": "/DWIN32 /D_WINDOWS",
+        "CMAKE_C_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_GENERATOR": "Visual Studio 18 2026"
+      },
+      "configuration": "Release",
+      "parallel_jobs": 2
     }
   },
   "runtime_library": {
@@ -79,7 +127,7 @@
   "link_boundaries": "CPU map/DLL checks reject emulator/JIT/graphics dependencies; Vulkan tools dynamically load the system driver",
   "binaries": {
     "buffer_init_test.exe": {
-      "sha256": "8179be5ebc94fc58450be3cba0b496ae38d5a8fb39df0e9d737ef94426420227",
+      "sha256": "f87443fbb6e3f40a53a22662b62b8578f3f6dbb0f69b02ac998e23a6a10633ef",
       "pe_machine": "AMD64",
       "dll_imports": [
         "KERNEL32.dll",
@@ -87,15 +135,15 @@
         "VCRUNTIME140.dll",
         "VCRUNTIME140_1.dll",
         "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
         "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
         "api-ms-win-crt-math-l1-1-0.dll",
         "api-ms-win-crt-stdio-l1-1-0.dll",
         "api-ms-win-crt-locale-l1-1-0.dll"
       ]
     },
     "native_admit.exe": {
-      "sha256": "e824041613dc948062b1dd14e2c41c019afdf45119b1f9020ae93027abddfe40",
+      "sha256": "21e4a6dff18a1619acc8ed25569f5cb3cfb9eb732e6caee7d9fa3825083b20be",
       "pe_machine": "AMD64",
       "dll_imports": [
         "bcrypt.dll",
@@ -103,14 +151,21 @@
       ]
     },
     "native_emit.exe": {
-      "sha256": "5e971a7930c41bda9cda65c12bc3ea3a23774d9930ee9e6dd57e81cf54e14e8e",
+      "sha256": "bea31c9addc14a88d99dd0a91d417762e9742fece61759b98f62e157a2db38d3",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll"
+      ]
+    },
+    "native_event_test.exe": {
+      "sha256": "81758f374086101c8a3778823c3eae607765531bb776308ae3d1352ec61c15d9",
       "pe_machine": "AMD64",
       "dll_imports": [
         "KERNEL32.dll"
       ]
     },
     "native_graphics_probe.exe": {
-      "sha256": "e01e3a13a5afb8fa3cea6e71a090a7af4ecf6fd36dcaf3f798a8d889b308b252",
+      "sha256": "4598cd5d466437a5cb72fc78f8ac2da8e1531fb1cb7dee83e925734d3566a789",
       "pe_machine": "AMD64",
       "dll_imports": [
         "KERNEL32.dll",
@@ -126,7 +181,7 @@
       ]
     },
     "native_graphics_resource_test.exe": {
-      "sha256": "cc5b35c0c95845a71b31eada648a6025ddf9d0053fa44287773cecfed26288b3",
+      "sha256": "1a83df15facd8ba397bb017623bb676f3ff8d47790d899a6c53ad5bddcfd146e",
       "pe_machine": "AMD64",
       "dll_imports": [
         "KERNEL32.dll",
@@ -142,14 +197,14 @@
       ]
     },
     "native_ipc_test.exe": {
-      "sha256": "1abbc27bc788c60f90bfe30b647dc77a6fa24255aff23bb7fb30e2265f34adf6",
+      "sha256": "73f9ab17b6822c41e1dc0b8ce6a4874044880e1d47ad9cf5940573c71148dbb0",
       "pe_machine": "AMD64",
       "dll_imports": [
         "KERNEL32.dll"
       ]
     },
     "native_loader_test.exe": {
-      "sha256": "d5d0b4b7dc7bc198ffea81c94fa0cda5a60060d26fd31cb04f3eb3c291a0ba6c",
+      "sha256": "cade2816dcad91c40d52a23f0e8dd56dcce291df2e0fdf728a26c5d6fa9e8ad8",
       "pe_machine": "AMD64",
       "dll_imports": [
         "bcrypt.dll",
@@ -157,7 +212,7 @@
       ]
     },
     "native_nvn_draw_test.exe": {
-      "sha256": "b0a0ee98dd32145d6cebf8d9294d2bdaee397bee6ca3f68be5f30f778e3cd66f",
+      "sha256": "99f3ab90ea0d0d451b578f207ead4fb575cd8b381d6bb8faca8e2bf88914db1f",
       "pe_machine": "AMD64",
       "dll_imports": [
         "KERNEL32.dll",
@@ -165,15 +220,31 @@
         "VCRUNTIME140.dll",
         "VCRUNTIME140_1.dll",
         "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
         "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll"
+      ]
+    },
+    "native_nvn_frame_test.exe": {
+      "sha256": "db5e7c3f9fe4b2e94fc65f6a3b633ff9379b650498dd664350a1868ccd98a2ff",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
         "api-ms-win-crt-heap-l1-1-0.dll",
         "api-ms-win-crt-stdio-l1-1-0.dll",
         "api-ms-win-crt-locale-l1-1-0.dll"
       ]
     },
     "native_nvn_pipeline_check.exe": {
-      "sha256": "e1ba602daea81d7459387eacb313bd69cbe12913c25265f9728af0e4fd8e53d9",
+      "sha256": "c10d0be4a3f551dd927714abdc611429be6480502c228e1c759119b9c37da89e",
       "pe_machine": "AMD64",
       "dll_imports": [
         "KERNEL32.dll",
@@ -191,7 +262,7 @@
       ]
     },
     "native_nvn_resource_test.exe": {
-      "sha256": "c9fad0b0bd8a4d6d094cdd7c6a7aa4e0b33de1ed702bf0b69a15b5c36e65ba60",
+      "sha256": "351b8acfb73e08ba8d8d598ff52fbb973a716a54a220f59e2888a2713c8200d4",
       "pe_machine": "AMD64",
       "dll_imports": [
         "KERNEL32.dll",
@@ -206,22 +277,77 @@
         "api-ms-win-crt-locale-l1-1-0.dll"
       ]
     },
+    "native_nvn_state_test.exe": {
+      "sha256": "3c8e3865729db5df3d40ec1ffe832fd8e09928099e23d7c16ade3d1a35c877b3",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll"
+      ]
+    },
+    "native_pending_host_test.exe": {
+      "sha256": "dd24ed20905373bd708e570ed006424c4414a3b3db24f2199acd30ea3b5fa9d2",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll"
+      ]
+    },
     "native_platform_test.exe": {
-      "sha256": "01f25dd7c632c0bf526a95fe6b6275b8b686616b740a8a68d260f084634fd72c",
+      "sha256": "a2c676fc2e2f6afd5b4046f5706776e2076675037412562415f3b84bb47f9fb2",
       "pe_machine": "AMD64",
       "dll_imports": [
         "KERNEL32.dll"
       ]
     },
     "native_primitive_test.exe": {
-      "sha256": "0d0a551c3cb7825bf6cc5249718daea8ed6ead49da9cc8f06f4737e634e34a0c",
+      "sha256": "df23270a0decacc2ecd6eb36ddfd527a99bb1f47c195e305a1605dc83637572f",
       "pe_machine": "AMD64",
       "dll_imports": [
         "KERNEL32.dll"
       ]
     },
+    "native_services_event_test.exe": {
+      "sha256": "d1d963c08488afe4c45fd9484dea01280bc2dd2ead14e658c4569b3181ad9fe9",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "KERNEL32.dll"
+      ]
+    },
+    "native_services_lifecycle_test.exe": {
+      "sha256": "8778aa4693be69276ebc1b99f3614d65a43fef59361d0415694cece7fc0d8808",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "KERNEL32.dll"
+      ]
+    },
     "native_services_test.exe": {
-      "sha256": "e568d129184cccbf6717fdf1b8b517b4d6e716bfa576ce2864da0c3e75270551",
+      "sha256": "351c344b812d85ee2b86f44a5edab405118102be7b381be84b35e9a6103cb603",
       "pe_machine": "AMD64",
       "dll_imports": [
         "MSVCP140.dll",
@@ -236,6 +362,81 @@
         "api-ms-win-crt-runtime-l1-1-0.dll",
         "KERNEL32.dll"
       ]
+    },
+    "native_texture_probe.exe": {
+      "sha256": "8a9d5bc3d0a45021a33ce7074df6842b6a67769048c14583b2651ae0f2bff14b",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-filesystem-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll"
+      ]
+    },
+    "native_texture_test.exe": {
+      "sha256": "520c087e2cab034d6552abbbc5a7767bcdd4c2f5a5b65dcc88b7138f54909e80",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "KERNEL32.dll"
+      ]
+    },
+    "native_wait_test.exe": {
+      "sha256": "e1645d6765add63b3bbe3fb81bb51229d16d657fde7c89d2a01c3f9b0133cd03",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll"
+      ]
+    },
+    "pending_test.exe": {
+      "sha256": "a5f4d794111c1ac447522fbbae94c267c6499e7ed515c00d9935b21d6c3285f4",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-convert-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-environment-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll"
+      ]
+    },
+    "window_test.exe": {
+      "sha256": "e59c384b6eb8f348fc0f99f704aa418fe527d2d01d3b2bfc11a2ffec32797816",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "USER32.dll",
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll"
+      ]
     }
   },
   "verification_steps": [
@@ -246,6 +447,8 @@
     "native_rsqrt-correctness",
     "native_api",
     "buffer_init",
+    "native_pending",
+    "native_pending_host",
     "native_nvn-configure",
     "native_nvn-build",
     "native_nvn-test",
@@ -261,12 +464,29 @@
     "nvn-configure",
     "nvn-build",
     "nvn-test",
+    "window-configure",
+    "window-build",
+    "window-test",
+    "textures-configure",
+    "textures-build",
+    "textures-test",
     "base-source-archive"
   ],
   "dependencies": {
     "Vulkan-Headers": {
       "version": "v1.4.345",
       "header_sha256": "72b952cc6de70ee12d118d3095e80346b42ff01cfc6f2bbb37ec01800eab1da6"
+    },
+    "fmt-headers": {
+      "version": "12.1.0",
+      "header_sha256": "73ba80ca15c02d6826a611d1651ca6f1495ec127815e257a5d6552d6f6ad313e",
+      "license_sha256": "07580f2a3b35709ce703d523f447b242f6dfec7582a8c0df102c7fa2849375f8",
+      "library_linked": false
+    },
+    "BC-decoder": {
+      "source": "Existing base-source externals/bc_decoder; Skyline/SwiftShader derived",
+      "source_sha256": "a818a7a32f032fb4872fec53a91bfba2dc14a6b27e6c462f6f3f008e470c90ee",
+      "license": "MPL-2.0"
     },
     "Sirit": {
       "version": "v1.0.5",
@@ -281,6 +501,104 @@
     "Development-host verification using existing dependency installations; clean-machine portability unverified",
     "Actual game-linked native boot, graphics frame/presentation, audio, input and save closure not established",
     "Frozen-library shader tooling is source-only and excluded from public binary build claims",
-    "Public checkpoint omits the private exact-copy-loop experiment"
-  ]
+    "Public checkpoint omits the private exact-copy-loop experiment",
+    "NativeInput shader factory is source-only in this package; its offline compiler libraries are not distributed"
+  ],
+  "test_results": {
+    "graphics": {
+      "log_sha256": "4db5eae02de1a45e113582672f7527711232f35513913aea37978efb9c989fbd",
+      "reported_results": [
+        {
+          "passed": true,
+          "device": "AMD Radeon RX 9070 XT",
+          "vendor_id": 4098,
+          "device_id": 30032,
+          "driver_version": 8389003,
+          "api_version": 4211037,
+          "draw_count": 1,
+          "red_pixels": 1152,
+          "black_pixels": 2944,
+          "center_rgba": 4278190335,
+          "corner_rgba": 4278190080,
+          "error": ""
+        },
+        {
+          "passed": true,
+          "device": "AMD Radeon RX 9070 XT",
+          "pool_bytes": 4097,
+          "enabled_shader_image_gather_extended": true,
+          "coherent": true,
+          "rejected_operations": 17,
+          "thread_rejected": true,
+          "roundtrip_bytes": 64
+        }
+      ]
+    },
+    "nvn": {
+      "log_sha256": "6499c17e399b31e93e6b466093092804c82177d34ba058b6f9713109bc835264",
+      "reported_results": [
+        {
+          "passed": true,
+          "actual_gpu_copy_bytes": 64,
+          "rejected": 29,
+          "guest_reads": 7,
+          "guest_writes": 2,
+          "key_reuse": true,
+          "no_guest_host_pointers": true
+        },
+        {
+          "passed": true,
+          "native_draws": 5,
+          "uniforms": 1,
+          "combined_textures": 2,
+          "pixels_checked": 20480,
+          "rejected": 10,
+          "actual_game_inputs": false
+        },
+        {
+          "passed": true,
+          "draws": 76,
+          "pixels": 306176,
+          "rejected": 66,
+          "wide5120": true,
+          "negative_viewport": true,
+          "api_version": 4202496,
+          "max_image_dimension": 32768,
+          "packed10": true,
+          "actual_game": false
+        },
+        {
+          "packed_cpu_oracle": true,
+          "roundtrips": 4096,
+          "gpu_calls": 0
+        }
+      ]
+    },
+    "window": {
+      "log_sha256": "9c80735506be18cda1e1cef1ffb0dd42e217a0bb9f50f2c744e1e180c5000877",
+      "reported_results": [
+        {
+          "passed": true,
+          "real_os_records": 6,
+          "observed_active": 0,
+          "observed_inactive": 6,
+          "synthetic_close_test": true,
+          "forced_foreground": false,
+          "gpu": false
+        }
+      ]
+    },
+    "textures": {
+      "log_sha256": "f5aefdbb59832d9bdf46d48c1265059941d69f58e19aaed360c6a215fd1bca17",
+      "reported_results": [
+        {
+          "passed": true,
+          "independent_tiled_cases": 210,
+          "bc_formats": 2,
+          "clipped_block_fixtures": 4,
+          "preserves_srgb_swizzle_packed_precision": true
+        }
+      ]
+    }
+  }
 }

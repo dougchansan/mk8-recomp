@@ -1,7 +1,7 @@
 # Native foundations build checkpoint
 
-This Windows x64 prerelease contains native CPU/service and Vulkan verification
-tools. It does not boot or play Mario Kart 8 Deluxe. Actual title code and data
+This Windows x64 v3 prerelease contains 24 native CPU/service, window, texture and
+Vulkan verification tools. It does not boot or play Mario Kart 8 Deluxe. Actual title code and data
 are supplied locally; no game-linked executable is distributed.
 
 The source checkpoint applies to suyu commit
@@ -23,16 +23,31 @@ From the extracted release directory:
 .\bin\native_platform_test.exe .\fixtures\platform
 .\bin\native_primitive_test.exe clock
 .\bin\native_ipc_test.exe
+.\bin\native_event_test.exe
+.\bin\native_wait_test.exe
 .\bin\native_services_test.exe
+.\bin\native_services_event_test.exe
+.\bin\native_services_lifecycle_test.exe
+.\bin\pending_test.exe
+.\bin\native_pending_host_test.exe
 .\bin\native_graphics_probe.exe
 .\bin\native_graphics_resource_test.exe
 .\bin\native_nvn_resource_test.exe
 .\bin\native_nvn_draw_test.exe
+.\bin\native_nvn_frame_test.exe
+.\bin\native_nvn_state_test.exe
 .\bin\buffer_init_test.exe
+.\bin\native_texture_test.exe
+.\bin\window_test.exe
 ```
 
-The graphics tests draw into offscreen images and verify their pixels. They do
-not open a game window. `native_admit` and `native_nvn_pipeline_check` are tools
+The graphics tests draw into offscreen images and verify their pixels. The
+window test briefly creates owned diagnostic windows and records real OS state;
+it does not establish game input, rendering or foreground activation.
+`native_texture_probe DESCRIPTOR32 STORAGE TEXELS JSON` converts caller-supplied
+bounded texture data into unused output paths. Its output pair is not transactional:
+a later failure can leave the first newly created file, while existing files are
+preserved. `native_admit` and `native_nvn_pipeline_check` are tools
 for caller-supplied inputs; a successful diagnostic is separate from gameplay.
 
 ## Prepare the source
@@ -53,19 +68,22 @@ without creating a worktree. Source preparation needs no game inputs.
 
 ## Rebuild and verify the public tools
 
-The packaging command requires existing Vulkan-Headers v1.4.345 and Sirit
-v1.0.5 Windows x64 installations. It downloads nothing. Point `--vulkan-include`
+The packaging command requires existing Vulkan-Headers v1.4.345, Sirit
+v1.0.5 Windows x64 and fmt12.1.0 header installations. It downloads nothing. Point `--vulkan-include`
 at the directory containing `vulkan/vulkan.h`; point `--sirit-root` at the
 installation containing `include` and `lib/sirit-static.lib`.
+Point `--fmt-root` at its `include` and `LICENSE`; the texture component links no
+fmt binary. The package carries these headers/license and the existing BC decoder's
+MPL-2.0 notice and corresponding source in the base-source archive.
 
 Run in a compiler-enabled PowerShell, substituting your dependency paths:
 
 ```powershell
-python scripts/package-native-checkpoint.py --source ./native-source --build ./local/native-checkpoint --output ./local/native-foundations-windows-x64 --vulkan-include C:/deps/vulkan/include --sirit-root C:/deps/sirit --sirit-license C:/deps/sirit-source/LICENSE.txt --sirit-source-archive C:/deps/Sirit-v1.0.5-source.tar.gz
+python scripts/package-native-checkpoint.py --source ./native-source --build ./local/native-checkpoint --output ./local/native-foundations-windows-x64 --vulkan-include C:/deps/vulkan/include --sirit-root C:/deps/sirit --sirit-license C:/deps/sirit-source/LICENSE.txt --sirit-source-archive C:/deps/Sirit-v1.0.5-source.tar.gz --fmt-root C:/deps/fmt
 ```
 
 The command verifies the checkpoint, builds with two jobs, runs the synthetic
-CPU, service, entry/API, estimate and graphics tests, then packages only an
+CPU, service, entry/API v2/v3, estimate, window, texture and graphics tests, then packages only an
 explicit list of tools and generated synthetic fixtures. Failed tests prevent
 package creation. The build directory retains detailed logs. A new output
 directory is required for each package.
@@ -82,10 +100,12 @@ other operating systems and different GPU drivers remain unverified. Shader
 capture tooling in the patch still depends on separately supplied, matching
 shader-recompiler libraries; it is not part of this binary package.
 
-This release is the frozen v2 checkpoint. Later scheduled-API v3, event/window,
-persistent-image and texture conversion results in the progress document are
-active development work and are not silently substituted into this archive.
-The development checkout records later verified local binaries in the gitignored
+This v3 checkpoint adds the scheduled API transport, native event waits, window
+observer, typed persistent images and texture converter. The emitted and CPU-owner
+v3 suites run with FM1/GG1/FPX1 using synthetic inputs. Real native DeviceInitialize,
+actual-game draw/presentation and gameplay remain unproved. The older v2 release
+is preserved as a separate immutable archive.
+The development checkout records verified local binaries in the gitignored
 `local/native-builds/latest.json` index. That index distinguishes public tools,
 the game reference using reference graphics, and the standalone CPU diagnostic.
 Game-linked binaries require local title inputs and are not uploaded.

@@ -1,1 +1,1 @@
-769d96bbd16ea8a148b0f43cf3821c9086ef3c6617fd314d4da6b71581151421  native-foundations-windows-x64-20261014.zip
+f4fb0ff162bb3b4e9b022d53aa1ce5d8e51f024f40593574e91e950c4cf38988  native-foundations-v3-windows-x64-20261014.zip

@@ -1,6 +1,5 @@
 diff --git a/native-runtime/CMakeLists.txt b/native-runtime/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..2770385ad6732067471f09fb9f98acee111bc3bf
 --- /dev/null
 +++ b/native-runtime/CMakeLists.txt
 @@ -0,0 +1,116 @@
@@ -122,7 +121,6 @@ index 0000000000000000000000000000000000000000..2770385ad6732067471f09fb9f98acee
 +
 diff --git a/native-runtime/README.md b/native-runtime/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..1196a58182e7792dad6cc182379ab7c42d0c7b83
 --- /dev/null
 +++ b/native-runtime/README.md
 @@ -0,0 +1,46 @@
@@ -174,7 +172,6 @@ index 0000000000000000000000000000000000000000..1196a58182e7792dad6cc182379ab7c4
 +`run_boot.py --window` optionally creates a normal Win32 window and pumps its owner between bounded CPU turns and during waits. Only recorded foreground-root observations are translated into service lifecycle transitions, with process/source/window validation; creation does not imply active focus. The diagnostic stops after 30 seconds or its slice bound, reports a parked state separately from guest process exit, and cancels its retained wait on deadline teardown. WM_QUIT is an owner stop, not guest exit. This CPU-only window provides no renderer or presentation. Its additional dependency is the operating system USER32 library.
 diff --git a/native-runtime/address_space.cpp b/native-runtime/address_space.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..6018c3f0c44dc4925d6bcae758bbcbead83e17f1
 --- /dev/null
 +++ b/native-runtime/address_space.cpp
 @@ -0,0 +1,149 @@
@@ -329,7 +326,6 @@ index 0000000000000000000000000000000000000000..6018c3f0c44dc4925d6bcae758bbcbea
 +} // namespace native
 diff --git a/native-runtime/address_space.h b/native-runtime/address_space.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..1677dfd60c878c2abf84d9dba1d2b7ffab38f2d5
 --- /dev/null
 +++ b/native-runtime/address_space.h
 @@ -0,0 +1,56 @@
@@ -391,7 +387,6 @@ index 0000000000000000000000000000000000000000..1677dfd60c878c2abf84d9dba1d2b7ff
 +} // namespace native
 diff --git a/native-runtime/boot.cpp b/native-runtime/boot.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..c83b1c2faee8198f4d8bcff335979caaf489ba45
 --- /dev/null
 +++ b/native-runtime/boot.cpp
 @@ -0,0 +1,364 @@
@@ -761,7 +756,6 @@ index 0000000000000000000000000000000000000000..c83b1c2faee8198f4d8bcff335979caa
 +}
 diff --git a/native-runtime/clock.h b/native-runtime/clock.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..ca52e7f89d3e935e35a2c8ccc2285a84a8e75dae
 --- /dev/null
 +++ b/native-runtime/clock.h
 @@ -0,0 +1,31 @@
@@ -798,7 +792,6 @@ index 0000000000000000000000000000000000000000..ca52e7f89d3e935e35a2c8ccc2285a84
 +} // namespace native
 diff --git a/native-runtime/event.cpp b/native-runtime/event.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..9c301551d4c75ae20851551fd53d90c2aa04e71e
 --- /dev/null
 +++ b/native-runtime/event.cpp
 @@ -0,0 +1,170 @@
@@ -974,7 +967,6 @@ index 0000000000000000000000000000000000000000..9c301551d4c75ae20851551fd53d90c2
 +} // namespace native
 diff --git a/native-runtime/event.h b/native-runtime/event.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..123bc00738e51c8f19b305e8f8d3665f111bdcb0
 --- /dev/null
 +++ b/native-runtime/event.h
 @@ -0,0 +1,76 @@
@@ -1056,7 +1048,6 @@ index 0000000000000000000000000000000000000000..123bc00738e51c8f19b305e8f8d3665f
 +} // namespace native
 diff --git a/native-runtime/event_registry.cpp b/native-runtime/event_registry.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..92cf1fd9e34978ee42fcfe9fe08dbd27255ee9f8
 --- /dev/null
 +++ b/native-runtime/event_registry.cpp
 @@ -0,0 +1,147 @@
@@ -1209,7 +1200,6 @@ index 0000000000000000000000000000000000000000..92cf1fd9e34978ee42fcfe9fe08dbd27
 +} // namespace native
 diff --git a/native-runtime/event_registry.h b/native-runtime/event_registry.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..524d3e8c497d5c896e0461e1d352f8723b7b7a00
 --- /dev/null
 +++ b/native-runtime/event_registry.h
 @@ -0,0 +1,27 @@
@@ -1242,7 +1232,6 @@ index 0000000000000000000000000000000000000000..524d3e8c497d5c896e0461e1d352f872
 +} // namespace native
 diff --git a/native-runtime/graphics/CMakeLists.txt b/native-runtime/graphics/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..eb55eaf2dcd7bb447ab7135542d4700deda2488a
 --- /dev/null
 +++ b/native-runtime/graphics/CMakeLists.txt
 @@ -0,0 +1,22 @@
@@ -1270,7 +1259,6 @@ index 0000000000000000000000000000000000000000..eb55eaf2dcd7bb447ab7135542d4700d
 +
 diff --git a/native-runtime/graphics/README.md b/native-runtime/graphics/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..99807340be4b752842d1ea76b607ccd58dd143b3
 --- /dev/null
 +++ b/native-runtime/graphics/README.md
 @@ -0,0 +1,23 @@
@@ -1299,7 +1287,6 @@ index 0000000000000000000000000000000000000000..99807340be4b752842d1ea76b607ccd5
 +`VulkanHandles.enabled_shader_image_gather_extended` reports the feature actually enabled at device creation, after querying physical support. It is false when unavailable. The device enables only this supported feature in the core feature set; this does not enable other shader capabilities. Renderers must inspect each module's capabilities and reject a required feature when the corresponding enabled flag is false. Shader module creation by itself is insufficient evidence of pipeline feature compatibility.
 diff --git a/native-runtime/graphics/native_graphics.cpp b/native-runtime/graphics/native_graphics.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..421b8c5a21b632a1109f826512c9282a3c71cc80
 --- /dev/null
 +++ b/native-runtime/graphics/native_graphics.cpp
 @@ -0,0 +1,461 @@
@@ -1766,7 +1753,6 @@ index 0000000000000000000000000000000000000000..421b8c5a21b632a1109f826512c9282a
 +} // namespace native_graphics
 diff --git a/native-runtime/graphics/native_graphics.h b/native-runtime/graphics/native_graphics.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..190e5e8668eda0d35f4f99a76a69ed48d7ca73f7
 --- /dev/null
 +++ b/native-runtime/graphics/native_graphics.h
 @@ -0,0 +1,16 @@
@@ -1788,7 +1774,6 @@ index 0000000000000000000000000000000000000000..190e5e8668eda0d35f4f99a76a69ed48
 +} // namespace native_graphics
 diff --git a/native-runtime/graphics/probe.cpp b/native-runtime/graphics/probe.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..0cd35fe259b07bd82b2431e949a28c4680e97c58
 --- /dev/null
 +++ b/native-runtime/graphics/probe.cpp
 @@ -0,0 +1,18 @@
@@ -1812,7 +1797,6 @@ index 0000000000000000000000000000000000000000..0cd35fe259b07bd82b2431e949a28c46
 +}
 diff --git a/native-runtime/graphics/resource_test.cpp b/native-runtime/graphics/resource_test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..46b745c778c737679961bcfb0fd6c26df44f9e4f
 --- /dev/null
 +++ b/native-runtime/graphics/resource_test.cpp
 @@ -0,0 +1,98 @@
@@ -1916,10 +1900,9 @@ index 0000000000000000000000000000000000000000..46b745c778c737679961bcfb0fd6c26d
 +}
 diff --git a/native-runtime/graphics/vulkan_resources.cpp b/native-runtime/graphics/vulkan_resources.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..84229f61a1d13bca47d11ee04183f6714e373108
 --- /dev/null
 +++ b/native-runtime/graphics/vulkan_resources.cpp
-@@ -0,0 +1,407 @@
+@@ -0,0 +1,573 @@
 +#include "vulkan_resources.h"
 +#define WIN32_LEAN_AND_MEAN
 +#define NOMINMAX
@@ -1932,8 +1915,10 @@ index 0000000000000000000000000000000000000000..84229f61a1d13bca47d11ee04183f671
 +#include <stdexcept>
 +#include <thread>
 +#include <vector>
-+#include <vulkan/vulkan.h>
 +#include <windows.h>
++#define VK_USE_PLATFORM_WIN32_KHR
++#include <set>
++#include <vulkan/vulkan.h>
 +namespace native_graphics {
 +namespace {
 +void Check(VkResult r, const char *what) {
@@ -1968,6 +1953,11 @@ index 0000000000000000000000000000000000000000..84229f61a1d13bca47d11ee04183f671
 +  HMODULE loader{};
 +  VkInstance instance{};
 +  VkPhysicalDevice physical{};
++  VkSurfaceKHR surface{};
++  bool maintenance_khr = false;
++  std::vector<std::string> enabled_instance_extensions,
++      enabled_device_extensions;
++  std::shared_ptr<const Win32SurfaceTarget> surface_target;
 +  VkDevice device{};
 +  VkQueue queue{};
 +  uint32_t queue_family = 0, enabled_api_version = VK_API_VERSION_1_0;
@@ -1979,7 +1969,21 @@ index 0000000000000000000000000000000000000000..84229f61a1d13bca47d11ee04183f671
 +  std::map<uint64_t, Pool> pools;
 +  std::map<uint64_t, View> views;
 +  template <class T> T Get(const char *name) const {
-+    auto p = loader ? GetProcAddress(loader, name) : nullptr;
++    if (!loader)
++      throw std::runtime_error("Vulkan loader is unavailable");
++    auto p = GetProcAddress(loader, name);
++    if (!p && device) {
++      auto get = reinterpret_cast<PFN_vkGetDeviceProcAddr>(
++          GetProcAddress(loader, "vkGetDeviceProcAddr"));
++      if (get)
++        p = reinterpret_cast<FARPROC>(get(device, name));
++    }
++    if (!p && instance) {
++      auto get = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
++          GetProcAddress(loader, "vkGetInstanceProcAddr"));
++      if (get)
++        p = reinterpret_cast<FARPROC>(get(instance, name));
++    }
 +    if (!p)
 +      throw std::runtime_error(std::string("Unsupported Vulkan export: ") +
 +                               name);
@@ -2027,7 +2031,11 @@ index 0000000000000000000000000000000000000000..84229f61a1d13bca47d11ee04183f671
 +      for (auto &[id, p] : pools)
 +        Release(p);
 +      Get<PFN_vkDestroyDevice>("vkDestroyDevice")(device, nullptr);
++      device = VK_NULL_HANDLE;
 +    }
++    if (surface)
++      Get<PFN_vkDestroySurfaceKHR>("vkDestroySurfaceKHR")(instance, surface,
++                                                          nullptr);
 +    if (instance)
 +      Get<PFN_vkDestroyInstance>("vkDestroyInstance")(instance, nullptr);
 +    if (loader)
@@ -2075,13 +2083,69 @@ index 0000000000000000000000000000000000000000..84229f61a1d13bca47d11ee04183f671
 +    throw std::runtime_error("System Vulkan loader unavailable");
 +  VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
 +  app.pApplicationName = "native-resource-device";
-+  app.apiVersion =
-+      options.require_device_address ? VK_API_VERSION_1_2 : VK_API_VERSION_1_0;
++  app.apiVersion = options.require_device_address || options.presentation
++                       ? VK_API_VERSION_1_2
++                       : VK_API_VERSION_1_0;
 +  impl->enabled_api_version = app.apiVersion;
 +  VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
 +  ici.pApplicationInfo = &app;
++  std::vector<const char *> instance_extensions;
++  bool instance_khr = false, instance_ext = false;
++  if (options.presentation) {
++    const auto &t = *options.presentation;
++    DWORD pid = 0;
++    if (!t.window_owner || !t.surface_pin ||
++        t.owner_thread != std::this_thread::get_id() ||
++        GetWindowThreadProcessId(reinterpret_cast<HWND>(t.window), &pid) !=
++            GetCurrentThreadId() ||
++        pid != GetCurrentProcessId() || !t.instance)
++      throw std::runtime_error(
++          "Invalid/foreign/wrong-thread presentation window");
++    uint32_t count = 0;
++    Check(V(vkEnumerateInstanceExtensionProperties)(nullptr, &count, nullptr),
++          "Instance extension count");
++    std::vector<VkExtensionProperties> ext(count);
++    Check(
++        V(vkEnumerateInstanceExtensionProperties)(nullptr, &count, ext.data()),
++        "Instance extensions");
++    std::set<std::string> names;
++    for (auto &e : ext)
++      names.insert(e.extensionName);
++    instance_khr = names.contains(VK_KHR_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
++    instance_ext = names.contains(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
++    if (!instance_khr && !instance_ext)
++      throw std::runtime_error("Presentation surface maintenance1 unsupported");
++    instance_extensions = {VK_KHR_SURFACE_EXTENSION_NAME,
++                           VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
++                           VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME};
++    if (instance_khr)
++      instance_extensions.push_back(
++          VK_KHR_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
++    if (instance_ext)
++      instance_extensions.push_back(
++          VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
++    for (auto name : instance_extensions)
++      if (!names.contains(name))
++        throw std::runtime_error(
++            std::string("Required presentation instance extension missing: ") +
++            name);
++    impl->surface_target = options.presentation;
++    for (auto name : instance_extensions)
++      impl->enabled_instance_extensions.emplace_back(name);
++    ici.enabledExtensionCount = uint32_t(instance_extensions.size());
++    ici.ppEnabledExtensionNames = instance_extensions.data();
++  }
 +  Check(V(vkCreateInstance)(&ici, nullptr, &impl->instance),
 +        "vkCreateInstance");
++  if (options.presentation) {
++    VkWin32SurfaceCreateInfoKHR ci{
++        VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
++    ci.hwnd = reinterpret_cast<HWND>(options.presentation->window);
++    ci.hinstance = reinterpret_cast<HINSTANCE>(options.presentation->instance);
++    Check(V(vkCreateWin32SurfaceKHR)(impl->instance, &ci, nullptr,
++                                     &impl->surface),
++          "Create Win32 surface");
++  }
 +  uint32_t n = 0;
 +  Check(V(vkEnumeratePhysicalDevices)(impl->instance, &n, nullptr),
 +        "vkEnumeratePhysicalDevices");
@@ -2092,14 +2156,54 @@ index 0000000000000000000000000000000000000000..84229f61a1d13bca47d11ee04183f671
 +  for (auto p : devices) {
 +    VkPhysicalDeviceProperties prop{};
 +    V(vkGetPhysicalDeviceProperties)(p, &prop);
-+    if (options.require_device_address && prop.apiVersion < VK_API_VERSION_1_2)
++    if ((options.require_device_address || options.presentation) &&
++        prop.apiVersion < VK_API_VERSION_1_2)
 +      continue;
++    if (options.presentation) {
++      uint32_t count = 0;
++      Check(
++          V(vkEnumerateDeviceExtensionProperties)(p, nullptr, &count, nullptr),
++          "Device extension count");
++      std::vector<VkExtensionProperties> ext(count);
++      Check(V(vkEnumerateDeviceExtensionProperties)(p, nullptr, &count,
++                                                    ext.data()),
++            "Device extensions");
++      std::set<std::string> names;
++      for (auto &e : ext)
++        names.insert(e.extensionName);
++      const bool khr =
++          instance_khr &&
++          names.contains(VK_KHR_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME);
++      const bool ext_supported =
++          instance_ext &&
++          names.contains(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME);
++      if (!names.contains(VK_KHR_SWAPCHAIN_EXTENSION_NAME) ||
++          (!khr && !ext_supported))
++        continue;
++      impl->maintenance_khr = khr;
++      VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR f{
++          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR};
++      VkPhysicalDeviceFeatures2 features{
++          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
++      features.pNext = &f;
++      V(vkGetPhysicalDeviceFeatures2)(p, &features);
++      if (!f.swapchainMaintenance1)
++        continue;
++    }
 +    uint32_t count = 0;
 +    V(vkGetPhysicalDeviceQueueFamilyProperties)(p, &count, nullptr);
 +    std::vector<VkQueueFamilyProperties> q(count);
 +    V(vkGetPhysicalDeviceQueueFamilyProperties)(p, &count, q.data());
 +    for (uint32_t i = 0; i < count; ++i)
 +      if (q[i].queueCount && (q[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
++        if (options.presentation) {
++          VkBool32 supported = VK_FALSE;
++          Check(V(vkGetPhysicalDeviceSurfaceSupportKHR)(p, i, impl->surface,
++                                                        &supported),
++                "Surface queue support");
++          if (!supported)
++            continue;
++        }
 +        if (options.require_device_address) {
 +          VkPhysicalDeviceBufferDeviceAddressFeatures bda{
 +              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES};
@@ -2139,6 +2243,24 @@ index 0000000000000000000000000000000000000000..84229f61a1d13bca47d11ee04183f671
 +  bda.bufferDeviceAddress = VK_TRUE;
 +  if (options.require_device_address)
 +    d.pNext = &bda;
++  VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR maintenance{
++      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR};
++  std::vector<const char *> device_extensions;
++  if (options.presentation) {
++    maintenance.swapchainMaintenance1 = VK_TRUE;
++    if (options.require_device_address)
++      bda.pNext = &maintenance;
++    else
++      d.pNext = &maintenance;
++    device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
++                         impl->maintenance_khr
++                             ? VK_KHR_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME
++                             : VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME};
++    for (auto name : device_extensions)
++      impl->enabled_device_extensions.emplace_back(name);
++    d.enabledExtensionCount = uint32_t(device_extensions.size());
++    d.ppEnabledExtensionNames = device_extensions.data();
++  }
 +  Check(V(vkCreateDevice)(impl->physical, &d, nullptr, &impl->device),
 +        "vkCreateDevice");
 +  impl->addresses = options.require_device_address;
@@ -2305,6 +2427,33 @@ index 0000000000000000000000000000000000000000..84229f61a1d13bca47d11ee04183f671
 +  auto &p = impl->GetPool({v.pool});
 +  return {reinterpret_cast<uint64_t>(p.buffer), v.offset, v.size};
 +}
++PresentationDiagnostics VulkanDevice::GetPresentationDiagnostics() const {
++  impl->Thread();
++  if (!impl->surface)
++    throw std::runtime_error("Device has no WSI diagnostics");
++  return {std::min(impl->enabled_api_version, impl->properties.apiVersion),
++          impl->properties.driverVersion,
++          impl->properties.vendorID,
++          impl->properties.deviceID,
++          impl->queue_family,
++          impl->maintenance_khr,
++          impl->enabled_instance_extensions,
++          impl->enabled_device_extensions};
++}
++uintptr_t VulkanDevice::PresentationWindow() const {
++  impl->Thread();
++  return impl->surface_target ? impl->surface_target->window : 0;
++}
++uintptr_t VulkanDevice::PresentationSurface() const {
++  impl->Thread();
++  return reinterpret_cast<uintptr_t>(impl->surface);
++}
++bool VulkanDevice::PresentationUsesKhrMaintenance() const {
++  impl->Thread();
++  if (!impl->surface)
++    throw std::runtime_error("No presentation surface");
++  return impl->maintenance_khr;
++}
 +GraphicsCapabilities VulkanDevice::GetCapabilities() const {
 +  impl->Thread();
 +  const auto &limits = impl->properties.limits;
@@ -2329,16 +2478,20 @@ index 0000000000000000000000000000000000000000..84229f61a1d13bca47d11ee04183f671
 +} // namespace native_graphics
 diff --git a/native-runtime/graphics/vulkan_resources.h b/native-runtime/graphics/vulkan_resources.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..259f501cf2f3923402f28f4cdfbe919f2978f0e7
 --- /dev/null
 +++ b/native-runtime/graphics/vulkan_resources.h
-@@ -0,0 +1,69 @@
+@@ -0,0 +1,92 @@
 +#pragma once
 +#include <cstddef>
 +#include <cstdint>
 +#include <memory>
 +#include <span>
 +#include <string>
++#include <thread>
++#include <vector>
++namespace native {
++class Window;
++}
 +namespace native_graphics {
 +struct PoolHandle {
 +  uint64_t value = 0;
@@ -2346,10 +2499,18 @@ index 0000000000000000000000000000000000000000..259f501cf2f3923402f28f4cdfbe919f
 +struct BufferViewHandle {
 +  uint64_t value = 0;
 +};
++// Host-only retained Win32 surface target. Never copied into guest storage.
++struct Win32SurfaceTarget {
++  std::shared_ptr<native::Window> window_owner;
++  std::shared_ptr<const uint8_t> surface_pin;
++  uintptr_t window = 0, instance = 0;
++  std::thread::id owner_thread;
++};
 +struct DeviceOptions {
 +  bool require_device_address = false;
 +  bool prefer_noncoherent = false;
 +  uint32_t unsupported_flags = 0;
++  std::shared_ptr<const Win32SurfaceTarget> presentation;
 +};
 +struct BufferBinding {
 +  uint64_t native_buffer = 0, offset = 0, size = 0;
@@ -2364,6 +2525,12 @@ index 0000000000000000000000000000000000000000..259f501cf2f3923402f28f4cdfbe919f
 +  uint32_t max_viewport_dimensions[2]{};
 +  float viewport_bounds[2]{}, max_sampler_lod_bias = 0;
 +  bool negative_viewport_height = false;
++};
++struct PresentationDiagnostics {
++  uint32_t api_version = 0, driver_version = 0, vendor_id = 0, device_id = 0,
++           queue_family = 0;
++  bool maintenance_khr = false;
++  std::vector<std::string> instance_extensions, device_extensions;
 +};
 +struct PoolInfo {
 +  uint64_t size = 0;
@@ -2396,6 +2563,10 @@ index 0000000000000000000000000000000000000000..259f501cf2f3923402f28f4cdfbe919f
 +  BufferBinding GetBufferBinding(BufferViewHandle view) const;
 +  VulkanHandles GetNativeHandles() const;
 +  GraphicsCapabilities GetCapabilities() const;
++  uintptr_t PresentationSurface() const;
++  uintptr_t PresentationWindow() const;
++  PresentationDiagnostics GetPresentationDiagnostics() const;
++  bool PresentationUsesKhrMaintenance() const;
 +
 +private:
 +  struct Impl;
@@ -2404,7 +2575,6 @@ index 0000000000000000000000000000000000000000..259f501cf2f3923402f28f4cdfbe919f
 +} // namespace native_graphics
 diff --git a/native-runtime/host.cpp b/native-runtime/host.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..94f453413dc6e6877cdf311872e03adbf62aabdb
 --- /dev/null
 +++ b/native-runtime/host.cpp
 @@ -0,0 +1,506 @@
@@ -2916,7 +3086,6 @@ index 0000000000000000000000000000000000000000..94f453413dc6e6877cdf311872e03adb
 +} // namespace native
 diff --git a/native-runtime/host.h b/native-runtime/host.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..7c1b810045e1b73fd1ce57cf1c855fabcdd2269b
 --- /dev/null
 +++ b/native-runtime/host.h
 @@ -0,0 +1,140 @@
@@ -3062,7 +3231,6 @@ index 0000000000000000000000000000000000000000..7c1b810045e1b73fd1ce57cf1c855fab
 +} // namespace native
 diff --git a/native-runtime/ipc_bridge.cpp b/native-runtime/ipc_bridge.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..6d01dcaba41d9bfca2356210fc0444dec93e1a66
 --- /dev/null
 +++ b/native-runtime/ipc_bridge.cpp
 @@ -0,0 +1,98 @@
@@ -3166,7 +3334,6 @@ index 0000000000000000000000000000000000000000..6d01dcaba41d9bfca2356210fc0444de
 +} // namespace native
 diff --git a/native-runtime/ipc_bridge.h b/native-runtime/ipc_bridge.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..32a2c730dfb83cd19ca6635eaa527811c3f6d8b4
 --- /dev/null
 +++ b/native-runtime/ipc_bridge.h
 @@ -0,0 +1,9 @@
@@ -3181,7 +3348,6 @@ index 0000000000000000000000000000000000000000..32a2c730dfb83cd19ca6635eaa527811
 +} // namespace native
 diff --git a/native-runtime/loader.cpp b/native-runtime/loader.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..b2ced52e833970c3124da060a338c27eee3e2967
 --- /dev/null
 +++ b/native-runtime/loader.cpp
 @@ -0,0 +1,92 @@
@@ -3279,7 +3445,6 @@ index 0000000000000000000000000000000000000000..b2ced52e833970c3124da060a338c27e
 +
 diff --git a/native-runtime/native_handles.h b/native-runtime/native_handles.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..90c905480737da6ba376c6ddd5385f202d83cc41
 --- /dev/null
 +++ b/native-runtime/native_handles.h
 @@ -0,0 +1,13 @@
@@ -3298,7 +3463,6 @@ index 0000000000000000000000000000000000000000..90c905480737da6ba376c6ddd5385f20
 +} // namespace native
 diff --git a/native-runtime/nso.cpp b/native-runtime/nso.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..566e407ab43d605ce998c76d68df7fd0ef019f8f
 --- /dev/null
 +++ b/native-runtime/nso.cpp
 @@ -0,0 +1,148 @@
@@ -3452,7 +3616,6 @@ index 0000000000000000000000000000000000000000..566e407ab43d605ce998c76d68df7fd0
 +} // namespace native
 diff --git a/native-runtime/nso.h b/native-runtime/nso.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..e64f1d70eb68b470a65d9e6e977ab4d00a75499b
 --- /dev/null
 +++ b/native-runtime/nso.h
 @@ -0,0 +1,40 @@
@@ -3498,10 +3661,9 @@ index 0000000000000000000000000000000000000000..e64f1d70eb68b470a65d9e6e977ab4d0
 +} // namespace native
 diff --git a/native-runtime/nvn/CMakeLists.txt b/native-runtime/nvn/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..612fa3c807ae1574e1d84753a5e0b7ac1d39bdf0
 --- /dev/null
 +++ b/native-runtime/nvn/CMakeLists.txt
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,65 @@
 +cmake_minimum_required(VERSION 3.22)
 +if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 +  project(native_nvn_resources LANGUAGES CXX)
@@ -3547,12 +3709,31 @@ index 0000000000000000000000000000000000000000..612fa3c807ae1574e1d84753a5e0b7ac
 +
 +add_test(NAME native_nvn_packed_oracle COMMAND native_nvn_state_test --packed-oracle)
 +set_tests_properties(native_nvn_packed_oracle PROPERTIES TIMEOUT 10)
++if(NOT TARGET native_window)
++  add_library(native_window STATIC ../window.cpp)
++  target_compile_features(native_window PUBLIC cxx_std_20)
++  target_link_libraries(native_window PUBLIC user32)
++endif()
++add_library(native_nvn_presentation STATIC presentation.cpp)
++target_include_directories(native_nvn_presentation PRIVATE "${NATIVE_GRAPHICS_VULKAN_INCLUDE}" "${NATIVE_GRAPHICS_SIRIT_ROOT}/include")
++target_link_libraries(native_nvn_presentation PUBLIC native_nvn_resources native_window "${NATIVE_GRAPHICS_SIRIT_ROOT}/lib/sirit-static.lib")
++add_executable(native_nvn_presentation_policy_test presentation_policy_test.cpp)
++target_link_libraries(native_nvn_presentation_policy_test PRIVATE native_nvn_presentation)
++add_test(NAME native_nvn_presentation_policy COMMAND native_nvn_presentation_policy_test)
++set_tests_properties(native_nvn_presentation_policy PROPERTIES TIMEOUT 10)
++add_executable(native_nvn_presentation_fixture presentation_fixture.cpp)
++target_include_directories(native_nvn_presentation_fixture PRIVATE "${NATIVE_GRAPHICS_SIRIT_ROOT}/include")
++target_link_libraries(native_nvn_presentation_fixture PRIVATE native_nvn_presentation gdi32)
++# Visible fixture is deliberately NOT registered with default CTest.
++add_executable(native_nvn_presentation_conversion_test presentation_conversion_test.cpp)
++target_link_libraries(native_nvn_presentation_conversion_test PRIVATE native_nvn_presentation)
++add_test(NAME native_nvn_presentation_conversion COMMAND native_nvn_presentation_conversion_test)
++set_tests_properties(native_nvn_presentation_conversion PROPERTIES TIMEOUT 30)
 diff --git a/native-runtime/nvn/README.md b/native-runtime/nvn/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..29fb6e8112b196a0e0f5b5445c04e933f402a99e
 --- /dev/null
 +++ b/native-runtime/nvn/README.md
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,280 @@
 +# Native NVN resource ownership
 +
 +`Resources` owns logical device, pool and buffer objects keyed by aligned guest
@@ -3768,9 +3949,73 @@ index 0000000000000000000000000000000000000000..29fb6e8112b196a0e0f5b5445c04e933
 +/EHsc` passes for the changed packed units; inherited token-initializer warnings
 +are described above. Validation layers remain disabled. This is synthetic
 +format evidence, not an actual capture replay or native-game rendering claim.
++
++## Native Win32 presentation (synthetic fixture)
++
++`DeviceOptions::presentation` is opt-in. `RetainPresentationWindow` creates a
++host-only retained Window/surface pin; HWND/HINSTANCE never enter guest storage.
++The existing VulkanDevice enables verified surface/swapchain and matching
++KHR/EXT maintenance1 extensions/features, creates the actual surface before
++selecting one graphics+present queue, and retains Window through surface teardown.
++Offscreen construction still requests no WSI extensions and keeps its defaults.
++A live surface blocks explicit Window destruction. Resources creation forwards
++the typed device option; existing C++ consumers require matching rebuilt headers
++and libraries when this option or Window layout changes.
++
++`Presenter` shares that device and `DrawIntoTarget`; no second renderer/device is
++created. A strict procedural fullscreen triangle needs no fabricated guest vertex
++buffer and rejects shaders with active vertex attributes. A retained
++`PresentSource` validates committed image contents, sampled usage, format and
++actual native device identity on every use. Invalidated/terminal sources reject
++before acquisition/submission. Native sources remain pinned through conversion
++completion; no CPU image readback/reupload transports frames.
++
++The first policy accepts linear-sRGB-primary RGBA8 or packed10 source, explicit
++opaque output, and a reported SDR RGBA8/BGRA8 UNORM/sRGB surface pair. sRGB
++attachments encode once; UNORM surfaces use an authored GPU encoding shader.
++Final packed10-to-SDR8 display quantization is explicit and does not alter source
++bits. Independent GPU conversion checks compare both source formats against a
++CPU sRGB equation and verify invalid retained-source rejection.
++
++Acquisition, render completion and presentation retirement are distinct states.
++Acquire semaphores and per-image render-finished semaphores are consumed before
++reuse; maintenance1 presentation fences establish safe WSI resource retirement.
++Submit fences or DeviceWaitIdle are not substituted for presentation fences.
++Close/resize/error paths retain acquired-image state, consume orphan signals and
++release acquired images or retire queued presentations. Zero/minimized extents
++pause; out-of-date/suboptimal chains recreate from fresh capabilities. A creation
++failure that retires an old swapchain does not resume using it.
++
++All first-fixture work is on the window/graphics owner thread. Fence polling
++pumps messages, but driver creation/submit/present/drain can stall; there is no
++hard five-second total-return/close guarantee. Long work is outside generated C
++and bounded metadata callbacks. Actual guest NVN presentation remains gated on
++its separate device/owner scheduling contract.
++
++`native_nvn_presentation_policy` is headless and checks retirement/error policy
++and CPU transfer-function values. `native_nvn_presentation_conversion` uses real
++Vulkan offscreen color oracles. The visible `native_nvn_presentation_fixture` is
++NOT registered in default CTest and requires `--visible`; it creates only its own
++synthetic window, exercises both GPU-produced source formats, minimize/restore,
++resize and close. Optional capture is restricted to its verified unoccluded
++physical client rectangle, with per-monitor-aware context selected before HWND
++creation. No focus forcing or changes to unrelated windows are required.
++
++Verified on the recorded AMD device: effective Vulkan 1.2, queue family 0, enabled
++VK_KHR_surface/VK_KHR_win32_surface/VK_KHR_get_surface_capabilities2/
++VK_KHR_surface_maintenance1 and VK_KHR_swapchain/VK_KHR_swapchain_maintenance1.
++Seven headless suites passed. The accepted visible run queued and retired 45
++presentations, recreated 3 swapchain generations and performed 0 source readbacks.
++Both owned-client captures show the authored red top-left quarter and gradient;
++this is bounded synthetic window evidence, not actual-game presentation or exact
++scanout/monitor color accuracy. Validation layers were not enabled. Early GDI and
++incorrectly DPI-cropped diagnostics were invalid and excluded from acceptance.
++
++Scoped MSVC W4/analyze/EHsc is clean for the changed units; inherited resource-pin
++initializer C4244 diagnostics remain separate. Rebuilt affected native_graphics,
++shader_module_check, BufferInit and Window test consumers accompany the change.
 diff --git a/native-runtime/nvn/buffer_init.cpp b/native-runtime/nvn/buffer_init.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..e393dc366b8fe4e1e649470281ed55991f563951
 --- /dev/null
 +++ b/native-runtime/nvn/buffer_init.cpp
 @@ -0,0 +1,144 @@
@@ -3920,7 +4165,6 @@ index 0000000000000000000000000000000000000000..e393dc366b8fe4e1e649470281ed5599
 +} // namespace native_nvn
 diff --git a/native-runtime/nvn/buffer_init.h b/native-runtime/nvn/buffer_init.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..91028a7d940483531e684882ca3daf6b27e2e321
 --- /dev/null
 +++ b/native-runtime/nvn/buffer_init.h
 @@ -0,0 +1,45 @@
@@ -3971,7 +4215,6 @@ index 0000000000000000000000000000000000000000..91028a7d940483531e684882ca3daf6b
 +} // namespace native_nvn
 diff --git a/native-runtime/nvn/buffer_init_notes.md b/native-runtime/nvn/buffer_init_notes.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..a8ee0f56136bdfeb9add9bfa2f1fc638ff46128f
 --- /dev/null
 +++ b/native-runtime/nvn/buffer_init_notes.md
 @@ -0,0 +1,50 @@
@@ -4027,14 +4270,14 @@ index 0000000000000000000000000000000000000000..a8ee0f56136bdfeb9add9bfa2f1fc638
 +original reference bodies remain outside this source tree.
 diff --git a/native-runtime/nvn/draw.cpp b/native-runtime/nvn/draw.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb794085434c94
 --- /dev/null
 +++ b/native-runtime/nvn/draw.cpp
-@@ -0,0 +1,1209 @@
+@@ -0,0 +1,1288 @@
 +#include "draw.h"
 +#define WIN32_LEAN_AND_MEAN
 +#define NOMINMAX
 +#define VK_NO_PROTOTYPES
++#include <chrono>
 +#include <cmath>
 +#include <cstring>
 +#include <functional>
@@ -4257,7 +4500,8 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +  }
 +  throw std::runtime_error("Unsupported blend factor");
 +}
-+void ValidateVertexInputs(std::span<const uint32_t> code) {
++bool ValidateVertexInputs(std::span<const uint32_t> code) {
++  bool active = false;
 +  std::map<uint32_t, uint32_t> location, variable, pointer, float_bits,
 +      vector_count, vector_type, storage;
 +  std::set<uint32_t> builtin;
@@ -4287,6 +4531,7 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +  }
 +  for (auto &[id, type] : variable)
 +    if (storage[id] == 1 && !builtin.contains(id)) {
++      active = true;
 +      Need(location.contains(id) && location[id] == 0,
 +           "Only vertex location0 supported");
 +      auto scalar = pointer[type];
@@ -4298,6 +4543,7 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +      Need(float_bits[scalar] == 32 && count >= 2 && count <= 4,
 +           "Vertex shader requires float2/3/4 input");
 +    }
++  return active;
 +}
 +void Validate(Resources &resources, GuestAddress device,
 +              const ProgramDescription &program, const DrawDescription &draw,
@@ -4318,7 +4564,12 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +           draw.vertex_input.offset <=
 +               limits.limits.maxVertexInputAttributeOffset,
 +       "Vertex input device limit");
-+  ValidateVertexInputs(program.vertex);
++  const bool active_vertex = ValidateVertexInputs(program.vertex);
++  Need(!draw.procedural_triangle ||
++           (!active_vertex && draw.vertices == 0 && draw.indices == 0 &&
++            draw.index_format == IndexFormat::None && draw.base_vertex == 0 &&
++            draw.first == 0 && draw.count == 3),
++       "Procedural triangle requires no vertex inputs/resources");
 +  Need(draw.topology == Topology::Triangles ||
 +           draw.topology == Topology::TriangleStrip,
 +       "Topology unsupported");
@@ -4340,42 +4591,44 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +           draw.scissor.y <= draw.height &&
 +           draw.scissor.height <= draw.height - draw.scissor.y,
 +       "Scissor unsupported");
-+  const auto vertices = resources.Binding(draw.vertices);
-+  Need(vertices.offset <= UINT64_MAX - draw.vertex_input.offset &&
-+           !((vertices.offset + draw.vertex_input.offset) & 3),
-+       "Effective vertex buffer address must be float aligned");
-+  Need(resources.BufferDevice(draw.vertices) == device,
-+       "Vertex buffer device mismatch");
-+  const auto capacity =
-+      vertices.size >= uint64_t(draw.vertex_input.offset) +
-+                           VertexBytes(draw.vertex_input.format)
-+          ? (vertices.size - draw.vertex_input.offset -
-+             VertexBytes(draw.vertex_input.format)) /
-+                    draw.stride +
-+                1
-+          : 0;
-+  if (draw.index_format == IndexFormat::None)
-+    Need(draw.base_vertex == 0 && draw.first <= capacity &&
-+             draw.count <= capacity - draw.first,
-+         "Vertex range/base invalid");
-+  else {
-+    const auto index = resources.Binding(draw.indices);
-+    const uint32_t width = draw.index_format == IndexFormat::Uint16 ? 2 : 4;
-+    Need(resources.BufferDevice(draw.indices) == device,
-+         "Index buffer device mismatch");
-+    Need(!(index.offset & (width - 1)) && draw.first <= index.size / width &&
-+             draw.count <= index.size / width - draw.first,
-+         "Index range invalid");
-+    std::vector<std::byte> data(uint64_t(draw.count) * width);
-+    resources.Backend(device).Download(resources.View(draw.indices),
-+                                       uint64_t(draw.first) * width, data);
-+    for (size_t i = 0; i < data.size(); i += width) {
-+      uint32_t value = 0;
-+      for (uint32_t k = 0; k < width; k++)
-+        value |= uint32_t(data[i + k]) << (8 * k);
-+      const int64_t adjusted = int64_t(value) + draw.base_vertex;
-+      Need(adjusted >= 0 && uint64_t(adjusted) < capacity,
-+           "Index/base references outside vertex view");
++  if (!draw.procedural_triangle) {
++    const auto vertices = resources.Binding(draw.vertices);
++    Need(vertices.offset <= UINT64_MAX - draw.vertex_input.offset &&
++             !((vertices.offset + draw.vertex_input.offset) & 3),
++         "Effective vertex buffer address must be float aligned");
++    Need(resources.BufferDevice(draw.vertices) == device,
++         "Vertex buffer device mismatch");
++    const auto capacity =
++        vertices.size >= uint64_t(draw.vertex_input.offset) +
++                             VertexBytes(draw.vertex_input.format)
++            ? (vertices.size - draw.vertex_input.offset -
++               VertexBytes(draw.vertex_input.format)) /
++                      draw.stride +
++                  1
++            : 0;
++    if (draw.index_format == IndexFormat::None)
++      Need(draw.base_vertex == 0 && draw.first <= capacity &&
++               draw.count <= capacity - draw.first,
++           "Vertex range/base invalid");
++    else {
++      const auto index = resources.Binding(draw.indices);
++      const uint32_t width = draw.index_format == IndexFormat::Uint16 ? 2 : 4;
++      Need(resources.BufferDevice(draw.indices) == device,
++           "Index buffer device mismatch");
++      Need(!(index.offset & (width - 1)) && draw.first <= index.size / width &&
++               draw.count <= index.size / width - draw.first,
++           "Index range invalid");
++      std::vector<std::byte> data(uint64_t(draw.count) * width);
++      resources.Backend(device).Download(resources.View(draw.indices),
++                                         uint64_t(draw.first) * width, data);
++      for (size_t i = 0; i < data.size(); i += width) {
++        uint32_t value = 0;
++        for (uint32_t k = 0; k < width; k++)
++          value |= uint32_t(data[i + k]) << (8 * k);
++        const int64_t adjusted = int64_t(value) + draw.base_vertex;
++        Need(adjusted >= 0 && uint64_t(adjusted) < capacity,
++             "Index/base references outside vertex view");
++      }
 +    }
 +  }
 +  Need(program.set0.size() <= 8 && draw.uniforms.size() + draw.textures.size() +
@@ -4470,13 +4723,13 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +  }
 +  throw std::runtime_error("Unsupported image format");
 +}
-+ImageSupport QueryImageSupport(Resources &r, GuestAddress key, ImageFormat f,
-+                               uint32_t usage) {
++static ImageSupport QueryFormatSupport(Resources &r, GuestAddress key,
++                                       VkFormat format, uint32_t usage) {
 +  Need(usage && !(usage & ~15u), "Unsupported image usages");
 +  auto h = r.Backend(key).GetNativeHandles();
 +  Owned owner;
 +  auto physical = reinterpret_cast<VkPhysicalDevice>(h.physical_device);
-+  auto format = VkFormat(NativeImageFormat(f));
++
 +  VkImageUsageFlags flags = 0;
 +  VkFormatFeatureFlags required = 0;
 +  if (usage & ColorTarget) {
@@ -4508,6 +4761,23 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +               VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT),
 +          bool(p.optimalTilingFeatures &
 +               VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT)};
++}
++ImageSupport QueryImageSupport(Resources &r, GuestAddress key, ImageFormat f,
++                               uint32_t usage) {
++  return QueryFormatSupport(r, key, VkFormat(NativeImageFormat(f)), usage);
++}
++uint32_t NativePresentationFormat(PresentationFormat f) {
++  switch (f) {
++  case PresentationFormat::Rgba8Srgb:
++    return VK_FORMAT_R8G8B8A8_SRGB;
++  case PresentationFormat::Bgra8Srgb:
++    return VK_FORMAT_B8G8R8A8_SRGB;
++  case PresentationFormat::Rgba8Unorm:
++    return VK_FORMAT_R8G8B8A8_UNORM;
++  case PresentationFormat::Bgra8Unorm:
++    return VK_FORMAT_B8G8R8A8_UNORM;
++  }
++  throw std::runtime_error("Unsupported presentation format");
 +}
 +void ValidateImageUse(const ImageSupport &s, uint32_t width, uint32_t height,
 +                      bool linear, bool blend) {
@@ -4602,9 +4872,18 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +             target ? target->format : ImageFormat::Rgba8Unorm);
 +  auto &backend = resources.Backend(device_key);
 +  const auto handles = backend.GetNativeHandles();
++  if (target && target->presentation_format) {
++    const auto support = QueryFormatSupport(
++        resources, device_key,
++        VkFormat(NativePresentationFormat(*target->presentation_format)),
++        ColorTarget);
++    ValidateImageUse(support, draw.width, draw.height, false,
++                     EffectiveBlend(draw).enabled);
++  }
 +  ValidateProgram(program, handles.enabled_shader_image_gather_extended);
-+  const auto vertex_binding = pipeline_only ? native_graphics::BufferBinding{}
-+                                            : resources.Binding(draw.vertices);
++  const auto vertex_binding = pipeline_only || draw.procedural_triangle
++                                  ? native_graphics::BufferBinding{}
++                                  : resources.Binding(draw.vertices);
 +  native_graphics::BufferBinding index_binding{};
 +  if (draw.index_format != IndexFormat::None)
 +    index_binding = resources.Binding(draw.indices);
@@ -4716,8 +4995,11 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +        [&, device, view] { V(vkDestroyImageView)(device, view, nullptr); });
 +  }
 +  VkAttachmentDescription attachment{};
-+  attachment.format = target ? VkFormat(NativeImageFormat(target->format))
-+                             : VK_FORMAT_R8G8B8A8_UNORM;
++  attachment.format =
++      target && target->presentation_format
++          ? VkFormat(NativePresentationFormat(*target->presentation_format))
++      : target ? VkFormat(NativeImageFormat(target->format))
++               : VK_FORMAT_R8G8B8A8_UNORM;
 +  attachment.samples = VK_SAMPLE_COUNT_1_BIT;
 +  attachment.loadOp = !target || target->load == AttachmentLoad::Clear
 +                          ? VK_ATTACHMENT_LOAD_OP_CLEAR
@@ -4731,7 +5013,9 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +  attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 +  attachment.initialLayout = target ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
 +                                    : VK_IMAGE_LAYOUT_UNDEFINED;
-+  attachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
++  attachment.finalLayout = target && target->presentation_format
++                               ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
++                               : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 +  VkAttachmentReference color{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
 +  VkSubpassDescription sub{};
 +  sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -4744,6 +5028,10 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +  dep.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
 +  dep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 +  dep.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
++  if (target && target->presentation_format) {
++    dep.dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
++    dep.dstAccessMask = 0;
++  }
 +  VkRenderPassCreateInfo rpci{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
 +  rpci.attachmentCount = 1;
 +  rpci.pAttachments = &attachment;
@@ -4983,6 +5271,10 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +  vi.pVertexBindingDescriptions = &binding;
 +  vi.vertexAttributeDescriptionCount = 1;
 +  vi.pVertexAttributeDescriptions = &attribute;
++  if (draw.procedural_triangle) {
++    vi.vertexBindingDescriptionCount = 0;
++    vi.vertexAttributeDescriptionCount = 0;
++  }
 +  VkPipelineInputAssemblyStateCreateInfo ia{
 +      VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
 +  ia.topology = draw.topology == Topology::Triangles
@@ -5138,7 +5430,8 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +  V(vkCmdBeginRenderPass)(cb, &rb, VK_SUBPASS_CONTENTS_INLINE);
 +  V(vkCmdBindPipeline)(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 +  VkDeviceSize offset = vertex_binding.offset;
-+  V(vkCmdBindVertexBuffers)(cb, 0, 1, &vertex, &offset);
++  if (!draw.procedural_triangle)
++    V(vkCmdBindVertexBuffers)(cb, 0, 1, &vertex, &offset);
 +  if (!program.set0.empty())
 +    V(vkCmdBindDescriptorSets)(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0,
 +                               1, &descriptor_set, 0, nullptr);
@@ -5185,6 +5478,23 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +  VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
 +  submit.commandBufferCount = 1;
 +  submit.pCommandBuffers = &cb;
++  VkSemaphore wait = target
++                         ? reinterpret_cast<VkSemaphore>(target->wait_semaphore)
++                         : VK_NULL_HANDLE;
++  VkSemaphore signal =
++      target ? reinterpret_cast<VkSemaphore>(target->signal_semaphore)
++             : VK_NULL_HANDLE;
++  VkPipelineStageFlags wait_stage =
++      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
++  if (wait) {
++    submit.waitSemaphoreCount = 1;
++    submit.pWaitSemaphores = &wait;
++    submit.pWaitDstStageMask = &wait_stage;
++  }
++  if (signal) {
++    submit.signalSemaphoreCount = 1;
++    submit.pSignalSemaphores = &signal;
++  }
 +  if (target && target->submission_attempted)
 +    *target->submission_attempted = true;
 +  *submitted =
@@ -5200,8 +5510,19 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +    Check(VK_TIMEOUT, "Injected vkWaitForFences timeout");
 +  if (target && target->fault == NativeDrawFault::DeviceLost)
 +    Check(VK_ERROR_DEVICE_LOST, "Injected vkWaitForFences device loss");
-+  Check(V(vkWaitForFences)(device, 1, &fence, VK_TRUE, 5'000'000'000ull),
-+        "vkWaitForFences");
++  if (target && target->pump) {
++    const auto deadline =
++        std::chrono::steady_clock::now() + std::chrono::seconds(5);
++    VkResult result;
++    do {
++      result = V(vkWaitForFences)(device, 1, &fence, VK_TRUE, 1'000'000);
++      target->pump();
++    } while (result == VK_TIMEOUT &&
++             std::chrono::steady_clock::now() < deadline);
++    Check(result, "Pumped vkWaitForFences");
++  } else
++    Check(V(vkWaitForFences)(device, 1, &fence, VK_TRUE, 5'000'000'000ull),
++          "vkWaitForFences");
 +  *submitted = false;
 +  if (target)
 +    return {width, height, {}};
@@ -5242,13 +5563,13 @@ index 0000000000000000000000000000000000000000..0059e1746b83af464e573abc5fcb7940
 +} // namespace native_nvn
 diff --git a/native-runtime/nvn/draw.h b/native-runtime/nvn/draw.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..b2cd235b4a4fc8e0779b5c3d58a5e798324191e5
 --- /dev/null
 +++ b/native-runtime/nvn/draw.h
-@@ -0,0 +1,171 @@
+@@ -0,0 +1,178 @@
 +#pragma once
 +#include "resources.h"
 +#include <array>
++#include <functional>
 +#include <optional>
 +#include <vector>
 +namespace native_nvn {
@@ -5354,6 +5675,7 @@ index 0000000000000000000000000000000000000000..b2cd235b4a4fc8e0779b5c3d58a5e798
 +  VertexInput vertex_input;
 +  RasterState raster;
 +  int32_t base_vertex = 0;
++  bool procedural_triangle = false;
 +};
 +struct DrawResult {
 +  uint32_t width, height;
@@ -5376,6 +5698,8 @@ index 0000000000000000000000000000000000000000..b2cd235b4a4fc8e0779b5c3d58a5e798
 +};
 +enum class AttachmentLoad { Load, Clear, Discard };
 +enum class AttachmentStore { Store, Discard };
++enum class PresentationFormat { Rgba8Srgb, Bgra8Srgb, Rgba8Unorm, Bgra8Unorm };
++uint32_t NativePresentationFormat(PresentationFormat);
 +enum class NativeDrawFault { None, Submit, FenceTimeout, DeviceLost };
 +struct NativeTarget {
 +  uintptr_t image, view;
@@ -5389,6 +5713,9 @@ index 0000000000000000000000000000000000000000..b2cd235b4a4fc8e0779b5c3d58a5e798
 +  void *observer = nullptr;
 +  NativeDrawFault fault = NativeDrawFault::None;
 +  ImageFormat format = ImageFormat::Rgba8Unorm;
++  std::optional<PresentationFormat> presentation_format;
++  uintptr_t wait_semaphore = 0, signal_semaphore = 0;
++  std::function<void()> pump;
 +};
 +void ValidateDraw(Resources &, GuestAddress, const ProgramDescription &,
 +                  const DrawDescription &, std::span<const NativeSample> = {},
@@ -5419,7 +5746,6 @@ index 0000000000000000000000000000000000000000..b2cd235b4a4fc8e0779b5c3d58a5e798
 +} // namespace native_nvn
 diff --git a/native-runtime/nvn/draw_test.cpp b/native-runtime/nvn/draw_test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..af3bf034c96ccc98fd54367206066a309ee87b69
 --- /dev/null
 +++ b/native-runtime/nvn/draw_test.cpp
 @@ -0,0 +1,217 @@
@@ -5642,10 +5968,9 @@ index 0000000000000000000000000000000000000000..af3bf034c96ccc98fd54367206066a30
 +}
 diff --git a/native-runtime/nvn/frame.cpp b/native-runtime/nvn/frame.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..dcc5b8efb632832bf3ffadbc9999693fdd743df0
 --- /dev/null
 +++ b/native-runtime/nvn/frame.cpp
-@@ -0,0 +1,848 @@
+@@ -0,0 +1,913 @@
 +#include "frame.h"
 +#define WIN32_LEAN_AND_MEAN
 +#define NOMINMAX
@@ -6229,6 +6554,70 @@ index 0000000000000000000000000000000000000000..dcc5b8efb632832bf3ffadbc9999693f
 +  impl_->Owner();
 +  return impl_->counters;
 +}
++struct PresentSource::Impl {
++  std::shared_ptr<FrameImages::Impl> owner;
++  ViewHandle view;
++  SamplerHandle sampler;
++  uint64_t image;
++  Impl(std::shared_ptr<FrameImages::Impl> o, ViewHandle v, SamplerHandle s)
++      : owner(std::move(o)), view(v), sampler(s) {
++    owner->Ready();
++    auto &vw = owner->Get(v);
++    auto &im = owner->images.at(vw.image);
++    owner->Get(s);
++    Require(im.committed_valid && (im.d.usage & Sampled),
++            "Presentation source undefined/not sampled");
++    Require(im.d.format == ImageFormat::Rgba8Unorm ||
++                im.d.format == ImageFormat::A2B10G10R10Unorm,
++            "Presentation requires linear RGBA8 or packed10 source");
++    image = vw.image;
++    ++vw.references;
++    ++im.references;
++    ++owner->Get(s).references;
++  }
++  ~Impl() {
++    owner->Owner();
++    --owner->Get(view).references;
++    --owner->Get(sampler).references;
++    --owner->images.at(image).references;
++  }
++};
++PresentSource::PresentSource(std::unique_ptr<Impl> p) : impl_(std::move(p)) {}
++PresentSource::PresentSource(PresentSource &&) noexcept = default;
++PresentSource::~PresentSource() = default;
++PresentSource FrameImages::BorrowPresentation(ViewHandle v, SamplerHandle s) {
++  return PresentSource(std::make_unique<PresentSource::Impl>(impl_, v, s));
++}
++NativeSample PresentSource::Sample(uint32_t binding) const {
++  Require(bool(impl_), "Moved presentation source");
++  impl_->owner->Ready();
++  const auto &image = impl_->owner->images.at(impl_->image);
++  Require(image.committed_valid && (image.d.usage & Sampled),
++          "Presentation source invalidated/undefined");
++  return impl_->owner->Sample({binding, impl_->view, impl_->sampler});
++}
++GuestAddress PresentSource::Device() const {
++  Require(bool(impl_), "Moved presentation source");
++  impl_->owner->Owner();
++  return impl_->owner->key;
++}
++uintptr_t PresentSource::DeviceIdentity() const {
++  Require(bool(impl_), "Moved presentation source");
++  impl_->owner->Owner();
++  return impl_->owner->handles.device;
++}
++void PresentSource::CommitRead() {
++  Require(bool(impl_), "Moved presentation source");
++  impl_->owner->Owner();
++  impl_->owner->images.at(impl_->image).committed_layout =
++      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++}
++void PresentSource::Fail() {
++  Require(bool(impl_), "Moved presentation source");
++  impl_->owner->Owner();
++  impl_->owner->terminal = true;
++  impl_->owner->images.at(impl_->image).committed_valid = false;
++}
 +struct FrameEncoder::Impl {
 +  struct Record {
 +    std::vector<uint32_t> vertex, fragment;
@@ -6353,7 +6742,8 @@ index 0000000000000000000000000000000000000000..dcc5b8efb632832bf3ffadbc9999693f
 +          "Injected buffer lease publication allocation failure");
 +    staged.push_back({key, std::move(lease)});
 +  };
-+  pin(draw.vertices);
++  if (!draw.procedural_triangle)
++    pin(draw.vertices);
 +  if (draw.index_format != IndexFormat::None)
 +    pin(draw.indices);
 +  f.buffer_leases.reserve(f.buffer_leases.size() + staged.size());
@@ -6496,10 +6886,9 @@ index 0000000000000000000000000000000000000000..dcc5b8efb632832bf3ffadbc9999693f
 +} // namespace native_nvn
 diff --git a/native-runtime/nvn/frame.h b/native-runtime/nvn/frame.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..45ced3ef27e26a97a74bb2c1180de1214af96d5a
 --- /dev/null
 +++ b/native-runtime/nvn/frame.h
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,155 @@
 +#pragma once
 +#include "draw.h"
 +#include <array>
@@ -6584,6 +6973,7 @@ index 0000000000000000000000000000000000000000..45ced3ef27e26a97a74bb2c1180de121
 +  std::vector<std::byte> bytes;
 +};
 +class FrameEncoder;
++class PresentSource;
 +// Owner-thread persistent typed image store. Resources must outlive API use; a
 +// device lease retains backend teardown; external callers must not
 +// destroy/mutate borrowed buffers until frame completion.
@@ -6603,6 +6993,7 @@ index 0000000000000000000000000000000000000000..45ced3ef27e26a97a74bb2c1180de121
 +  DrawResult Readback(ImageHandle);
 +  ImageReadback ReadbackImage(ImageHandle);
 +  bool ContentValid(ImageHandle) const;
++  PresentSource BorrowPresentation(ViewHandle, SamplerHandle);
 +  bool Terminal() const;
 +  FrameCounters Counters() const;
 +
@@ -6610,6 +7001,26 @@ index 0000000000000000000000000000000000000000..45ced3ef27e26a97a74bb2c1180de121
 +  struct Impl;
 +  std::shared_ptr<Impl> impl_;
 +  friend class FrameEncoder;
++  friend class PresentSource;
++};
++// Retains committed source image/view/sampler and its backend until GPU reading
++// completes. Host only; no native window handles or guest pointers are exposed.
++class PresentSource {
++public:
++  PresentSource(PresentSource &&) noexcept;
++  ~PresentSource();
++  PresentSource(const PresentSource &) = delete;
++  NativeSample Sample(uint32_t binding) const;
++  GuestAddress Device() const;
++  uintptr_t DeviceIdentity() const;
++  void CommitRead();
++  void Fail();
++
++private:
++  struct Impl;
++  std::unique_ptr<Impl> impl_;
++  explicit PresentSource(std::unique_ptr<Impl>);
++  friend class FrameImages;
 +};
 +// A frame records immutable programs, draw state, texture fixtures and UBO
 +// versions. Submit preflights the complete graph before any effects, then
@@ -6635,7 +7046,6 @@ index 0000000000000000000000000000000000000000..45ced3ef27e26a97a74bb2c1180de121
 +} // namespace native_nvn
 diff --git a/native-runtime/nvn/frame_test.cpp b/native-runtime/nvn/frame_test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..b8489f357dd74c680faec2c6bf04cbb44a80a775
 --- /dev/null
 +++ b/native-runtime/nvn/frame_test.cpp
 @@ -0,0 +1,410 @@
@@ -7051,7 +7461,6 @@ index 0000000000000000000000000000000000000000..b8489f357dd74c680faec2c6bf04cbb4
 +}
 diff --git a/native-runtime/nvn/pipeline_check.cpp b/native-runtime/nvn/pipeline_check.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..fccb700a55dc74155790a821ff409491020ffb51
 --- /dev/null
 +++ b/native-runtime/nvn/pipeline_check.cpp
 @@ -0,0 +1,62 @@
@@ -7117,9 +7526,1414 @@ index 0000000000000000000000000000000000000000..fccb700a55dc74155790a821ff409491
 +    return 1;
 +  }
 +}
+diff --git a/native-runtime/nvn/presentation.cpp b/native-runtime/nvn/presentation.cpp
+new file mode 100644
+--- /dev/null
++++ b/native-runtime/nvn/presentation.cpp
+@@ -0,0 +1,722 @@
++#include "presentation.h"
++#include "../window.h"
++#define VK_NO_PROTOTYPES
++#include <algorithm>
++#include <chrono>
++#include <cmath>
++#include <iostream>
++#include <sirit/sirit.h>
++#include <stdexcept>
++#include <string>
++#include <thread>
++#include <vulkan/vulkan.h>
++namespace native_nvn {
++namespace {
++void Need(bool b, const char *w) {
++  if (!b)
++    throw std::runtime_error(w);
++}
++void Check(VkResult r, const char *w) {
++  if (r != VK_SUCCESS)
++    throw std::runtime_error(std::string(w) + " VkResult=" + std::to_string(r));
++}
++} // namespace
++void PresentationFlight::Acquire(AcquireStatus s) {
++  Need(!acquired && !present_pending, "Flight already owns image");
++  if (s == AcquireStatus::Pending)
++    return;
++  if (s == AcquireStatus::OutOfDate) {
++    recreate = true;
++    return;
++  }
++  if (s == AcquireStatus::Failed) {
++    terminal = true;
++    return;
++  }
++  acquired = true;
++  recreate = s == AcquireStatus::Suboptimal;
++}
++void PresentationFlight::RenderComplete() {
++  Need(acquired && !rendered, "Render completion without acquisition");
++  acquire_consumed = true;
++  rendered = true;
++}
++void PresentationFlight::Present(PresentStatus s) {
++  Need(acquired && rendered, "Present without completed render");
++  if (s == PresentStatus::DeviceLost) {
++    terminal = true;
++    return;
++  }
++  if (s == PresentStatus::NotEnqueued) {
++    terminal = true;
++    return;
++  }
++  present_pending = true;
++  recreate |= s == PresentStatus::Suboptimal || s == PresentStatus::OutOfDate;
++}
++void PresentationFlight::SynchronizationConsumed() {
++  Need(acquired, "No acquired synchronization");
++  acquire_consumed = true;
++  if (rendered)
++    render_consumed = true;
++}
++void PresentationFlight::Retired() {
++  acquired = false;
++  acquire_consumed = false;
++  rendered = false;
++  render_consumed = false;
++  present_pending = false;
++}
++Retirement PresentationFlight::RequiredRetirement() const {
++  if (present_pending)
++    return Retirement::WaitPresent;
++  if (acquired) {
++    if (rendered)
++      return render_consumed ? Retirement::ReleaseImage
++                             : Retirement::ConsumeRender;
++    return acquire_consumed ? Retirement::ReleaseImage
++                            : Retirement::ConsumeAcquire;
++  }
++  return Retirement::None;
++}
++double EncodeSrgb(double v) {
++  Need(std::isfinite(v), "Nonfinite presentation color");
++  v = std::clamp(v, 0., 1.);
++  return v <= .0031308 ? 12.92 * v : 1.055 * std::pow(v, 1. / 2.4) - .055;
++}
++std::shared_ptr<const native_graphics::Win32SurfaceTarget>
++RetainPresentationWindow(std::shared_ptr<native::Window> w) {
++  Need(bool(w), "Presentation window missing");
++  auto target = std::make_shared<native_graphics::Win32SurfaceTarget>();
++  target->window_owner = w;
++  target->surface_pin = w->PinSurface();
++  target->window = reinterpret_cast<uintptr_t>(w->handle());
++  target->instance = reinterpret_cast<uintptr_t>(w->instance_handle());
++  target->owner_thread = std::this_thread::get_id();
++  return target;
++}
++namespace {
++struct Loader {
++  HMODULE module = LoadLibraryW(L"vulkan-1.dll");
++  VkInstance instance{};
++  VkDevice device{};
++  ~Loader() {
++    if (module)
++      FreeLibrary(module);
++  }
++  template <class T> T Get(const char *n) {
++    if (!module)
++      throw std::runtime_error("Vulkan presentation loader unavailable");
++    auto p = GetProcAddress(module, n);
++    if (!p && device) {
++      auto get = reinterpret_cast<PFN_vkGetDeviceProcAddr>(
++          GetProcAddress(module, "vkGetDeviceProcAddr"));
++      if (get)
++        p = reinterpret_cast<FARPROC>(get(device, n));
++    }
++    if (!p && instance) {
++      auto get = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
++          GetProcAddress(module, "vkGetInstanceProcAddr"));
++      if (get)
++        p = reinterpret_cast<FARPROC>(get(instance, n));
++    }
++    Need(p, "Missing WSI Vulkan function");
++    return reinterpret_cast<T>(p);
++  }
++};
++#define P(name) loader.Get<PFN_##name>(#name)
++std::vector<uint32_t> ConversionShader(bool vertex, bool encode) {
++  Sirit::Module m(0x00010000);
++  m.AddCapability(spv::Capability::Shader);
++  m.SetMemoryModel(spv::AddressingModel::Logical, spv::MemoryModel::GLSL450);
++  auto f = m.TypeFloat(32), v2 = m.TypeVector(f, 2), v4 = m.TypeVector(f, 4);
++  auto out = m.AddGlobalVariable(m.TypePointer(spv::StorageClass::Output, v4),
++                                 spv::StorageClass::Output);
++  Sirit::Id input{}, uvout{}, texture{}, sampletype{};
++  if (vertex) {
++    m.Decorate(out, spv::Decoration::BuiltIn, spv::BuiltIn::Position);
++    input = m.AddGlobalVariable(
++        m.TypePointer(spv::StorageClass::Input, m.TypeInt(32, true)),
++        spv::StorageClass::Input);
++    m.Decorate(input, spv::Decoration::BuiltIn, spv::BuiltIn::VertexIndex);
++    uvout = m.AddGlobalVariable(m.TypePointer(spv::StorageClass::Output, v2),
++                                spv::StorageClass::Output);
++    m.Decorate(uvout, spv::Decoration::Location, 0u);
++  } else {
++    m.Decorate(out, spv::Decoration::Location, 0u);
++    input = m.AddGlobalVariable(m.TypePointer(spv::StorageClass::Input, v2),
++                                spv::StorageClass::Input);
++    m.Decorate(input, spv::Decoration::Location, 0u);
++    auto image = m.TypeImage(f, spv::Dim::Dim2D, 0, false, false, 1,
++                             spv::ImageFormat::Unknown);
++    sampletype = m.TypeSampledImage(image);
++    texture = m.AddGlobalVariable(
++        m.TypePointer(spv::StorageClass::UniformConstant, sampletype),
++        spv::StorageClass::UniformConstant);
++    m.Decorate(texture, spv::Decoration::DescriptorSet, 0u);
++    m.Decorate(texture, spv::Decoration::Binding, 0u);
++  }
++  auto zero = m.Constant(f, 0.f), one = m.Constant(f, 1.f),
++       minus = m.Constant(f, -1.f), three = m.Constant(f, 3.f),
++       half = m.Constant(f, .5f);
++  auto int1 = m.Constant(m.TypeInt(32, true), 1),
++       int2 = m.Constant(m.TypeInt(32, true), 2);
++  auto threshold = m.Constant(f, .0031308f), slope = m.Constant(f, 12.92f),
++       scale = m.Constant(f, 1.055f), bias = m.Constant(f, .055f),
++       power = m.Constant(f, 1.f / 2.4f);
++  auto fn = m.OpFunction(m.TypeVoid(), spv::FunctionControlMask::MaskNone,
++                         m.TypeFunction(m.TypeVoid()));
++  m.AddLabel();
++  if (vertex) {
++    auto index = m.OpLoad(m.TypeInt(32, true), input);
++    auto x = m.OpSelect(f, m.OpIEqual(m.TypeBool(), index, int1), three, minus),
++         y = m.OpSelect(f, m.OpIEqual(m.TypeBool(), index, int2), three, minus);
++    m.OpStore(out, m.OpCompositeConstruct(v4, x, y, zero, one));
++    m.OpStore(uvout, m.OpCompositeConstruct(
++                         v2, m.OpFAdd(f, m.OpFMul(f, x, half), half),
++                         m.OpFAdd(f, m.OpFMul(f, y, half), half)));
++  } else {
++    auto color = m.OpImageSampleImplicitLod(v4, m.OpLoad(sampletype, texture),
++                                            m.OpLoad(v2, input));
++    Sirit::Id channels[3];
++    for (unsigned i = 0; i < 3; ++i) {
++      auto c = m.OpCompositeExtract(f, color, i);
++      if (encode)
++        c = m.OpSelect(
++            f, m.OpFOrdLessThanEqual(m.TypeBool(), c, threshold),
++            m.OpFMul(f, c, slope),
++            m.OpFSub(f, m.OpFMul(f, scale, m.OpPow(f, c, power)), bias));
++      channels[i] = c;
++    }
++    m.OpStore(out, m.OpCompositeConstruct(v4, channels[0], channels[1],
++                                          channels[2], one));
++  }
++  m.OpReturn();
++  m.OpFunctionEnd();
++  if (vertex)
++    m.AddEntryPoint(spv::ExecutionModel::Vertex, fn, "main", input, out, uvout);
++  else {
++    m.AddEntryPoint(spv::ExecutionModel::Fragment, fn, "main", input, out);
++    m.AddExecutionMode(fn, spv::ExecutionMode::OriginUpperLeft);
++  }
++  return m.Assemble();
++}
++} // namespace
++std::vector<uint32_t> PresentationVertexShader() {
++  return ConversionShader(true, false);
++}
++std::vector<uint32_t> PresentationFragmentShader(bool encode) {
++  return ConversionShader(false, encode);
++}
++struct Presenter::Impl {
++  struct Image {
++    VkImage image{};
++    VkImageView view{};
++    VkSemaphore finished{};
++    VkFence present{};
++    bool present_pending = false, initialized = false;
++  };
++  Resources &resources;
++  GuestAddress key;
++  Resources::Lease device_lease;
++  std::shared_ptr<native::Window> window;
++  native_graphics::VulkanHandles handles;
++  Loader loader;
++  VkDevice device;
++  VkPhysicalDevice physical;
++  VkQueue queue;
++  VkSurfaceKHR surface;
++  VkSwapchainKHR swapchain{};
++  VkSemaphore acquire{};
++  std::vector<Image> images;
++  std::array<uint32_t, 2> extent{};
++  PresentationFormat format = PresentationFormat::Bgra8Srgb;
++  std::thread::id owner = std::this_thread::get_id();
++  PresentationCounters counters;
++  PresentationFlight flight;
++  std::optional<uint32_t> acquired_index;
++  bool closed = false, terminal = false, device_lost = false;
++  std::vector<uint32_t> vertex, fragment;
++  DescriptorPlan plan{0, DescriptorKind::CombinedImageSampler2D,
++                      ShaderStage::Fragment};
++  Impl(Resources &r, GuestAddress k, std::shared_ptr<native::Window> w)
++      : resources(r), key(k), device_lease(r.PinDevice(k)),
++        window(std::move(w)),
++        handles(device_lease.Backend().GetNativeHandles()),
++        device(reinterpret_cast<VkDevice>(handles.device)),
++        physical(reinterpret_cast<VkPhysicalDevice>(handles.physical_device)),
++        queue(reinterpret_cast<VkQueue>(handles.queue)),
++        surface(reinterpret_cast<VkSurfaceKHR>(
++            device_lease.Backend().PresentationSurface())) {
++    Need(window && surface, "Device has no retained presentation surface");
++    Need(device_lease.Backend().PresentationWindow() ==
++             reinterpret_cast<uintptr_t>(window->handle()),
++         "Device surface belongs to another window");
++    loader.instance = reinterpret_cast<VkInstance>(handles.instance);
++    loader.device = device;
++    VkSemaphoreCreateInfo ci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
++    Check(P(vkCreateSemaphore)(device, &ci, nullptr, &acquire),
++          "Create acquire semaphore");
++    try {
++      Recreate();
++    } catch (...) {
++      P(vkDestroySemaphore)(device, acquire, nullptr);
++      acquire = VK_NULL_HANDLE;
++      throw;
++    }
++  }
++  void Owner() const {
++    Need(owner == std::this_thread::get_id(),
++         "Presenter owner thread mismatch");
++  }
++  void Pump() { window->Pump(); }
++  bool Wait(VkFence fence, bool forever) {
++    const auto deadline =
++        std::chrono::steady_clock::now() + std::chrono::seconds(5);
++    for (;;) {
++      auto r = P(vkWaitForFences)(device, 1, &fence, VK_TRUE, 1'000'000);
++      Pump();
++      if (r == VK_SUCCESS)
++        return true;
++      if (r == VK_ERROR_DEVICE_LOST) {
++        device_lost = terminal = true;
++        return false;
++      }
++      Check(r == VK_TIMEOUT ? VK_SUCCESS : r, "Presentation fence");
++      if (!forever && std::chrono::steady_clock::now() >= deadline) {
++        terminal = true;
++        return false;
++      }
++    }
++  }
++  void RetireImages(bool forever) {
++    for (auto &i : images)
++      if (i.present_pending) {
++        if (!Wait(i.present, forever) && !device_lost)
++          throw std::runtime_error(
++              "Presentation retirement timeout; references retained");
++        i.present_pending = false;
++        if (!device_lost)
++          ++counters.retired;
++      }
++  }
++  void DestroyImages() {
++    for (auto &i : images) {
++      if (i.present)
++        P(vkDestroyFence)(device, i.present, nullptr);
++      if (i.finished)
++        P(vkDestroySemaphore)(device, i.finished, nullptr);
++      if (i.view)
++        P(vkDestroyImageView)(device, i.view, nullptr);
++    }
++    images.clear();
++    if (swapchain)
++      P(vkDestroySwapchainKHR)(device, swapchain, nullptr);
++    swapchain = VK_NULL_HANDLE;
++  }
++  void Recreate() {
++    Owner();
++    Need(!closed && !terminal, "Presenter closed/terminal");
++    RetireImages(false);
++    auto client = window->client_extent();
++    if (!client[0] || !client[1]) {
++      extent = {0, 0};
++      return;
++    }
++    VkSurfaceCapabilitiesKHR caps{};
++    Check(
++        P(vkGetPhysicalDeviceSurfaceCapabilitiesKHR)(physical, surface, &caps),
++        "Surface capabilities");
++    Need((caps.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) &&
++             (caps.supportedCompositeAlpha &
++              VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) &&
++             caps.currentTransform == VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
++         "Unsupported surface usage/alpha/transform");
++    auto size = caps.currentExtent;
++    if (size.width == UINT32_MAX) {
++      size.width = std::clamp(client[0], caps.minImageExtent.width,
++                              caps.maxImageExtent.width);
++      size.height = std::clamp(client[1], caps.minImageExtent.height,
++                               caps.maxImageExtent.height);
++    }
++    if (!size.width || !size.height) {
++      extent = {0, 0};
++      return;
++    }
++    uint32_t count = 0;
++    Check(P(vkGetPhysicalDeviceSurfaceFormatsKHR)(physical, surface, &count,
++                                                  nullptr),
++          "Surface format count");
++    std::vector<VkSurfaceFormatKHR> formats(count);
++    Check(P(vkGetPhysicalDeviceSurfaceFormatsKHR)(physical, surface, &count,
++                                                  formats.data()),
++          "Surface formats");
++    bool selected = false;
++    for (auto candidate :
++         {PresentationFormat::Bgra8Srgb, PresentationFormat::Rgba8Srgb,
++          PresentationFormat::Bgra8Unorm, PresentationFormat::Rgba8Unorm}) {
++      for (auto pair : formats)
++        if (pair.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR &&
++            (pair.format == VkFormat(NativePresentationFormat(candidate)) ||
++             pair.format == VK_FORMAT_UNDEFINED)) {
++          format = candidate;
++          selected = true;
++          break;
++        }
++      if (selected)
++        break;
++    }
++    Need(selected, "No supported SDR presentation pair");
++    Check(P(vkGetPhysicalDeviceSurfacePresentModesKHR)(physical, surface,
++                                                       &count, nullptr),
++          "Present mode count");
++    std::vector<VkPresentModeKHR> modes(count);
++    Check(P(vkGetPhysicalDeviceSurfacePresentModesKHR)(physical, surface,
++                                                       &count, modes.data()),
++          "Present modes");
++    Need(std::find(modes.begin(), modes.end(), VK_PRESENT_MODE_FIFO_KHR) !=
++             modes.end(),
++         "FIFO unavailable");
++    Need(caps.minImageCount <= 8, "Surface minimum image count exceeds bound");
++    uint32_t requested = std::min(caps.minImageCount + 1, 8u);
++    if (caps.maxImageCount)
++      requested = std::min(requested, caps.maxImageCount);
++    VkSwapchainCreateInfoKHR ci{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
++    ci.surface = surface;
++    ci.minImageCount = requested;
++    ci.imageFormat = VkFormat(NativePresentationFormat(format));
++    ci.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
++    ci.imageExtent = size;
++    ci.imageArrayLayers = 1;
++    ci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
++    ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
++    ci.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
++    ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
++    ci.presentMode = VK_PRESENT_MODE_FIFO_KHR;
++    ci.clipped = VK_TRUE;
++    ci.oldSwapchain = swapchain;
++    VkSwapchainKHR next{};
++    auto result = P(vkCreateSwapchainKHR)(device, &ci, nullptr, &next);
++    if (result != VK_SUCCESS) {
++      DestroyImages();
++      terminal = true;
++      Check(result, "Create swapchain (old generation retired)");
++    }
++    DestroyImages();
++    swapchain = next;
++    extent = {size.width, size.height};
++    try {
++      Check(P(vkGetSwapchainImagesKHR)(device, swapchain, &count, nullptr),
++            "Swap image count");
++      Need(count && count <= 64, "Actual swap image count exceeds bound");
++      std::vector<VkImage> native(count);
++      Check(
++          P(vkGetSwapchainImagesKHR)(device, swapchain, &count, native.data()),
++          "Swap images");
++      images.resize(count);
++      for (uint32_t n = 0; n < count; ++n) {
++        auto &i = images[n];
++        i.image = native[n];
++        VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
++        vi.image = i.image;
++        vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
++        vi.format = ci.imageFormat;
++        vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
++        Check(P(vkCreateImageView)(device, &vi, nullptr, &i.view),
++              "Swap image view");
++        VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
++        Check(P(vkCreateSemaphore)(device, &si, nullptr, &i.finished),
++              "Per-image render semaphore");
++        VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
++        Check(P(vkCreateFence)(device, &fi, nullptr, &i.present),
++              "Per-image present fence");
++      }
++      const bool encode = format == PresentationFormat::Bgra8Unorm ||
++                          format == PresentationFormat::Rgba8Unorm;
++      vertex = ConversionShader(true, false);
++      fragment = ConversionShader(false, encode);
++      ++counters.recreated;
++    } catch (...) {
++      DestroyImages();
++      terminal = true;
++      throw;
++    }
++  }
++  void Consume(VkSemaphore sem) {
++    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
++    VkPipelineStageFlags stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
++    si.waitSemaphoreCount = 1;
++    si.pWaitSemaphores = &sem;
++    si.pWaitDstStageMask = &stage;
++    VkFenceCreateInfo ci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
++    VkFence fence{};
++    const auto create = P(vkCreateFence)(device, &ci, nullptr, &fence);
++    if (create == VK_ERROR_DEVICE_LOST) {
++      device_lost = terminal = true;
++      return;
++    }
++    Check(create, "Retirement consume fence");
++    auto r = P(vkQueueSubmit)(queue, 1, &si, fence);
++    if (r == VK_SUCCESS) {
++      Wait(fence, true);
++    } else if (r == VK_ERROR_DEVICE_LOST) {
++      device_lost = terminal = true;
++    } else {
++      P(vkDestroyFence)(device, fence, nullptr);
++      Check(r, "Consume orphan semaphore");
++    }
++    P(vkDestroyFence)(device, fence, nullptr);
++  }
++  void Release(uint32_t index) {
++    if (device_lost)
++      return;
++    VkReleaseSwapchainImagesInfoKHR info{
++        VK_STRUCTURE_TYPE_RELEASE_SWAPCHAIN_IMAGES_INFO_KHR};
++    info.swapchain = swapchain;
++    info.imageIndexCount = 1;
++    info.pImageIndices = &index;
++    auto fn = loader.Get<PFN_vkReleaseSwapchainImagesKHR>(
++        device_lease.Backend().PresentationUsesKhrMaintenance()
++            ? "vkReleaseSwapchainImagesKHR"
++            : "vkReleaseSwapchainImagesEXT");
++    auto r = fn(device, &info);
++    if (r == VK_ERROR_DEVICE_LOST) {
++      device_lost = terminal = true;
++      return;
++    }
++    Check(r, "Release acquired image");
++  }
++  void RetireFlight(bool forever) {
++    const auto deadline =
++        std::chrono::steady_clock::now() + std::chrono::seconds(5);
++    while (acquired_index) {
++      if (device_lost) {
++        flight.Retired();
++        acquired_index.reset();
++        return;
++      }
++      try {
++        auto index = *acquired_index;
++        auto action = flight.RequiredRetirement();
++        if (action == Retirement::WaitPresent) {
++          if (!Wait(images[index].present, forever)) {
++            if (device_lost)
++              continue;
++            throw std::runtime_error("Pending present retirement");
++          }
++          images[index].present_pending = false;
++          ++counters.retired;
++        } else {
++          if (action == Retirement::ConsumeAcquire) {
++            Consume(acquire);
++            flight.SynchronizationConsumed();
++          } else if (action == Retirement::ConsumeRender) {
++            Consume(images[index].finished);
++            flight.SynchronizationConsumed();
++          }
++          if (!device_lost)
++            Release(index);
++        }
++        flight.Retired();
++        acquired_index.reset();
++      } catch (...) {
++        terminal = true;
++        if (!forever && std::chrono::steady_clock::now() >= deadline)
++          throw;
++        Pump();
++        Sleep(1);
++      }
++    }
++  }
++  void Close() {
++    Owner();
++    if (closed)
++      return;
++    RetireFlight(true);
++    RetireImages(true);
++    DestroyImages();
++    if (acquire)
++      P(vkDestroySemaphore)(device, acquire, nullptr);
++    acquire = VK_NULL_HANDLE;
++    closed = true;
++  }
++  ~Impl() {
++    try {
++      Close();
++    } catch (...) {
++      std::terminate();
++    }
++  }
++};
++Presenter::Presenter(Resources &r, GuestAddress d,
++                     std::shared_ptr<native::Window> w)
++    : impl_(std::make_unique<Impl>(r, d, std::move(w))) {}
++Presenter::~Presenter() = default;
++std::array<uint32_t, 2> Presenter::Extent() {
++  auto &o = *impl_;
++  o.Owner();
++  o.Pump();
++  if (o.closed)
++    return {0, 0};
++  const auto client = o.window->client_extent();
++  if (client != o.extent && !o.terminal)
++    o.Recreate();
++  return o.extent;
++}
++PresentationResult Presenter::Present(PresentSource &source,
++                                      SourceEncoding encoding) {
++  auto &o = *impl_;
++  o.Owner();
++  Need(encoding == SourceEncoding::LinearSrgb,
++       "Unsupported source color encoding");
++  Need(!o.terminal && !o.closed, "Presenter closed/terminal");
++  Need(source.Device() == o.key && source.DeviceIdentity() == o.handles.device,
++       "Presentation source belongs to another device");
++  o.Pump();
++  if (o.window->close_requested() || o.window->quit_requested())
++    return PresentationResult::Closed;
++  auto sample =
++      source.Sample(0); // Revalidate retained source before any acquire.
++  auto size = Extent();
++  if (!size[0] || !size[1])
++    return PresentationResult::Paused;
++  if (sample.width != size[0] || sample.height != size[1])
++    return PresentationResult::ResizeRequired;
++  uint32_t index = 0;
++  auto acquired = o.P(vkAcquireNextImageKHR)(o.device, o.swapchain, 0,
++                                             o.acquire, VK_NULL_HANDLE, &index);
++  if (acquired == VK_NOT_READY || acquired == VK_TIMEOUT)
++    return PresentationResult::Pending;
++  if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
++    o.Recreate();
++    return PresentationResult::ResizeRequired;
++  }
++  if (acquired != VK_SUCCESS && acquired != VK_SUBOPTIMAL_KHR) {
++    o.terminal = true;
++    Check(acquired, "Acquire next image");
++  }
++  Need(index < o.images.size(), "Acquired image outside swapchain");
++  auto &image = o.images[index];
++  ++o.counters.acquired;
++  auto &flight = o.flight;
++  flight = PresentationFlight{};
++  o.acquired_index = index;
++  flight.Acquire(acquired == VK_SUBOPTIMAL_KHR ? AcquireStatus::Suboptimal
++                                               : AcquireStatus::Ready);
++  try {
++    if (o.window->close_requested() || o.window->client_extent() != o.extent) {
++      o.Consume(o.acquire);
++      flight.SynchronizationConsumed();
++      o.Release(index);
++      flight.Retired();
++      o.acquired_index.reset();
++      return o.window->close_requested() ? PresentationResult::Closed
++                                         : PresentationResult::ResizeRequired;
++    }
++    if (image.present_pending) {
++      Need(o.Wait(image.present, false), "Previous presentation still pending");
++      image.present_pending = false;
++    }
++    Check(o.P(vkResetFences)(o.device, 1, &image.present),
++          "Reset retired present fence");
++    bool attempted = false, accepted = false;
++    NativeTarget target{reinterpret_cast<uintptr_t>(image.image),
++                        reinterpret_cast<uintptr_t>(image.view),
++                        uint32_t(image.initialized
++                                     ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
++                                     : VK_IMAGE_LAYOUT_UNDEFINED),
++                        AttachmentLoad::Clear,
++                        AttachmentStore::Store,
++                        {0, 0, 0, 1},
++                        &attempted,
++                        &accepted};
++    target.presentation_format = o.format;
++    target.wait_semaphore = reinterpret_cast<uintptr_t>(o.acquire);
++    target.signal_semaphore = reinterpret_cast<uintptr_t>(image.finished);
++    target.pump = [&] { o.Pump(); };
++    DrawDescription draw;
++    draw.width = size[0];
++    draw.height = size[1];
++    draw.viewport.width = float(size[0]);
++    draw.viewport.height = float(size[1]);
++    draw.scissor.width = size[0];
++    draw.scissor.height = size[1];
++    draw.procedural_triangle = true;
++    try {
++      DrawIntoTarget(o.resources, o.key,
++                     {o.vertex, o.fragment, std::span(&o.plan, 1)}, draw,
++                     target, std::span(&sample, 1), {});
++    } catch (...) {
++      if (accepted) {
++        flight.RenderComplete();
++        source.Fail();
++      } else if (attempted) {
++        o.terminal = true;
++      }
++      throw;
++    }
++    ++o.counters.submitted;
++    flight.RenderComplete();
++    source.CommitRead();
++    image.initialized = true;
++    VkSwapchainPresentFenceInfoKHR fence{
++        VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_KHR};
++    fence.swapchainCount = 1;
++    fence.pFences = &image.present;
++    VkPresentInfoKHR info{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
++    info.pNext = &fence;
++    info.waitSemaphoreCount = 1;
++    info.pWaitSemaphores = &image.finished;
++    info.swapchainCount = 1;
++    info.pSwapchains = &o.swapchain;
++    info.pImageIndices = &index;
++    auto result = o.P(vkQueuePresentKHR)(o.queue, &info);
++    if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR ||
++        result == VK_ERROR_OUT_OF_DATE_KHR ||
++        result == VK_ERROR_SURFACE_LOST_KHR) {
++      image.present_pending = true;
++      ++o.counters.present_queued;
++      flight.Present(result == VK_SUCCESS          ? PresentStatus::Queued
++                     : result == VK_SUBOPTIMAL_KHR ? PresentStatus::Suboptimal
++                                                   : PresentStatus::OutOfDate);
++      Need(o.Wait(image.present, false),
++           "Presentation retirement deadline exceeded");
++      image.present_pending = false;
++      ++o.counters.retired;
++      flight.Retired();
++      o.acquired_index.reset();
++      if (result == VK_ERROR_SURFACE_LOST_KHR) {
++        o.terminal = true;
++        throw std::runtime_error("Surface lost");
++      }
++      if (result != VK_SUCCESS || acquired == VK_SUBOPTIMAL_KHR) {
++        o.Recreate();
++        return PresentationResult::ResizeRequired;
++      }
++      return PresentationResult::Presented;
++    }
++    if (result == VK_ERROR_DEVICE_LOST) {
++      o.device_lost = o.terminal = true;
++      flight.Present(PresentStatus::DeviceLost);
++      Check(result, "Present device lost");
++    }
++    flight.Present(PresentStatus::NotEnqueued);
++    Check(result, "Present not enqueued");
++  } catch (...) {
++    ++o.counters.failures;
++    o.terminal = true;
++    o.RetireFlight(true);
++    throw;
++  }
++  throw std::runtime_error("Unexpected present status");
++}
++void Presenter::Close() { impl_->Close(); }
++PresentationCounters Presenter::Counters() const {
++  impl_->Owner();
++  return impl_->counters;
++}
++PresentationFormat Presenter::Format() const {
++  impl_->Owner();
++  return impl_->format;
++}
++} // namespace native_nvn
+diff --git a/native-runtime/nvn/presentation.h b/native-runtime/nvn/presentation.h
+new file mode 100644
+--- /dev/null
++++ b/native-runtime/nvn/presentation.h
+@@ -0,0 +1,65 @@
++#pragma once
++#include "frame.h"
++#include <memory>
++namespace native_nvn {
++enum class AcquireStatus { Ready, Suboptimal, Pending, OutOfDate, Failed };
++enum class PresentStatus {
++  Queued,
++  Suboptimal,
++  OutOfDate,
++  NotEnqueued,
++  DeviceLost
++};
++enum class Retirement {
++  None,
++  ConsumeAcquire,
++  ConsumeRender,
++  ReleaseImage,
++  WaitPresent
++};
++// Pure policy exercised before any WSI fixture. A queued presentation is not
++// retired by render completion; a separate present fence owns that transition.
++struct PresentationFlight {
++  bool acquired = false, acquire_consumed = false, rendered = false,
++       render_consumed = false, present_pending = false, recreate = false,
++       terminal = false;
++  void Acquire(AcquireStatus);
++  void RenderComplete();
++  void Present(PresentStatus);
++  void SynchronizationConsumed();
++  void Retired();
++  Retirement RequiredRetirement() const;
++};
++double EncodeSrgb(double linear);
++std::vector<uint32_t> PresentationVertexShader();
++std::vector<uint32_t> PresentationFragmentShader(bool encode_srgb);
++std::shared_ptr<const native_graphics::Win32SurfaceTarget>
++    RetainPresentationWindow(std::shared_ptr<native::Window>);
++enum class SourceEncoding { LinearSrgb };
++enum class PresentationResult {
++  Presented,
++  Pending,
++  Paused,
++  ResizeRequired,
++  Closed
++};
++struct PresentationCounters {
++  uint64_t acquired = 0, submitted = 0, present_queued = 0, retired = 0,
++           recreated = 0, failures = 0;
++};
++class Presenter {
++public:
++  Presenter(Resources &, GuestAddress, std::shared_ptr<native::Window>);
++  ~Presenter();
++  Presenter(const Presenter &) = delete;
++  std::array<uint32_t, 2> Extent();
++  PresentationResult Present(PresentSource &, SourceEncoding);
++  void Close();
++  PresentationCounters Counters() const;
++  PresentationFormat Format() const;
++
++private:
++  struct Impl;
++  std::unique_ptr<Impl> impl_;
++};
++} // namespace native_nvn
+diff --git a/native-runtime/nvn/presentation_conversion_test.cpp b/native-runtime/nvn/presentation_conversion_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/native-runtime/nvn/presentation_conversion_test.cpp
+@@ -0,0 +1,95 @@
++#include "presentation.h"
++#include <array>
++#include <cmath>
++#include <cstring>
++#include <iostream>
++using namespace native_nvn;
++void Need(bool b, const char *w) {
++  if (!b)
++    throw std::runtime_error(w);
++}
++int main() {
++  try {
++    Resources resources(
++        {nullptr,
++         [](void *, GuestAddress, std::span<std::byte>) { return false; },
++         [](void *, GuestAddress, std::span<const std::byte>) {
++           return false;
++         }});
++    resources.CreateDevice(0x1000);
++    uint64_t pixels = 0;
++    unsigned rejected = 0;
++    for (bool packed : {false, true}) {
++      FrameImages images(resources, 0x1000);
++      ImageDescription d;
++      d.width = d.height = 1;
++      d.format =
++          packed ? ImageFormat::A2B10G10R10Unorm : ImageFormat::Rgba8Unorm;
++      auto source = images.CreateImage(d);
++      std::array<std::byte, 4> bytes;
++      std::array<double, 3> linear;
++      if (packed) {
++        uint32_t word = 77u | (511u << 10) | (839u << 20) | (1u << 30);
++        for (unsigned i = 0; i < 4; ++i)
++          bytes[i] = std::byte(word >> (i * 8));
++        linear = {77 / 1023., 511 / 1023., 839 / 1023.};
++      } else {
++        bytes = {std::byte{64}, std::byte{128}, std::byte{192}, std::byte{85}};
++        linear = {64 / 255., 128 / 255., 192 / 255.};
++      }
++      images.UploadInitialContents(source, bytes);
++      ViewDescription vd;
++      vd.format = d.format;
++      auto view = images.CreateView(source, vd);
++      auto sampler = images.CreateSampler();
++      auto target = images.CreateImage({});
++      auto tv = images.CreateView(target);
++      auto vertex = PresentationVertexShader(),
++           fragment = PresentationFragmentShader(true);
++      DescriptorPlan plan{0, DescriptorKind::CombinedImageSampler2D,
++                          ShaderStage::Fragment};
++      DrawDescription draw;
++      draw.procedural_triangle = true;
++      SampleBinding sample{0, view, sampler};
++      {
++        FrameEncoder f(images);
++        f.Draw({vertex, fragment, std::span(&plan, 1)}, draw,
++               {tv, AttachmentLoad::Clear}, std::span(&sample, 1));
++        f.SubmitAndWait();
++      }
++      auto result = images.Readback(target);
++      for (size_t i = 0; i < result.rgba8.size(); i += 4) {
++        for (unsigned k = 0; k < 3; ++k) {
++          int expected = int(std::lround(EncodeSrgb(linear[k]) * 255));
++          Need(std::abs(int(result.rgba8[i + k]) - expected) <= 1,
++               "GPU presentation encode differs from independent CPU oracle");
++        }
++        Need(result.rgba8[i + 3] == std::byte{255},
++             "Opaque presentation alpha differs");
++        ++pixels;
++      }
++      auto retained = images.BorrowPresentation(view, sampler);
++      retained.Fail();
++      auto before = images.Counters();
++      bool declined = false;
++      try {
++        retained.Sample(0);
++      } catch (const std::runtime_error &) {
++        declined = true;
++      }
++      Need(declined, "Invalid retained source accepted");
++      auto after = images.Counters();
++      Need(before.submitted == after.submitted &&
++               before.recorded == after.recorded,
++           "Invalid retained source changed frame counters");
++      ++rejected;
++    }
++    std::cout << "{\"passed\":true,\"presentation_encode_pixels\":" << pixels
++              << ",\"rgba8_and_packed10\":true,\"terminal_source_rejected\":"
++              << rejected << ",\"window_calls\":0}\n";
++    return 0;
++  } catch (const std::exception &e) {
++    std::cerr << e.what() << '\n';
++    return 1;
++  }
++}
+diff --git a/native-runtime/nvn/presentation_fixture.cpp b/native-runtime/nvn/presentation_fixture.cpp
+new file mode 100644
+--- /dev/null
++++ b/native-runtime/nvn/presentation_fixture.cpp
+@@ -0,0 +1,428 @@
++#include "../window.h"
++#include "presentation.h"
++#include <chrono>
++#include <cstring>
++#include <filesystem>
++#include <fstream>
++#include <iostream>
++#include <sirit/sirit.h>
++#include <sstream>
++using namespace native_nvn;
++namespace {
++void Need(bool b, const char *w) {
++  if (!b)
++    throw std::runtime_error(w);
++}
++std::vector<uint32_t> Pattern() {
++  Sirit::Module m(0x00010000);
++  m.AddCapability(spv::Capability::Shader);
++  m.SetMemoryModel(spv::AddressingModel::Logical, spv::MemoryModel::GLSL450);
++  auto f = m.TypeFloat(32), v2 = m.TypeVector(f, 2), v4 = m.TypeVector(f, 4);
++  auto input = m.AddGlobalVariable(m.TypePointer(spv::StorageClass::Input, v2),
++                                   spv::StorageClass::Input),
++       out = m.AddGlobalVariable(m.TypePointer(spv::StorageClass::Output, v4),
++                                 spv::StorageClass::Output);
++  m.Decorate(input, spv::Decoration::Location, 0u);
++  m.Decorate(out, spv::Decoration::Location, 0u);
++  auto zero = m.Constant(f, 0.f), one = m.Constant(f, 1.f),
++       quarter = m.Constant(f, .25f);
++  auto fn = m.OpFunction(m.TypeVoid(), spv::FunctionControlMask::MaskNone,
++                         m.TypeFunction(m.TypeVoid()));
++  m.AddLabel();
++  auto uv = m.OpLoad(v2, input), u = m.OpCompositeExtract(f, uv, 0u),
++       v = m.OpCompositeExtract(f, uv, 1u);
++  auto corner =
++      m.OpLogicalAnd(m.TypeBool(), m.OpFOrdLessThan(m.TypeBool(), u, quarter),
++                     m.OpFOrdLessThan(m.TypeBool(), v, quarter));
++  m.OpStore(out,
++            m.OpCompositeConstruct(v4, m.OpSelect(f, corner, one, u),
++                                   m.OpSelect(f, corner, zero, v),
++                                   m.OpSelect(f, corner, zero, quarter), one));
++  m.OpReturn();
++  m.OpFunctionEnd();
++  m.AddEntryPoint(spv::ExecutionModel::Fragment, fn, "main", input, out);
++  m.AddExecutionMode(fn, spv::ExecutionMode::OriginUpperLeft);
++  return m.Assemble();
++}
++void Capture(HWND window, const std::filesystem::path &path) {
++  // Desktop DC coordinates are physical pixels. All extent/origin and
++  // occlusion checks must use that same DPI context, not virtualized units.
++  const auto previous =
++      SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
++  if (!previous)
++    throw std::runtime_error("Physical-pixel capture DPI context unavailable");
++  struct RestoreDpi {
++    DPI_AWARENESS_CONTEXT value;
++    ~RestoreDpi() { SetThreadDpiAwarenessContext(value); }
++  } restore{previous};
++  RECT r{};
++  Need(GetClientRect(window, &r), "Capture client rectangle");
++  const int width = r.right, height = r.bottom;
++  Need(width > 0 && height > 0 &&
++           uint64_t(width) * height * 4 <= 64ull * 1024 * 1024,
++       "Capture extent/budget invalid");
++  POINT origin{0, 0};
++  Need(ClientToScreen(window, &origin) != FALSE, "Capture client origin");
++  auto verify_owner = [&] {
++    Need(IsWindowVisible(window) && !IsIconic(window),
++         "Capture window not visible");
++    RECT client{origin.x, origin.y, origin.x + width, origin.y + height};
++    for (int gy = 0; gy < 3; ++gy)
++      for (int gx = 0; gx < 3; ++gx) {
++        POINT pt{origin.x + 1 + (width - 3) * gx / 2,
++                 origin.y + 1 + (height - 3) * gy / 2};
++        const auto hit = WindowFromPoint(pt), root = GetAncestor(hit, GA_ROOT);
++        if (root != window) {
++          RECT wr{};
++          GetWindowRect(window, &wr);
++          DWORD pid = 0;
++          const auto thread = GetWindowThreadProcessId(root, &pid);
++          std::ostringstream error;
++          error << "Capture declined owner/root: expected="
++                << reinterpret_cast<uintptr_t>(window)
++                << " hit=" << reinterpret_cast<uintptr_t>(hit)
++                << " root=" << reinterpret_cast<uintptr_t>(root)
++                << " root_pid=" << pid << " root_thread=" << thread
++                << " point=" << pt.x << ',' << pt.y << " client=" << client.left
++                << ',' << client.top << ',' << client.right << ','
++                << client.bottom << " window=" << wr.left << ',' << wr.top
++                << ',' << wr.right << ',' << wr.bottom
++                << " dpi=" << GetDpiForWindow(window);
++          throw std::runtime_error(error.str());
++        }
++      }
++    unsigned checked = 0;
++    for (HWND above = GetWindow(window, GW_HWNDPREV); above;
++         above = GetWindow(above, GW_HWNDPREV)) {
++      Need(++checked <= 1024, "Capture Z-order bound exceeded");
++      if (!IsWindowVisible(above) || IsIconic(above))
++        continue;
++      RECT bounds{}, overlap{};
++      Need(GetWindowRect(above, &bounds) != FALSE, "Capture occlusion bounds");
++      if (IntersectRect(&overlap, &client, &bounds)) {
++        DWORD pid = 0;
++        GetWindowThreadProcessId(above, &pid);
++        std::ostringstream error;
++        error << "Capture declined occlusion: above="
++              << reinterpret_cast<uintptr_t>(above) << " pid=" << pid
++              << " client=" << client.left << ',' << client.top << ','
++              << client.right << ',' << client.bottom
++              << " overlap=" << overlap.left << ',' << overlap.top << ','
++              << overlap.right << ',' << overlap.bottom;
++        throw std::runtime_error(error.str());
++      }
++    }
++  };
++  verify_owner();
++  HDC dc = GetDC(nullptr);
++  if (!dc)
++    throw std::runtime_error("Capture window DC");
++  HDC copy = CreateCompatibleDC(dc);
++  BITMAPINFO info{};
++  info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
++  info.bmiHeader.biWidth = width;
++  info.bmiHeader.biHeight = -height;
++  info.bmiHeader.biPlanes = 1;
++  info.bmiHeader.biBitCount = 32;
++  void *pixels = nullptr;
++  HBITMAP bitmap =
++      CreateDIBSection(dc, &info, DIB_RGB_COLORS, &pixels, nullptr, 0);
++  if (!copy || !bitmap || !pixels) {
++    if (bitmap)
++      DeleteObject(bitmap);
++    if (copy)
++      DeleteDC(copy);
++    ReleaseDC(nullptr, dc);
++    throw std::runtime_error("Capture bitmap allocation");
++  }
++  auto prior = SelectObject(copy, bitmap);
++  bool ok = BitBlt(copy, 0, 0, width, height, dc, origin.x, origin.y,
++                   SRCCOPY | CAPTUREBLT) != FALSE;
++  GdiFlush();
++  try {
++    verify_owner();
++  } catch (...) {
++    ok = false;
++  }
++  if (ok) {
++    BITMAPFILEHEADER header{};
++    header.bfType = 0x4d42;
++    header.bfOffBits = sizeof(header) + sizeof(BITMAPINFOHEADER);
++    header.bfSize = header.bfOffBits + DWORD(width * height * 4);
++    std::filesystem::create_directories(path.parent_path());
++    std::ofstream file(path, std::ios::binary);
++    file.write(reinterpret_cast<const char *>(&header), sizeof(header));
++    file.write(reinterpret_cast<const char *>(&info.bmiHeader),
++               sizeof(info.bmiHeader));
++    file.write(static_cast<const char *>(pixels), width * height * 4);
++    ok = bool(file);
++  }
++  SelectObject(copy, prior);
++  DeleteObject(bitmap);
++  DeleteDC(copy);
++  ReleaseDC(nullptr, dc);
++  Need(ok, "Owned-window capture failed");
++}
++} // namespace
++int main(int argc, char **argv) {
++  bool visible = false, resize = false;
++  unsigned frames = 90;
++  std::filesystem::path prefix;
++  for (int i = 1; i < argc; ++i) {
++    std::string arg = argv[i];
++    if (arg == "--visible")
++      visible = true;
++    else if (arg == "--exercise-resize")
++      resize = true;
++    else if (arg == "--frames" && i + 1 < argc)
++      frames = unsigned(std::stoul(argv[++i]));
++    else if (arg == "--capture-prefix" && i + 1 < argc)
++      prefix = argv[++i];
++    else {
++      std::cerr << "Unsupported fixture arguments\n";
++      return 1;
++    }
++  }
++  if (!visible || frames < 45 || frames > 600) {
++    std::cerr << "Explicit --visible required; frames45..600. Synthetic window "
++                 "only.\n";
++    return 1;
++  }
++  try {
++    // Select the fixture's physical-pixel policy before HWND creation; changing
++    // only the capture call context leaves an unaware HWND virtualized.
++    const auto old_dpi = SetThreadDpiAwarenessContext(
++        DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
++    if (!old_dpi)
++      throw std::runtime_error("Per-monitor-aware fixture context unavailable");
++    struct FixtureDpi {
++      DPI_AWARENESS_CONTEXT prior;
++      ~FixtureDpi() { SetThreadDpiAwarenessContext(prior); }
++    } dpi{old_dpi};
++    auto window = std::make_shared<native::Window>(
++        L"Native synthetic Vulkan presentation - no game");
++    auto surface = RetainPresentationWindow(window);
++    auto ownerpid = window->process_id(), sourceid = window->source_id();
++    auto start = std::chrono::steady_clock::now();
++    PresentationCounters counters;
++    uint64_t reads = 0;
++    bool both_rgba = false, both_packed = false, paused = false,
++         close_checked = false;
++    PresentationFormat selected{};
++    native_graphics::PresentationDiagnostics diagnostics;
++    {
++      Resources resources(
++          {nullptr,
++           [](void *, GuestAddress, std::span<std::byte>) { return false; },
++           [](void *, GuestAddress, std::span<const std::byte>) {
++             return false;
++           }});
++      native_graphics::DeviceOptions options{true, false, 0};
++      options.presentation = surface;
++      resources.CreateDevice(0x1000, options);
++      diagnostics = resources.Backend(0x1000).GetPresentationDiagnostics();
++      bool destroy_rejected = false;
++      try {
++        window->Destroy();
++      } catch (const std::logic_error &) {
++        destroy_rejected = true;
++      }
++      Need(destroy_rejected, "Live surface did not retain window");
++      Presenter presenter(resources, 0x1000, window);
++      FrameImages images(resources, 0x1000);
++      auto vs = PresentationVertexShader(), fs = Pattern();
++      ProgramDescription pattern{vs, fs, {}};
++      { // A retained source invalidated after borrowing must not
++        // acquire/submit.
++        const auto size = presenter.Extent();
++        Need(size[0] && size[1], "Initial fixture extent unavailable");
++        FrameImages probe(resources, 0x1000);
++        ImageDescription d;
++        d.width = size[0];
++        d.height = size[1];
++        auto image = probe.CreateImage(d);
++        auto view = probe.CreateView(image);
++        auto sampler = probe.CreateSampler();
++        DrawDescription draw;
++        draw.width = size[0];
++        draw.height = size[1];
++        draw.viewport.width = float(size[0]);
++        draw.viewport.height = float(size[1]);
++        draw.scissor.width = size[0];
++        draw.scissor.height = size[1];
++        draw.procedural_triangle = true;
++        {
++          FrameEncoder frame(probe);
++          frame.Draw(pattern, draw, {view, AttachmentLoad::Clear});
++          frame.SubmitAndWait();
++        }
++        auto retained = probe.BorrowPresentation(view, sampler);
++        retained.Fail();
++        const auto before = presenter.Counters();
++        bool rejected = false;
++        try {
++          presenter.Present(retained, SourceEncoding::LinearSrgb);
++        } catch (const std::runtime_error &) {
++          rejected = true;
++        }
++        const auto after = presenter.Counters();
++        Need(rejected && before.acquired == after.acquired &&
++                 before.submitted == after.submitted &&
++                 before.present_queued == after.present_queued,
++             "Invalid retained source caused presentation effects");
++      }
++
++      ImageHandle image;
++      ViewHandle view;
++      SamplerHandle sampler = images.CreateSampler();
++      std::array<uint32_t, 2> current{};
++      ImageFormat current_format = ImageFormat::Rgba8Unorm;
++      unsigned presented = 0;
++      bool minimized_once = false, resized_once = false;
++      while (presented < frames) {
++        window->Pump();
++        if (window->close_requested())
++          break;
++        Need(
++            std::chrono::steady_clock::now() - start < std::chrono::seconds(30),
++            "Fixture wall budget exceeded (driver calls are not hard bounded)");
++        auto extent = presenter.Extent();
++        if (!extent[0] || !extent[1]) {
++          window->WaitAndPump(std::chrono::milliseconds(10));
++          continue;
++        }
++        auto format = presented >= frames / 2 ? ImageFormat::A2B10G10R10Unorm
++                                              : ImageFormat::Rgba8Unorm;
++        if (current != extent || format != current_format || !image.value) {
++          if (view.value)
++            images.DestroyView(view);
++          if (image.value)
++            images.DestroyImage(image);
++          ImageDescription d;
++          d.width = extent[0];
++          d.height = extent[1];
++          d.format = format;
++          image = images.CreateImage(d);
++          ViewDescription vd;
++          vd.format = format;
++          view = images.CreateView(image, vd);
++          current = extent;
++          current_format = format;
++        }
++        DrawDescription draw;
++        draw.width = current[0];
++        draw.height = current[1];
++        draw.viewport.width = float(current[0]);
++        draw.viewport.height = float(current[1]);
++        draw.scissor.width = current[0];
++        draw.scissor.height = current[1];
++        draw.procedural_triangle = true;
++        {
++          FrameEncoder encoder(images);
++          encoder.Draw(pattern, draw, {view, AttachmentLoad::Clear});
++          encoder.SubmitAndWait();
++        }
++        {
++          auto source = images.BorrowPresentation(view, sampler);
++          auto result = presenter.Present(source, SourceEncoding::LinearSrgb);
++          if (result == PresentationResult::Presented) {
++            ++presented;
++            both_rgba |= format == ImageFormat::Rgba8Unorm;
++            both_packed |= format == ImageFormat::A2B10G10R10Unorm;
++          } else if (result == PresentationResult::Closed)
++            break;
++          else
++            window->WaitAndPump(std::chrono::milliseconds(2));
++        }
++        if (!prefix.empty() && (presented == 5 || presented == frames - 5)) {
++          window->WaitAndPump(std::chrono::milliseconds(40));
++          Capture(window->handle(),
++                  prefix.string() +
++                      (presented == 5 ? "-rgba.bmp" : "-packed.bmp"));
++        }
++        if (resize && presented >= 10 && !minimized_once) {
++          ShowWindow(window->handle(), SW_MINIMIZE);
++          window->Pump();
++          Need(presenter.Extent() == std::array<uint32_t, 2>{0, 0},
++               "Minimized presentation did not pause");
++          {
++            auto source = images.BorrowPresentation(view, sampler);
++            paused = presenter.Present(source, SourceEncoding::LinearSrgb) ==
++                     PresentationResult::Paused;
++          }
++          window->WaitAndPump(std::chrono::milliseconds(30));
++          ShowWindow(window->handle(), SW_RESTORE);
++          window->Pump();
++          minimized_once = true;
++        }
++        if (resize && presented >= 20 && !resized_once) {
++          Need(SetWindowPos(window->handle(), nullptr, 0, 0, 800, 480,
++                            SWP_NOMOVE | SWP_NOZORDER) != FALSE,
++               "Fixture resize");
++          window->Pump();
++          resized_once = true;
++        }
++      }
++      Need(presented == frames && both_rgba && both_packed,
++           "Fixture did not present both native source formats");
++      PostMessageW(window->handle(), WM_CLOSE, 0, 0);
++      window->Pump();
++      {
++        auto source = images.BorrowPresentation(view, sampler);
++        close_checked = presenter.Present(source, SourceEncoding::LinearSrgb) ==
++                        PresentationResult::Closed;
++      }
++      presenter.Close();
++      counters = presenter.Counters();
++      selected = presenter.Format();
++      reads = images.Counters().readbacks;
++      Need(reads == 0 && counters.present_queued == counters.retired,
++           "Presentation used CPU readback or leaked pending present "
++           "references");
++      if (resize)
++        Need(paused && counters.recreated >= 2,
++             "Resize/minimize not exercised");
++      Need(close_checked, "Close not observed");
++      images.DestroyView(view);
++      images.DestroyImage(image);
++      images.DestroySampler(sampler);
++    }
++    surface.reset();
++    window->Destroy();
++    std::cout << "{\"wsi_capabilities\":true,\"api_version\":"
++              << diagnostics.api_version
++              << ",\"driver_version\":" << diagnostics.driver_version
++              << ",\"vendor_id\":" << diagnostics.vendor_id
++              << ",\"device_id\":" << diagnostics.device_id
++              << ",\"queue_family\":" << diagnostics.queue_family
++              << ",\"maintenance_khr\":"
++              << (diagnostics.maintenance_khr ? "true" : "false")
++              << ",\"instance_extensions\":[";
++    for (size_t i = 0; i < diagnostics.instance_extensions.size(); ++i) {
++      if (i)
++        std::cout << ',';
++      std::cout << '"' << diagnostics.instance_extensions[i] << '"';
++    }
++    std::cout << "],\"device_extensions\":[";
++    for (size_t i = 0; i < diagnostics.device_extensions.size(); ++i) {
++      if (i)
++        std::cout << ',';
++      std::cout << '"' << diagnostics.device_extensions[i] << '"';
++    }
++    std::cout << "]}\n";
++    std::cout << "{\"passed\":true,\"synthetic_only\":true,\"pid\":" << ownerpid
++              << ",\"window_source_id\":" << sourceid
++              << ",\"present_queued\":" << counters.present_queued
++              << ",\"retired\":" << counters.retired
++              << ",\"recreated\":" << counters.recreated
++              << ",\"source_readbacks\":" << reads
++              << ",\"rgba8_and_packed10\":true,\"format\":" << int(selected)
++              << ",\"visible_witness_required\":true,\"validation_layers\":"
++                 "false,\"actual_game\":false}\n";
++    return 0;
++  } catch (const std::exception &e) {
++    std::cerr << "Presentation fixture failed/unsupported: " << e.what()
++              << '\n';
++    return 2;
++  }
++}
+diff --git a/native-runtime/nvn/presentation_policy_test.cpp b/native-runtime/nvn/presentation_policy_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/native-runtime/nvn/presentation_policy_test.cpp
+@@ -0,0 +1,71 @@
++#include "presentation.h"
++#include <cmath>
++#include <iostream>
++#include <stdexcept>
++using namespace native_nvn;
++void Check(bool b) {
++  if (!b)
++    throw std::runtime_error("Presentation policy assertion");
++}
++int main() {
++  try {
++    unsigned scenarios = 0;
++    for (auto status : {AcquireStatus::Pending, AcquireStatus::OutOfDate,
++                        AcquireStatus::Failed}) {
++      PresentationFlight f;
++      f.Acquire(status);
++      Check(f.RequiredRetirement() == Retirement::None);
++      ++scenarios;
++    }
++    for (auto acquire : {AcquireStatus::Ready, AcquireStatus::Suboptimal}) {
++      PresentationFlight f;
++      f.Acquire(acquire);
++      Check(f.RequiredRetirement() == Retirement::ConsumeAcquire);
++      f.SynchronizationConsumed();
++      Check(f.RequiredRetirement() == Retirement::ReleaseImage);
++      f.Retired();
++      Check(f.RequiredRetirement() == Retirement::None);
++      ++scenarios;
++      for (auto result : {PresentStatus::Queued, PresentStatus::Suboptimal,
++                          PresentStatus::OutOfDate, PresentStatus::NotEnqueued,
++                          PresentStatus::DeviceLost}) {
++        PresentationFlight p;
++        p.Acquire(acquire);
++        p.RenderComplete();
++        Check(p.RequiredRetirement() == Retirement::ConsumeRender);
++        p.Present(result);
++        if (result == PresentStatus::Queued ||
++            result == PresentStatus::Suboptimal ||
++            result == PresentStatus::OutOfDate) {
++          Check(p.RequiredRetirement() == Retirement::WaitPresent);
++          Check(p.present_pending);
++        } else {
++          Check(p.RequiredRetirement() == Retirement::ConsumeRender);
++          p.SynchronizationConsumed();
++          Check(p.RequiredRetirement() == Retirement::ReleaseImage);
++        }
++        p.Retired();
++        Check(p.RequiredRetirement() == Retirement::None);
++        ++scenarios;
++      }
++    }
++    PresentationFlight bad;
++    bool rejected = false;
++    try {
++      bad.RenderComplete();
++    } catch (const std::runtime_error &) {
++      rejected = true;
++    }
++    Check(rejected);
++    Check(std::abs(EncodeSrgb(0)) < 1e-12 &&
++          std::abs(EncodeSrgb(1) - 1) < 1e-12 &&
++          std::abs(EncodeSrgb(.0031308) - .040449936) < 1e-9 &&
++          std::abs(EncodeSrgb(.5) - .735356983) < 1e-8);
++    std::cout << "{\"passed\":true,\"retirement_scenarios\":" << scenarios
++              << ",\"gpu_calls\":0,\"window_calls\":0}\n";
++    return 0;
++  } catch (const std::exception &e) {
++    std::cerr << e.what() << '\n';
++    return 1;
++  }
++}
 diff --git a/native-runtime/nvn/resource_test.cpp b/native-runtime/nvn/resource_test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..30abf824df698d42384aeca61adf58d4f1c40be3
 --- /dev/null
 +++ b/native-runtime/nvn/resource_test.cpp
 @@ -0,0 +1,275 @@
@@ -7400,10 +9214,9 @@ index 0000000000000000000000000000000000000000..30abf824df698d42384aeca61adf58d4
 +}
 diff --git a/native-runtime/nvn/resources.cpp b/native-runtime/nvn/resources.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..d750b995a2e8e783079a8b3f444f22bbe0077556
 --- /dev/null
 +++ b/native-runtime/nvn/resources.cpp
-@@ -0,0 +1,275 @@
+@@ -0,0 +1,276 @@
 +#include "resources.h"
 +#include <algorithm>
 +#include <stdexcept>
@@ -7488,10 +9301,11 @@ index 0000000000000000000000000000000000000000..d750b995a2e8e783079a8b3f444f22bb
 +  Require(found != buffers_.end(), "NVN buffer is not live");
 +  return found->second;
 +}
-+void Resources::CreateDevice(GuestAddress key) {
++void Resources::CreateDevice(GuestAddress key,
++                             native_graphics::DeviceOptions options) {
 +  CheckNewKey(key);
-+  auto backend = std::make_shared<native_graphics::VulkanDevice>(
-+      native_graphics::DeviceOptions{true, false, 0});
++  auto backend =
++      std::make_shared<native_graphics::VulkanDevice>(std::move(options));
 +  devices_.emplace(key, Device{std::move(backend)});
 +}
 +void Resources::DestroyDevice(GuestAddress key) {
@@ -7681,10 +9495,9 @@ index 0000000000000000000000000000000000000000..d750b995a2e8e783079a8b3f444f22bb
 +} // namespace native_nvn
 diff --git a/native-runtime/nvn/resources.h b/native-runtime/nvn/resources.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..9096784d82323b67535a5eb1e4125800465385fd
 --- /dev/null
 +++ b/native-runtime/nvn/resources.h
-@@ -0,0 +1,120 @@
+@@ -0,0 +1,121 @@
 +#pragma once
 +#include "../graphics/vulkan_resources.h"
 +#include <map>
@@ -7755,7 +9568,8 @@ index 0000000000000000000000000000000000000000..9096784d82323b67535a5eb1e4125800
 +  ~Resources();
 +  Resources(const Resources &) = delete;
 +  Resources &operator=(const Resources &) = delete;
-+  void CreateDevice(GuestAddress key);
++  void CreateDevice(GuestAddress key,
++                    native_graphics::DeviceOptions options = {true, false, 0});
 +  void DestroyDevice(GuestAddress key);
 +  void CreatePool(GuestAddress key, const PoolDescription &description);
 +  void DestroyPool(GuestAddress key);
@@ -7807,7 +9621,6 @@ index 0000000000000000000000000000000000000000..9096784d82323b67535a5eb1e4125800
 +} // namespace native_nvn
 diff --git a/native-runtime/nvn/state_test.cpp b/native-runtime/nvn/state_test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..07a8d3e44d70c3e1761225ac2730e9535fe80d18
 --- /dev/null
 +++ b/native-runtime/nvn/state_test.cpp
 @@ -0,0 +1,789 @@
@@ -8602,7 +10415,6 @@ index 0000000000000000000000000000000000000000..07a8d3e44d70c3e1761225ac2730e953
 +}
 diff --git a/native-runtime/pending_owner_v3.cpp b/native-runtime/pending_owner_v3.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..55927fb00bedcf66e3412196a29b1f363172a551
 --- /dev/null
 +++ b/native-runtime/pending_owner_v3.cpp
 @@ -0,0 +1,407 @@
@@ -9015,7 +10827,6 @@ index 0000000000000000000000000000000000000000..55927fb00bedcf66e3412196a29b1f36
 +} // namespace native
 diff --git a/native-runtime/pending_owner_v3.h b/native-runtime/pending_owner_v3.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..053bf5e32f65a30a820d1e6c98621aeb7007103d
 --- /dev/null
 +++ b/native-runtime/pending_owner_v3.h
 @@ -0,0 +1,131 @@
@@ -9152,7 +10963,6 @@ index 0000000000000000000000000000000000000000..053bf5e32f65a30a820d1e6c98621aeb
 +} // namespace native
 diff --git a/native-runtime/pending_scheduler.h b/native-runtime/pending_scheduler.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..1bb6a77437c5a62cdd0b42ca18129038916a5342
 --- /dev/null
 +++ b/native-runtime/pending_scheduler.h
 @@ -0,0 +1,14 @@
@@ -9172,7 +10982,6 @@ index 0000000000000000000000000000000000000000..1bb6a77437c5a62cdd0b42ca18129038
 +} // namespace native
 diff --git a/native-runtime/relocations.cpp b/native-runtime/relocations.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..8a3f2e56d74e6d474289abf0c27f1dd2cc110499
 --- /dev/null
 +++ b/native-runtime/relocations.cpp
 @@ -0,0 +1,222 @@
@@ -9400,7 +11209,6 @@ index 0000000000000000000000000000000000000000..8a3f2e56d74e6d474289abf0c27f1dd2
 +} // namespace native
 diff --git a/native-runtime/services/CMakeLists.txt b/native-runtime/services/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..18c3e22b777e6f286b270a4226685162b92cb2d4
 --- /dev/null
 +++ b/native-runtime/services/CMakeLists.txt
 @@ -0,0 +1,24 @@
@@ -9430,7 +11238,6 @@ index 0000000000000000000000000000000000000000..18c3e22b777e6f286b270a4226685162
 +endif()
 diff --git a/native-runtime/services/application.cpp b/native-runtime/services/application.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..9753d1f8a9e6ceea7826c2dcdc75546f335b67a1
 --- /dev/null
 +++ b/native-runtime/services/application.cpp
 @@ -0,0 +1,269 @@
@@ -9705,7 +11512,6 @@ index 0000000000000000000000000000000000000000..9753d1f8a9e6ceea7826c2dcdc75546f
 +} // namespace native_services
 diff --git a/native-runtime/services/application.h b/native-runtime/services/application.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..154570c3c18b6da91bc5dbe6d299754db4cd1d43
 --- /dev/null
 +++ b/native-runtime/services/application.h
 @@ -0,0 +1,71 @@
@@ -9782,7 +11588,6 @@ index 0000000000000000000000000000000000000000..154570c3c18b6da91bc5dbe6d299754d
 +} // namespace native_services
 diff --git a/native-runtime/services/logging.cpp b/native-runtime/services/logging.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..7ed72926dc7d9bfc83801053258536e76c1a4ce2
 --- /dev/null
 +++ b/native-runtime/services/logging.cpp
 @@ -0,0 +1,178 @@
@@ -9966,7 +11771,6 @@ index 0000000000000000000000000000000000000000..7ed72926dc7d9bfc83801053258536e7
 +} // namespace native_services
 diff --git a/native-runtime/services/logging.h b/native-runtime/services/logging.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..992d2d48888a908906cd97be8b8dd220ca1e9a83
 --- /dev/null
 +++ b/native-runtime/services/logging.h
 @@ -0,0 +1,28 @@
@@ -10000,7 +11804,6 @@ index 0000000000000000000000000000000000000000..992d2d48888a908906cd97be8b8dd220
 +} // namespace native_services
 diff --git a/native-runtime/services/performance.cpp b/native-runtime/services/performance.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..c42dbf6917c139efa3da9e3f7f261330adddbb53
 --- /dev/null
 +++ b/native-runtime/services/performance.cpp
 @@ -0,0 +1,86 @@
@@ -10092,7 +11895,6 @@ index 0000000000000000000000000000000000000000..c42dbf6917c139efa3da9e3f7f261330
 +} // namespace native_services
 diff --git a/native-runtime/services/performance.h b/native-runtime/services/performance.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..0e7d4d65529784e8a78cf015da44dfc67c772525
 --- /dev/null
 +++ b/native-runtime/services/performance.h
 @@ -0,0 +1,32 @@
@@ -10130,7 +11932,6 @@ index 0000000000000000000000000000000000000000..0e7d4d65529784e8a78cf015da44dfc6
 +} // namespace native_services
 diff --git a/native-runtime/services/router.cpp b/native-runtime/services/router.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..f38e6c601d74d99db6e3509a851add44b8aeea3d
 --- /dev/null
 +++ b/native-runtime/services/router.cpp
 @@ -0,0 +1,362 @@
@@ -10498,7 +12299,6 @@ index 0000000000000000000000000000000000000000..f38e6c601d74d99db6e3509a851add44
 +} // namespace native_services
 diff --git a/native-runtime/services/router.h b/native-runtime/services/router.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..5e53b62c1056791ec08c2720357506ce3d6f1ad3
 --- /dev/null
 +++ b/native-runtime/services/router.h
 @@ -0,0 +1,104 @@
@@ -10608,7 +12408,6 @@ index 0000000000000000000000000000000000000000..5e53b62c1056791ec08c2720357506ce
 +} // namespace native_services
 diff --git a/native-runtime/services/tests/events.cpp b/native-runtime/services/tests/events.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..83545489348fe3a447aa755b3bd140cc21576766
 --- /dev/null
 +++ b/native-runtime/services/tests/events.cpp
 @@ -0,0 +1,162 @@
@@ -10776,7 +12575,6 @@ index 0000000000000000000000000000000000000000..83545489348fe3a447aa755b3bd140cc
 +int main(){try{QueueContract();CopyExportContract();}catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}std::puts("native lifecycle event ownership/copy transactions passed");}
 diff --git a/native-runtime/services/tests/lifecycle.cpp b/native-runtime/services/tests/lifecycle.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..3cc46bf4e07a342b9b4074c7b87229a245c5fdeb
 --- /dev/null
 +++ b/native-runtime/services/tests/lifecycle.cpp
 @@ -0,0 +1,68 @@
@@ -10850,7 +12648,6 @@ index 0000000000000000000000000000000000000000..3cc46bf4e07a342b9b4074c7b87229a2
 +}catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}}
 diff --git a/native-runtime/services/tests/test.cpp b/native-runtime/services/tests/test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..0606b7fc7b790b7ac87f7dddf5102cb503ec7c97
 --- /dev/null
 +++ b/native-runtime/services/tests/test.cpp
 @@ -0,0 +1,651 @@
@@ -11507,7 +13304,6 @@ index 0000000000000000000000000000000000000000..0606b7fc7b790b7ac87f7dddf5102cb5
 +}
 diff --git a/native-runtime/shaders/CMakeLists.txt b/native-runtime/shaders/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..9a049f754dbcc36f41bf6ed8e5a116814c6dd8b0
 --- /dev/null
 +++ b/native-runtime/shaders/CMakeLists.txt
 @@ -0,0 +1,54 @@
@@ -11567,7 +13363,6 @@ index 0000000000000000000000000000000000000000..9a049f754dbcc36f41bf6ed8e5a11681
 +set_tests_properties(native_shader_native_input PROPERTIES TIMEOUT 30)
 diff --git a/native-runtime/shaders/README.md b/native-runtime/shaders/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..93b807142473bb163bc658dc7add37d62e1d88de
 --- /dev/null
 +++ b/native-runtime/shaders/README.md
 @@ -0,0 +1,95 @@
@@ -11668,7 +13463,6 @@ index 0000000000000000000000000000000000000000..93b807142473bb163bc658dc7add37d6
 +unknown actual draw specialization remains a gate.
 diff --git a/native-runtime/shaders/cache_index.cpp b/native-runtime/shaders/cache_index.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..815b851c991c8ff14213487d8cdabb9d5bcabb78
 --- /dev/null
 +++ b/native-runtime/shaders/cache_index.cpp
 @@ -0,0 +1,326 @@
@@ -12000,7 +13794,6 @@ index 0000000000000000000000000000000000000000..815b851c991c8ff14213487d8cdabb9d
 +} // namespace native_shaders
 diff --git a/native-runtime/shaders/cache_index.h b/native-runtime/shaders/cache_index.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..e2003581c3c6df90fe19c77fe55a574e7f6fcf14
 --- /dev/null
 +++ b/native-runtime/shaders/cache_index.h
 @@ -0,0 +1,38 @@
@@ -12044,7 +13837,6 @@ index 0000000000000000000000000000000000000000..e2003581c3c6df90fe19c77fe55a574e
 +} // namespace native_shaders
 diff --git a/native-runtime/shaders/cache_index_test.cpp b/native-runtime/shaders/cache_index_test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..3f6cacaf7190a33bc36df38a1efa5fd929538dfa
 --- /dev/null
 +++ b/native-runtime/shaders/cache_index_test.cpp
 @@ -0,0 +1,239 @@
@@ -12289,7 +14081,6 @@ index 0000000000000000000000000000000000000000..3f6cacaf7190a33bc36df38a1efa5fd9
 +}
 diff --git a/native-runtime/shaders/index_probe.cpp b/native-runtime/shaders/index_probe.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..ed59e3b99c6a572b2658ea9c4c0096e91d8f6600
 --- /dev/null
 +++ b/native-runtime/shaders/index_probe.cpp
 @@ -0,0 +1,71 @@
@@ -12366,7 +14157,6 @@ index 0000000000000000000000000000000000000000..ed59e3b99c6a572b2658ea9c4c0096e9
 +}
 diff --git a/native-runtime/shaders/matched_pair_probe.cpp b/native-runtime/shaders/matched_pair_probe.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..5576f357863a67071921638f35760562991a7a1b
 --- /dev/null
 +++ b/native-runtime/shaders/matched_pair_probe.cpp
 @@ -0,0 +1,65 @@
@@ -12437,7 +14227,6 @@ index 0000000000000000000000000000000000000000..5576f357863a67071921638f35760562
 +}
 diff --git a/native-runtime/shaders/module_check.cpp b/native-runtime/shaders/module_check.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..fa6c3b9da09368814f91e95c03ac13d3d62bfa63
 --- /dev/null
 +++ b/native-runtime/shaders/module_check.cpp
 @@ -0,0 +1,65 @@
@@ -12508,7 +14297,6 @@ index 0000000000000000000000000000000000000000..fa6c3b9da09368814f91e95c03ac13d3
 +}
 diff --git a/native-runtime/shaders/native_input_test.cpp b/native-runtime/shaders/native_input_test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..583002edfd48dfbecf250ae0d9e4bae1c59459d0
 --- /dev/null
 +++ b/native-runtime/shaders/native_input_test.cpp
 @@ -0,0 +1,361 @@
@@ -12875,7 +14663,6 @@ index 0000000000000000000000000000000000000000..583002edfd48dfbecf250ae0d9e4bae1
 +}
 diff --git a/native-runtime/shaders/native_shaders.cpp b/native-runtime/shaders/native_shaders.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..4a6c40ade3741b46a859daf29fc1f43a91aa24ef
 --- /dev/null
 +++ b/native-runtime/shaders/native_shaders.cpp
 @@ -0,0 +1,428 @@
@@ -13309,7 +15096,6 @@ index 0000000000000000000000000000000000000000..4a6c40ade3741b46a859daf29fc1f43a
 +} // namespace native_shaders
 diff --git a/native-runtime/shaders/native_shaders.h b/native-runtime/shaders/native_shaders.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..78721b8badfeee0bd0af42e33bead1a85d4fd8e3
 --- /dev/null
 +++ b/native-runtime/shaders/native_shaders.h
 @@ -0,0 +1,95 @@
@@ -13410,7 +15196,6 @@ index 0000000000000000000000000000000000000000..78721b8badfeee0bd0af42e33bead1a8
 +} // namespace native_shaders
 diff --git a/native-runtime/shaders/probe.cpp b/native-runtime/shaders/probe.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..dd3b389abaa3eba3b93a65e080fec97784cdf5bd
 --- /dev/null
 +++ b/native-runtime/shaders/probe.cpp
 @@ -0,0 +1,74 @@
@@ -13490,7 +15275,6 @@ index 0000000000000000000000000000000000000000..dd3b389abaa3eba3b93a65e080fec977
 +}
 diff --git a/native-runtime/textures/CMakeLists.txt b/native-runtime/textures/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..0358427e9661824d25c646b7b3b3924ca98f04b6
 --- /dev/null
 +++ b/native-runtime/textures/CMakeLists.txt
 @@ -0,0 +1,28 @@
@@ -13524,7 +15308,6 @@ index 0000000000000000000000000000000000000000..0358427e9661824d25c646b7b3b3924c
 +set_tests_properties(native_texture_cli PROPERTIES TIMEOUT 30)
 diff --git a/native-runtime/textures/README.md b/native-runtime/textures/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..8aede6edc6bdae80422b22ceaf82cb9cec4cfc7a
 --- /dev/null
 +++ b/native-runtime/textures/README.md
 @@ -0,0 +1,39 @@
@@ -13569,7 +15352,6 @@ index 0000000000000000000000000000000000000000..8aede6edc6bdae80422b22ceaf82cb9c
 +actual producers; CPU backing is not a substitute for completed GPU writes.
 diff --git a/native-runtime/textures/codec.cpp b/native-runtime/textures/codec.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..7baa3778a05b933c92578d08988814998f04d893
 --- /dev/null
 +++ b/native-runtime/textures/codec.cpp
 @@ -0,0 +1,181 @@
@@ -13756,7 +15538,6 @@ index 0000000000000000000000000000000000000000..7baa3778a05b933c92578d0898881499
 +} // namespace native_textures
 diff --git a/native-runtime/textures/codec.h b/native-runtime/textures/codec.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..397786b15dbed1624e8121499dc6b318455de7df
 --- /dev/null
 +++ b/native-runtime/textures/codec.h
 @@ -0,0 +1,38 @@
@@ -13800,7 +15581,6 @@ index 0000000000000000000000000000000000000000..397786b15dbed1624e8121499dc6b318
 +} // namespace native_textures
 diff --git a/native-runtime/textures/probe.cpp b/native-runtime/textures/probe.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..88269b6bf2e17142393002ade7d3e234f692bbab
 --- /dev/null
 +++ b/native-runtime/textures/probe.cpp
 @@ -0,0 +1,167 @@
@@ -13973,7 +15753,6 @@ index 0000000000000000000000000000000000000000..88269b6bf2e17142393002ade7d3e234
 +}
 diff --git a/native-runtime/textures/test.cpp b/native-runtime/textures/test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..29b1183cf10c064670776a6297dd92245414873d
 --- /dev/null
 +++ b/native-runtime/textures/test.cpp
 @@ -0,0 +1,147 @@
@@ -14126,7 +15905,6 @@ index 0000000000000000000000000000000000000000..29b1183cf10c064670776a6297dd9224
 +}
 diff --git a/native-runtime/textures/test_cli.py b/native-runtime/textures/test_cli.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..418978b22341d551a06096279fcf5b184b96d4cd
 --- /dev/null
 +++ b/native-runtime/textures/test_cli.py
 @@ -0,0 +1,44 @@
@@ -14176,7 +15954,6 @@ index 0000000000000000000000000000000000000000..418978b22341d551a06096279fcf5b18
 +print("PASS exclusive outputs, normalized/case aliases, preserved existing files and complete output")
 diff --git a/native-runtime/textures/tiling.cpp b/native-runtime/textures/tiling.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..81709bd4ad284c2935e0fc39ac20d620d2d078e4
 --- /dev/null
 +++ b/native-runtime/textures/tiling.cpp
 @@ -0,0 +1,12 @@
@@ -14194,7 +15971,6 @@ index 0000000000000000000000000000000000000000..81709bd4ad284c2935e0fc39ac20d620
 +#undef ASSERT_MSG
 diff --git a/native-runtime/wait.cpp b/native-runtime/wait.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..fd17ebf07e823efb38ea4988a1c152b21a4a33b9
 --- /dev/null
 +++ b/native-runtime/wait.cpp
 @@ -0,0 +1,99 @@
@@ -14299,10 +16075,9 @@ index 0000000000000000000000000000000000000000..fd17ebf07e823efb38ea4988a1c152b2
 +} // namespace native
 diff --git a/native-runtime/window.cpp b/native-runtime/window.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..ffa0d293e7e1faef2ec34d6995d1ee4cb916f3b2
 --- /dev/null
 +++ b/native-runtime/window.cpp
-@@ -0,0 +1,239 @@
+@@ -0,0 +1,260 @@
 +#include "window.h"
 +#include <algorithm>
 +#include <atomic>
@@ -14359,6 +16134,25 @@ index 0000000000000000000000000000000000000000..ffa0d293e7e1faef2ec34d6995d1ee4c
 +HWND Window::handle() const {
 +  Owner();
 +  return hwnd_;
++}
++HINSTANCE Window::instance_handle() const {
++  Owner();
++  return instance_;
++}
++std::array<uint32_t, 2> Window::client_extent() const {
++  Owner();
++  RECT r{};
++  if (!hwnd_ || IsIconic(hwnd_))
++    return {0, 0};
++  if (!GetClientRect(hwnd_, &r))
++    Error("GetClientRect");
++  return {uint32_t(r.right - r.left), uint32_t(r.bottom - r.top)};
++}
++std::shared_ptr<const uint8_t> Window::PinSurface() {
++  Owner();
++  if (!hwnd_)
++    throw std::logic_error("Window is destroyed");
++  return surface_pin_;
 +}
 +uint64_t Window::source_id() const {
 +  Owner();
@@ -14532,6 +16326,8 @@ index 0000000000000000000000000000000000000000..ffa0d293e7e1faef2ec34d6995d1ee4c
 +}
 +void Window::Destroy() {
 +  Owner();
++  if (surface_pin_.use_count() != 1)
++    throw std::logic_error("Window retained by Vulkan surface");
 +  accepting_ = false;
 +  if (hwnd_ && !DestroyWindow(hwnd_))
 +    Error("DestroyWindow");
@@ -14544,15 +16340,15 @@ index 0000000000000000000000000000000000000000..ffa0d293e7e1faef2ec34d6995d1ee4c
 +} // namespace native
 diff --git a/native-runtime/window.h b/native-runtime/window.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..521bcdb1dc03ccd699bb247f40a83ded141ef45f
 --- /dev/null
 +++ b/native-runtime/window.h
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,83 @@
 +#pragma once
 +#include <array>
 +#include <chrono>
 +#include <cstddef>
 +#include <cstdint>
++#include <memory>
 +#include <optional>
 +#include <string>
 +#ifndef WIN32_LEAN_AND_MEAN
@@ -14595,6 +16391,9 @@ index 0000000000000000000000000000000000000000..521bcdb1dc03ccd699bb247f40a83ded
 +  Window(const Window &) = delete;
 +  Window &operator=(const Window &) = delete;
 +  HWND handle() const;
++  HINSTANCE instance_handle() const;
++  std::array<uint32_t, 2> client_extent() const;
++  std::shared_ptr<const uint8_t> PinSurface();
 +  uint64_t source_id() const;
 +  uint64_t process_id() const;
 +  size_t Pump(size_t limit = 64);
@@ -14610,6 +16409,8 @@ index 0000000000000000000000000000000000000000..521bcdb1dc03ccd699bb247f40a83ded
 +  static LRESULT CALLBACK Procedure(HWND, UINT, WPARAM, LPARAM) noexcept;
 +  void Owner() const;
 +  void Observe(WindowSource, UINT, bool close = false) noexcept;
++  std::shared_ptr<const uint8_t> surface_pin_ =
++      std::make_shared<const uint8_t>(uint8_t{0});
 +  DWORD owner_{};
 +  HINSTANCE instance_{};
 +  HWND hwnd_{};
@@ -14627,7 +16428,6 @@ index 0000000000000000000000000000000000000000..521bcdb1dc03ccd699bb247f40a83ded
 +} // namespace native
 diff --git a/native-runtime/window/CMakeLists.txt b/native-runtime/window/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..3c43f0d3a786d709e9d9739ecbce4caaed4310ac
 --- /dev/null
 +++ b/native-runtime/window/CMakeLists.txt
 @@ -0,0 +1,17 @@
@@ -14650,7 +16450,6 @@ index 0000000000000000000000000000000000000000..3c43f0d3a786d709e9d9739ecbce4caa
 +add_test(NAME native_window COMMAND window_test)
 diff --git a/native-runtime/window/README.md b/native-runtime/window/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..152d1470cbdd0d7ca5c5b42788710e4a9fb43ada
 --- /dev/null
 +++ b/native-runtime/window/README.md
 @@ -0,0 +1,52 @@
@@ -14707,7 +16506,6 @@ index 0000000000000000000000000000000000000000..152d1470cbdd0d7ca5c5b42788710e4a
 +explicit real visibility-change overflow retaining close, and thread-quit distinction.
 +They do not claim user activation, guest wait wakeup, lifecycle IPC or rendering proof.
 diff --git a/src/core/recompiler/arm64_to_c.h b/src/core/recompiler/arm64_to_c.h
-index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70c277aa1f 100644
 --- a/src/core/recompiler/arm64_to_c.h
 +++ b/src/core/recompiler/arm64_to_c.h
 @@ -24,6 +24,7 @@
@@ -14718,10 +16516,11 @@ index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70
  #include <unordered_set>
  #include <map>
  #include <string>
-@@ -326,6 +327,36 @@ inline bool EmitGuardGen() {
+@@ -325,6 +326,36 @@
+ inline bool EmitGuardGen() {
      return g_emit_fastmem && g_emit_guard_gen;
  }
- 
++
 +// Private exporter experiment; existing runtime variants remain unchanged.
 +inline bool g_emit_rsqrt_lookup = false;
 +// Private explicit build bindings. No title addresses are inferred by the emitter.
@@ -14751,11 +16550,10 @@ index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70
 +    std::vector<NativeApiRange> ranges;
 +};
 +inline std::vector<NativePendingDescriptor> g_emit_native_pending;
-+
+ 
  // ABI 6 "FPX1": exact native floating point. Each FP op the option covers gets a
  // native fast path whose result is kept only when it provably equals the
- // architectural result and adds no FPSR bit the guest has not already set;
-@@ -5151,6 +5182,13 @@ inline bool Translate(u32 i, u64 pc, std::string& out, bool* unhandled = nullptr
+@@ -5151,6 +5182,13 @@
  
  const char* RuntimeH();
  const char* RuntimeC();
@@ -14769,7 +16567,7 @@ index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70
  
  /// One bucket of the unhandled-instruction histogram.
  struct UnhandledSite {
-@@ -5223,10 +5261,82 @@ inline RecompileStats EmitProject(const std::string& mod, const u8* text, size_t
+@@ -5223,10 +5261,82 @@
                                    // this module's own .text branches there directly.
                                    const std::vector<u64>* extra_roots = nullptr,
                                    // Internal fixture control; production exports use 32 MiB.
@@ -14853,7 +16651,7 @@ index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70
      stats.blocks = blocks.size();
      stats.instructions = n_bytes / 4;
  
-@@ -5310,6 +5420,7 @@ inline RecompileStats EmitProject(const std::string& mod, const u8* text, size_t
+@@ -5310,6 +5420,7 @@
                    "#include <string.h>\n#include <math.h>\n"
                    "struct _recomp_ent{uint64_t lo,hi; BlockFn fn;};\n\n";
          if (u == 0) output << "int g_recomp_guard_host_v2=0;\n";
@@ -14861,7 +16659,7 @@ index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70
          if (EmitGuardGen()) {
              output << "static uint32_t recomp_gg_seen[" << std::max<size_t>(unit_blocks, 1)
                     << "];\n";
-@@ -5391,11 +5502,50 @@ inline RecompileStats EmitProject(const std::string& mod, const u8* text, size_t
+@@ -5391,10 +5502,49 @@
              rcu += "ULL)>>2)){\n";
              for (u32 k = 1; k < b.count; ++k) {
                  char entry[96];
@@ -14872,7 +16670,7 @@ index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70
                  rcu += entry;
              }
              rcu += "      default: recomp_unhandled(c,0U,c->pc); return;\n    } } }\n";
-         }
++        }
 +        if(const auto pending=native_pending.find(b.vaddr);pending!=native_pending.end()){
 +            const auto& descriptor=*pending->second;rcu+="    {\n";
 +            for(size_t i=0;i<descriptor.ranges.size();i++){
@@ -14909,11 +16707,10 @@ index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70
 +            rcu += "      };\n      if(recomp_try_native_api_v2(c,g_module_base,\""+descriptor.build_id+"\",\""+descriptor.text_sha256+"\","+
 +                std::to_string(descriptor.operation_id)+"U,"+std::to_string(descriptor.signature_revision)+"U,_api_ranges,"+
 +                std::to_string(descriptor.ranges.size())+"U,g_recomp_guard_host_v2)) return;\n    }\n";
-+        }
+         }
          bool open = true;
          for (u32 k = 0; k < b.count; ++k) {
-             if (k > 0) {
-@@ -5856,6 +6006,8 @@ inline RecompileStats EmitProject(const std::string& mod, const u8* text, size_t
+@@ -5856,6 +6006,8 @@
          cm << " g_recomp_gg_word=g_recomp_gg_word_" << mod
             << " recomp_image_guard_gen_v1=recomp_image_guard_gen_v1_" << mod;
      }
@@ -14922,7 +16719,7 @@ index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70
      cm << " recomp_lookup=recomp_lookup_" << mod
         << " recomp_build_index=recomp_build_index_" << mod
         << " _recomp_index_view=_recomp_index_view_" << mod
-@@ -5997,8 +6149,23 @@ inline RecompileStats EmitProject(const std::string& mod, const u8* text, size_t
+@@ -5997,8 +6149,23 @@
          std::ofstream o(Utf8Path(out_dir + "/" + name), std::ios::binary);
          o.write(data.data(), (std::streamsize)data.size());
      };
@@ -14948,7 +16745,7 @@ index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70
      // The dispatch table is generated code like the block bodies, so it belongs
      // with them rather than at the top level.
      write("src/recompiled_" + mod + ".c", rc);
-@@ -6007,6 +6174,13 @@ inline RecompileStats EmitProject(const std::string& mod, const u8* text, size_t
+@@ -6007,6 +6174,13 @@
          write("main.c", mc.str());
      }
      std::string export_text = ex.str();
@@ -14962,7 +16759,7 @@ index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70
      if (EmitGuardGen()) {
          // A module moved to another base must be re-verified there: drop back
          // to VERIFY_ALWAYS until the host moves the generation again.
-@@ -7145,8 +7319,8 @@ inline const char* RuntimeH() {
+@@ -7145,8 +7319,8 @@
      return texts[g_emit_fastmem ? 1 : 0][EmitGuardGen() ? 1 : 0][FpxVariant()].c_str();
  }
  
@@ -14973,7 +16770,7 @@ index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70
   * Exception flags accumulate in *fpsr. Exception traps are not delivered here.
   * Interfaces deliberately do not depend on GuestContext or shared emitter code.
   */
-@@ -7199,6 +7373,36 @@ uint64_t recomp_fp_estimate(GuestContext* c,uint64_t bits,unsigned width,int rsq
+@@ -7199,6 +7373,36 @@
  }
  
  )EST";
@@ -15010,7 +16807,7 @@ index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70
  }
  
  // ABI 6 (FM1) memory helpers. `abi5` is the ABI 5 helper text. It is kept
-@@ -8048,6 +8252,348 @@ void recomp_run(GuestContext* c){
+@@ -8048,6 +8252,348 @@
      return text;
  }
  
@@ -15361,7 +17158,6 @@ index 54f370054e5c26a864de1d568bdfb3f5a095f405..b95edb0b6d1cb5a13f7c37a62ddaff70
      static const std::string fastmem = BuildRuntimeC(true);
 diff --git a/src/native_nvn/builders.c b/src/native_nvn/builders.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..2699619ddb7ccba3c08eaa6272ba3013b3bbfe92
 --- /dev/null
 +++ b/src/native_nvn/builders.c
 @@ -0,0 +1,64 @@
@@ -15431,7 +17227,6 @@ index 0000000000000000000000000000000000000000..2699619ddb7ccba3c08eaa6272ba3013
 +}
 diff --git a/src/native_nvn/builders.h b/src/native_nvn/builders.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..6110c8796b7f1d343cda716b6cd795bea013085d
 --- /dev/null
 +++ b/src/native_nvn/builders.h
 @@ -0,0 +1,35 @@
@@ -15472,7 +17267,6 @@ index 0000000000000000000000000000000000000000..6110c8796b7f1d343cda716b6cd795be
 +#endif
 diff --git a/src/native_nvn/query.c b/src/native_nvn/query.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..09721b59564bca9a826cccc3dcd3d32c5bb40e90
 --- /dev/null
 +++ b/src/native_nvn/query.c
 @@ -0,0 +1,29 @@
@@ -15507,7 +17301,6 @@ index 0000000000000000000000000000000000000000..09721b59564bca9a826cccc3dcd3d32c
 +}
 diff --git a/src/native_nvn/query.h b/src/native_nvn/query.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..7906dd508b28957cb6ba9a5b3bdb26a8bf3c3d26
 --- /dev/null
 +++ b/src/native_nvn/query.h
 @@ -0,0 +1,31 @@
@@ -15543,7 +17336,6 @@ index 0000000000000000000000000000000000000000..7906dd508b28957cb6ba9a5b3bdb26a8
 +#endif
 +#endif
 diff --git a/src/video_core/textures/decoders.cpp b/src/video_core/textures/decoders.cpp
-index cb0f096ef247bef53be630bcdcaf4af6f2f3dc97..48be0077decc0d8867ea36a99eb24bde36395613 100644
 --- a/src/video_core/textures/decoders.cpp
 +++ b/src/video_core/textures/decoders.cpp
 @@ -4,6 +4,7 @@
@@ -15564,7 +17356,6 @@ index cb0f096ef247bef53be630bcdcaf4af6f2f3dc97..48be0077decc0d8867ea36a99eb24bde
  namespace Tegra::Texture {
 diff --git a/tests/native_api/CMakeLists.txt b/tests/native_api/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..db5394f51f7c8f92d9b6af6af8655549e20e670a
 --- /dev/null
 +++ b/tests/native_api/CMakeLists.txt
 @@ -0,0 +1,24 @@
@@ -15594,7 +17385,6 @@ index 0000000000000000000000000000000000000000..db5394f51f7c8f92d9b6af6af8655549
 +endif()
 diff --git a/tests/native_api/README.md b/tests/native_api/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..f9dde858d44774d939ec878fc6ce2bf19dd28bd7
 --- /dev/null
 +++ b/tests/native_api/README.md
 @@ -0,0 +1,55 @@
@@ -15655,7 +17445,6 @@ index 0000000000000000000000000000000000000000..f9dde858d44774d939ec878fc6ce2bf1
 +remain outside the repository.
 diff --git a/tests/native_api/api_test.c b/tests/native_api/api_test.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..bbe633e34545204238ea3bf389cb6cd613982a3d
 --- /dev/null
 +++ b/tests/native_api/api_test.c
 @@ -0,0 +1,255 @@
@@ -15916,7 +17705,6 @@ index 0000000000000000000000000000000000000000..bbe633e34545204238ea3bf389cb6cd6
 +}
 diff --git a/tests/native_api/buffer_init_test.cpp b/tests/native_api/buffer_init_test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..5863d80710c4bfbbe3325d55567418b70e00e2b9
 --- /dev/null
 +++ b/tests/native_api/buffer_init_test.cpp
 @@ -0,0 +1,191 @@
@@ -16113,7 +17901,6 @@ index 0000000000000000000000000000000000000000..5863d80710c4bfbbe3325d55567418b7
 +}
 diff --git a/tests/native_api/generate.cpp b/tests/native_api/generate.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..b64dee35bccc0574c749f11dd7d5e750080ad6b9
 --- /dev/null
 +++ b/tests/native_api/generate.cpp
 @@ -0,0 +1,68 @@
@@ -16187,7 +17974,6 @@ index 0000000000000000000000000000000000000000..b64dee35bccc0574c749f11dd7d5e750
 +}
 diff --git a/tests/native_api/run.py b/tests/native_api/run.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..30d644ca7700de1442a862c6b5229de5b7568bb1
 --- /dev/null
 +++ b/tests/native_api/run.py
 @@ -0,0 +1,17 @@
@@ -16210,7 +17996,6 @@ index 0000000000000000000000000000000000000000..30d644ca7700de1442a862c6b5229de5
 +print('Every skipped word in all three ranges rejects before native effects')
 diff --git a/tests/native_entry/CMakeLists.txt b/tests/native_entry/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..ff2505e29162bd841041ec15540b50a2fb9e9897
 --- /dev/null
 +++ b/tests/native_entry/CMakeLists.txt
 @@ -0,0 +1,22 @@
@@ -16238,7 +18023,6 @@ index 0000000000000000000000000000000000000000..ff2505e29162bd841041ec15540b50a2
 +endif()
 diff --git a/tests/native_entry/README.md b/tests/native_entry/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..9f7e4f8b66f3f183bbaca614626a8fe46cb1c458
 --- /dev/null
 +++ b/tests/native_entry/README.md
 @@ -0,0 +1,29 @@
@@ -16273,7 +18057,6 @@ index 0000000000000000000000000000000000000000..9f7e4f8b66f3f183bbaca614626a8fe4
 +be guarded. No title-specific addresses are selected by this fixture.
 diff --git a/tests/native_entry/generate.cpp b/tests/native_entry/generate.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..ab515e865f05a65e3d691496e5d34f80746c48ca
 --- /dev/null
 +++ b/tests/native_entry/generate.cpp
 @@ -0,0 +1,51 @@
@@ -16330,7 +18113,6 @@ index 0000000000000000000000000000000000000000..ab515e865f05a65e3d691496e5d34f80
 +}
 diff --git a/tests/native_entry/original.c b/tests/native_entry/original.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..35d85d793f31da2566986964e5f678b5b0673913
 --- /dev/null
 +++ b/tests/native_entry/original.c
 @@ -0,0 +1,12 @@
@@ -16348,7 +18130,6 @@ index 0000000000000000000000000000000000000000..35d85d793f31da2566986964e5f678b5
 +#include "../off/src/recompiled_entry_0.c"
 diff --git a/tests/native_entry/run.py b/tests/native_entry/run.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..246fd7559eb3f37160e7b7505f8c3a07dfdd1b10
 --- /dev/null
 +++ b/tests/native_entry/run.py
 @@ -0,0 +1,31 @@
@@ -16385,7 +18166,6 @@ index 0000000000000000000000000000000000000000..246fd7559eb3f37160e7b7505f8c3a07
 +print('all skipped words reject before callback/guest effects', flush=True)
 diff --git a/tests/native_entry/test.c b/tests/native_entry/test.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..7168dc74199b8de1c42f43de8b2ff811f5d1fd4a
 --- /dev/null
 +++ b/tests/native_entry/test.c
 @@ -0,0 +1,132 @@
@@ -16523,7 +18303,6 @@ index 0000000000000000000000000000000000000000..7168dc74199b8de1c42f43de8b2ff811
 +}
 diff --git a/tests/native_nvn/CMakeLists.txt b/tests/native_nvn/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..39b185bebfea5e569969982f6ed56f48b9298e41
 --- /dev/null
 +++ b/tests/native_nvn/CMakeLists.txt
 @@ -0,0 +1,7 @@
@@ -16536,7 +18315,6 @@ index 0000000000000000000000000000000000000000..39b185bebfea5e569969982f6ed56f48
 +add_test(NAME native_nvn_queries COMMAND native_nvn_test)
 diff --git a/tests/native_nvn/test.c b/tests/native_nvn/test.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..5b326906a6b9262494b48121629aebd3b5526fab
 --- /dev/null
 +++ b/tests/native_nvn/test.c
 @@ -0,0 +1,43 @@
@@ -16585,7 +18363,6 @@ index 0000000000000000000000000000000000000000..5b326906a6b9262494b48121629aebd3
 +}
 diff --git a/tests/native_nvn_builders/CMakeLists.txt b/tests/native_nvn_builders/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..33f9be07bb7760b22a393c2ef692462b5d8cc574
 --- /dev/null
 +++ b/tests/native_nvn_builders/CMakeLists.txt
 @@ -0,0 +1,7 @@
@@ -16598,7 +18375,6 @@ index 0000000000000000000000000000000000000000..33f9be07bb7760b22a393c2ef692462b
 +add_test(NAME native_nvn_builders COMMAND native_nvn_builders_test)
 diff --git a/tests/native_nvn_builders/test.c b/tests/native_nvn_builders/test.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..9cf048388df69799d6aeeb994d3b4336fb7fab52
 --- /dev/null
 +++ b/tests/native_nvn_builders/test.c
 @@ -0,0 +1,145 @@
@@ -16749,7 +18525,6 @@ index 0000000000000000000000000000000000000000..9cf048388df69799d6aeeb994d3b4336
 +}
 diff --git a/tests/native_pending/CMakeLists.txt b/tests/native_pending/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..1e8f98edcd71646cc5bd581563dc7c4f432b60eb
 --- /dev/null
 +++ b/tests/native_pending/CMakeLists.txt
 @@ -0,0 +1,20 @@
@@ -16775,7 +18550,6 @@ index 0000000000000000000000000000000000000000..1e8f98edcd71646cc5bd581563dc7c4f
 +endif()
 diff --git a/tests/native_pending/README.md b/tests/native_pending/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..7546896d3db0ae49150d2c758f8150a1f56b8520
 --- /dev/null
 +++ b/tests/native_pending/README.md
 @@ -0,0 +1,94 @@
@@ -16875,7 +18649,6 @@ index 0000000000000000000000000000000000000000..7546896d3db0ae49150d2c758f8150a1
 +of a sealed actual game module or native Device implementation.
 diff --git a/tests/native_pending/generate.cpp b/tests/native_pending/generate.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..1be816465dda3fbe90c4cc1173e7f44a920d6238
 --- /dev/null
 +++ b/tests/native_pending/generate.cpp
 @@ -0,0 +1,159 @@
@@ -17040,7 +18813,6 @@ index 0000000000000000000000000000000000000000..1be816465dda3fbe90c4cc1173e7f44a
 +}
 diff --git a/tests/native_pending/run.py b/tests/native_pending/run.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..ff12fb657c04567818a16375953c8da9c96b016d
 --- /dev/null
 +++ b/tests/native_pending/run.py
 @@ -0,0 +1,39 @@
@@ -17085,7 +18857,6 @@ index 0000000000000000000000000000000000000000..ff12fb657c04567818a16375953c8da9
 +print('Pending synthetic transport tests passed both owned chain modes;36 guarded-word mutations each at admission and precommit; no GPU work')
 diff --git a/tests/native_pending/test.cpp b/tests/native_pending/test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..8dd0d54ccc897e3281767bde040fccb65c1c4321
 --- /dev/null
 +++ b/tests/native_pending/test.cpp
 @@ -0,0 +1,786 @@
@@ -17877,7 +19648,6 @@ index 0000000000000000000000000000000000000000..8dd0d54ccc897e3281767bde040fccb6
 +}
 diff --git a/tests/native_pending_host/CMakeLists.txt b/tests/native_pending_host/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..9f3f8e2b53a7f4094da33de48dfc889c4185f37c
 --- /dev/null
 +++ b/tests/native_pending_host/CMakeLists.txt
 @@ -0,0 +1,35 @@
@@ -17918,7 +19688,6 @@ index 0000000000000000000000000000000000000000..9f3f8e2b53a7f4094da33de48dfc889c
 +endif()
 diff --git a/tests/native_pending_host/README.md b/tests/native_pending_host/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..70d395a93253c72850e374092404165284336cbd
 --- /dev/null
 +++ b/tests/native_pending_host/README.md
 @@ -0,0 +1,17 @@
@@ -17941,7 +19710,6 @@ index 0000000000000000000000000000000000000000..70d395a93253c72850e3740924041652
 +The same owner suite also runs against the emitted native profile (ABI6/features7, FM1+GG1+FPX1) by selecting `native-pending-native-profile/generated` with `--generated` and a separate `--build` directory. Both target and caller negotiate exact fastmem offsets/mask, guard generation and FPX offsets/inhibit. The Host uses authoritative memory callbacks and immutable sealed code; this proves the production context layout and transport without claiming a raw-fastmem or graphics backend. Profile assertions require genuine first-entry verification and no guest reentry while parked. The FM0 fixture remains a separate regression.
 diff --git a/tests/native_pending_host/run.py b/tests/native_pending_host/run.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..e438295670e0e0eddc78a6343fe7be922ee790ec
 --- /dev/null
 +++ b/tests/native_pending_host/run.py
 @@ -0,0 +1,28 @@
@@ -17975,7 +19743,6 @@ index 0000000000000000000000000000000000000000..e438295670e0e0eddc78a6343fe7be92
 +print('PASS emitted v3 CPU owner bridge both chain modes; synthetic jobs only')
 diff --git a/tests/native_pending_host/test.cpp b/tests/native_pending_host/test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..61959953de7d0ea08002f0651313f230841df666
 --- /dev/null
 +++ b/tests/native_pending_host/test.cpp
 @@ -0,0 +1,596 @@
@@ -18577,7 +20344,6 @@ index 0000000000000000000000000000000000000000..61959953de7d0ea08002f0651313f230
 +}
 diff --git a/tests/native_platform/README.md b/tests/native_platform/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..6167750995adf91af2dcfa4be04f2a59f2ff277f
 --- /dev/null
 +++ b/tests/native_platform/README.md
 @@ -0,0 +1,7 @@
@@ -18590,7 +20356,6 @@ index 0000000000000000000000000000000000000000..6167750995adf91af2dcfa4be04f2a59
 +On Windows, `dependencies.txt` and the link map provide the independent link-boundary evidence. Only OS DLL dependencies are allowed; generated data, executables and private fixture mutations remain under the supplied build directory.
 diff --git a/tests/native_platform/admit.cpp b/tests/native_platform/admit.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..c2e8415b4826bc390da1d19c816d182ef82a762e
 --- /dev/null
 +++ b/tests/native_platform/admit.cpp
 @@ -0,0 +1,43 @@
@@ -18639,7 +20404,6 @@ index 0000000000000000000000000000000000000000..c2e8415b4826bc390da1d19c816d182e
 +}
 diff --git a/tests/native_platform/event_test.cpp b/tests/native_platform/event_test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..7221b5d184aeffdcae1f19e1959886592174e545
 --- /dev/null
 +++ b/tests/native_platform/event_test.cpp
 @@ -0,0 +1,187 @@
@@ -18832,7 +20596,6 @@ index 0000000000000000000000000000000000000000..7221b5d184aeffdcae1f19e195988659
 +}
 diff --git a/tests/native_platform/generate.cpp b/tests/native_platform/generate.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..913ee9dbc1b92b255d4a9380fe6a009941f980b5
 --- /dev/null
 +++ b/tests/native_platform/generate.cpp
 @@ -0,0 +1,38 @@
@@ -18876,7 +20639,6 @@ index 0000000000000000000000000000000000000000..913ee9dbc1b92b255d4a9380fe6a0099
 +}
 diff --git a/tests/native_platform/ipc_integration.cpp b/tests/native_platform/ipc_integration.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..137e816a0e71a03df327a41ed998ea170e14b927
 --- /dev/null
 +++ b/tests/native_platform/ipc_integration.cpp
 @@ -0,0 +1,295 @@
@@ -19177,7 +20939,6 @@ index 0000000000000000000000000000000000000000..137e816a0e71a03df327a41ed998ea17
 +}
 diff --git a/tests/native_platform/nso_test.cpp b/tests/native_platform/nso_test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..2b607e53b819a319064e14b4baf757c9664b6138
 --- /dev/null
 +++ b/tests/native_platform/nso_test.cpp
 @@ -0,0 +1,254 @@
@@ -19437,7 +21198,6 @@ index 0000000000000000000000000000000000000000..2b607e53b819a319064e14b4baf757c9
 +
 diff --git a/tests/native_platform/primitives.cpp b/tests/native_platform/primitives.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..7ea8f9f5de9cb4f0fcf15a7e27911cd9df512588
 --- /dev/null
 +++ b/tests/native_platform/primitives.cpp
 @@ -0,0 +1,604 @@
@@ -20047,7 +21807,6 @@ index 0000000000000000000000000000000000000000..7ea8f9f5de9cb4f0fcf15a7e27911cd9
 +}
 diff --git a/tests/native_platform/run.py b/tests/native_platform/run.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..61979ac407177cba8331f0b213a1255e078d492a
 --- /dev/null
 +++ b/tests/native_platform/run.py
 @@ -0,0 +1,89 @@
@@ -20142,7 +21901,6 @@ index 0000000000000000000000000000000000000000..61979ac407177cba8331f0b213a1255e
 +
 diff --git a/tests/native_platform/run_boot.py b/tests/native_platform/run_boot.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..503ec9e59293d159419f0b917ce8d1aecadabeff
 --- /dev/null
 +++ b/tests/native_platform/run_boot.py
 @@ -0,0 +1,71 @@
@@ -20219,7 +21977,6 @@ index 0000000000000000000000000000000000000000..503ec9e59293d159419f0b917ce8d1ae
 +
 diff --git a/tests/native_platform/test.cpp b/tests/native_platform/test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..4202af87ba55bfc10b5d3562d655a0d7cdcd4cf1
 --- /dev/null
 +++ b/tests/native_platform/test.cpp
 @@ -0,0 +1,267 @@
@@ -20492,7 +22249,6 @@ index 0000000000000000000000000000000000000000..4202af87ba55bfc10b5d3562d655a0d7
 +}
 diff --git a/tests/native_platform/wait_test.cpp b/tests/native_platform/wait_test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..121a68f2443572be11fff825d8d8680bdf55fa2a
 --- /dev/null
 +++ b/tests/native_platform/wait_test.cpp
 @@ -0,0 +1,274 @@
@@ -20772,7 +22528,6 @@ index 0000000000000000000000000000000000000000..121a68f2443572be11fff825d8d8680b
 +}
 diff --git a/tests/native_platform/window/CMakeLists.txt b/tests/native_platform/window/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..36478f7f7878ebbd6f312afb8a92e0c7764fb66b
 --- /dev/null
 +++ b/tests/native_platform/window/CMakeLists.txt
 @@ -0,0 +1,4 @@
@@ -20782,7 +22537,6 @@ index 0000000000000000000000000000000000000000..36478f7f7878ebbd6f312afb8a92e0c7
 +add_subdirectory(../../../native-runtime/window native_window)
 diff --git a/tests/native_platform/window/README.md b/tests/native_platform/window/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..17f2c58039143fcee5a0bd73d99b2a269457e8b4
 --- /dev/null
 +++ b/tests/native_platform/window/README.md
 @@ -0,0 +1,6 @@
@@ -20794,7 +22548,6 @@ index 0000000000000000000000000000000000000000..17f2c58039143fcee5a0bd73d99b2a26
 +This directory is a compatibility CMake entry that delegates to the component.
 diff --git a/tests/native_platform/window_test.cpp b/tests/native_platform/window_test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..55c69d6940196fda0439120fb3ce72082e3e7ece
 --- /dev/null
 +++ b/tests/native_platform/window_test.cpp
 @@ -0,0 +1,131 @@
@@ -20931,7 +22684,6 @@ index 0000000000000000000000000000000000000000..55c69d6940196fda0439120fb3ce7208
 +}
 diff --git a/tests/native_rsqrt/CMakeLists.txt b/tests/native_rsqrt/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..feea95c86ba8e21cba7281337e3416fe2f7408c7
 --- /dev/null
 +++ b/tests/native_rsqrt/CMakeLists.txt
 @@ -0,0 +1,11 @@
@@ -20948,7 +22700,6 @@ index 0000000000000000000000000000000000000000..feea95c86ba8e21cba7281337e3416fe
 +target_compile_features(rsqrt_test PRIVATE c_std_11)
 diff --git a/tests/native_rsqrt/README.md b/tests/native_rsqrt/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..b1d88d039683a99305a66b53a4edeeff74f6edbc
 --- /dev/null
 +++ b/tests/native_rsqrt/README.md
 @@ -0,0 +1,10 @@
@@ -20964,7 +22715,6 @@ index 0000000000000000000000000000000000000000..b1d88d039683a99305a66b53a4edeeff
 +
 diff --git a/tests/native_rsqrt/generate.cpp b/tests/native_rsqrt/generate.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..5c4c94d84bdd713360287dc9438ee85d3bdfcd06
 --- /dev/null
 +++ b/tests/native_rsqrt/generate.cpp
 @@ -0,0 +1,65 @@
@@ -21035,7 +22785,6 @@ index 0000000000000000000000000000000000000000..5c4c94d84bdd713360287dc9438ee85d
 +}
 diff --git a/tests/native_rsqrt/run.py b/tests/native_rsqrt/run.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..6c2c06df86ded20119ec77b9a79063cce37cf4e7
 --- /dev/null
 +++ b/tests/native_rsqrt/run.py
 @@ -0,0 +1,22 @@
@@ -21063,7 +22812,6 @@ index 0000000000000000000000000000000000000000..6c2c06df86ded20119ec77b9a79063cc
 +run([exe, '--benchmark'])
 diff --git a/tests/native_rsqrt/test.c b/tests/native_rsqrt/test.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..bc61ea0ad2643b49a093db6baf123ecc358d548d
 --- /dev/null
 +++ b/tests/native_rsqrt/test.c
 @@ -0,0 +1,170 @@

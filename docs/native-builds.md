@@ -1,6 +1,6 @@
 # Native foundations build checkpoint
 
-This Windows x64 v3 prerelease contains 24 native CPU/service, window, texture and
+This Windows x64 v4 prerelease contains 27 native CPU/service, window, texture and
 Vulkan verification tools. It does not boot or play Mario Kart 8 Deluxe. Actual title code and data
 are supplied locally; no game-linked executable is distributed.
 
@@ -36,12 +36,19 @@ From the extracted release directory:
 .\bin\native_nvn_draw_test.exe
 .\bin\native_nvn_frame_test.exe
 .\bin\native_nvn_state_test.exe
+.\bin\native_nvn_presentation_policy_test.exe
+.\bin\native_nvn_presentation_conversion_test.exe
+.\bin\native_nvn_presentation_fixture.exe --visible --frames 45 --exercise-resize
 .\bin\buffer_init_test.exe
 .\bin\native_texture_test.exe
 .\bin\window_test.exe
 ```
 
-The graphics tests draw into offscreen images and verify their pixels. The
+The offscreen graphics tests verify their pixels. The presentation fixture
+creates an owned window and displays GPU-produced RGBA8 and packed10 images;
+it requires actual swapchain-maintenance1 support and reports unsupported
+configurations explicitly. Its source stays on the GPU through presentation.
+The final SDR8 display conversion quantizes packed10 output. The
 window test briefly creates owned diagnostic windows and records real OS state;
 it does not establish game input, rendering or foreground activation.
 `native_texture_probe DESCRIPTOR32 STORAGE TEXELS JSON` converts caller-supplied
@@ -100,11 +107,18 @@ other operating systems and different GPU drivers remain unverified. Shader
 capture tooling in the patch still depends on separately supplied, matching
 shader-recompiler libraries; it is not part of this binary package.
 
-This v3 checkpoint adds the scheduled API transport, native event waits, window
-observer, typed persistent images and texture converter. The emitted and CPU-owner
+This v4 checkpoint adds reviewed native presentation to the v3 scheduled API
+transport, native event waits, window observer, typed persistent images and
+texture converter. All 27 tools were rebuilt from sanitized v3 source plus exactly
+17 reviewed presentation files. Seven native graphics suites passed; the fresh
+visible fixture queued and retired 45 presents, recreated three times and performed
+zero source readbacks. Root inspection verified the two owned-client captures.
+Validation layers were disabled. Safe WSI teardown can wait for the driver.
+The emitted and CPU-owner
 v3 suites run with FM1/GG1/FPX1 using synthetic inputs. Real native DeviceInitialize,
-actual-game draw/presentation and gameplay remain unproved. The older v2 release
-is preserved as a separate immutable archive.
+actual-game draw/presentation and gameplay remain unproved. Later callback and
+execution/memory ownership work is outside this release. Earlier v3 and v2 releases
+remain separate immutable archives.
 The development checkout records verified local binaries in the gitignored
 `local/native-builds/latest.json` index. That index distinguishes public tools,
 the game reference using reference graphics, and the standalone CPU diagnostic.

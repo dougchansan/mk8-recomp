@@ -1,3 +1,8 @@
 # Patch bytes are hashed; preserve LF on Windows. Unified-diff context includes
 # significant whitespace and must not be treated as newly authored source.
 src/patches/*.patch text eol=lf -whitespace
+# This checkpoint also preserves reviewed CRLF source lines inside the diff.
+src/patches/native-runtime.patch -text -eol -whitespace
+# Release manifests have byte identities shared with the corresponding archive.
+native-checkpoint/source.json -text -eol whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+native-checkpoint/verification.json -text -eol whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

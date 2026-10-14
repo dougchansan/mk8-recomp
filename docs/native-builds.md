@@ -82,6 +82,14 @@ other operating systems and different GPU drivers remain unverified. Shader
 capture tooling in the patch still depends on separately supplied, matching
 shader-recompiler libraries; it is not part of this binary package.
 
+This release is the frozen v2 checkpoint. Later scheduled-API v3, event/window,
+persistent-image and texture conversion results in the progress document are
+active development work and are not silently substituted into this archive.
+The development checkout records later verified local binaries in the gitignored
+`local/native-builds/latest.json` index. That index distinguishes public tools,
+the game reference using reference graphics, and the standalone CPU diagnostic.
+Game-linked binaries require local title inputs and are not uploaded.
+
 The public checkpoint excludes the private exact-copy-loop experiment and all
 title-specific descriptors, generated game code, shader caches, captures and
 game-linked libraries. See [progress](native-runtime-progress.md) for the wider

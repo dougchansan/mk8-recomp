@@ -9,8 +9,10 @@ without reading the source.
 ## What this repository distributes
 
 Our own code, build tooling and documentation, plus a submodule pointer to a
-fork of an emulator. Concretely, the tracked tree is scripts, docs, tests, a
-`.gitignore`, a `.gitmodules` and a README.
+fork of an emulator. The tracked tree includes scripts, docs, tests and reviewed
+native-runtime source patches. Native-foundations prereleases may also contain
+verification tools and synthetic fixtures built from that public source. Those
+tools contain no mechanically translated game code or game assets.
 
 ## What it does not distribute, under any circumstances
 
@@ -56,15 +58,20 @@ recompilation research effort built on that footing: its subject is translating
 one instruction set into another, and its output of interest is a measurement,
 not a playable port.
 
-That said, this repository takes no position on how anyone else uses the tools
-it publishes, and it is not a vehicle for playing games you do not own.
+The current engineering goal includes a standalone native runtime for locally
+supplied title code and data. Public distributions remain limited to the tools,
+authored runtime code, synthetic fixtures and corresponding source described
+above. This repository takes no position on how anyone else uses those tools,
+and it is not a vehicle for playing games you do not own.
 
 ## Scope, honestly stated
 
-Nothing here is a finished product. The pipeline runs end to end and a target
-boots with recompiled code executing alongside a fallback JIT for what the
-emitter does not yet translate. It is slower than the JIT it augments. Nobody
-should mistake this for a way to play anything.
+The full native runtime is unfinished. The earlier suyu-hosted pipeline has
+verified strict-static CPU race runs without JIT fallback. The independent
+native CPU, service and Vulkan components are being integrated; their synthetic
+tests do not establish standalone native gameplay. Progress and current build
+limits are recorded in `docs/native-runtime-progress.md` and
+`docs/native-builds.md`.
 
 ## Contact
 

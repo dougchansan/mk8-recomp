@@ -1,0 +1,3 @@
+# Patch bytes are hashed; preserve LF on Windows. Unified-diff context includes
+# significant whitespace and must not be treated as newly authored source.
+src/patches/*.patch text eol=lf -whitespace

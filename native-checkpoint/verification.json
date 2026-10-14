@@ -1,0 +1,286 @@
+{
+  "schema": 1,
+  "release": "native-foundations-20261014",
+  "status": "verified foundations prerelease",
+  "source_base_commit": "347fcf91d95cd39cb5c3db50f1b6d827ad699311",
+  "source_patch_sha256": "8b237998a3a3f70da5571c152c86bafe34a6d768bfa491af174eb4564a6262f1",
+  "archive_name": "native-foundations-windows-x64-20261014.zip",
+  "archive_sha256": "769d96bbd16ea8a148b0f43cf3821c9086ef3c6617fd314d4da6b71581151421",
+  "archive_size_bytes": 24419260,
+  "package_build_manifest_sha256": "cda6843929f47a22595a792985d6bd79b6ece469cbffa1b0a30afa98a1c152b9",
+  "source_prepare": "New detached worktree, patch check/apply and all 81 checkpoint file hashes verified",
+  "cmake_version": "cmake version 4.3.2",
+  "python_version": "3.12.10",
+  "toolchains": {
+    "platform": {
+      "compiler_id": "MSVC",
+      "compiler_version": "19.50.35723.0",
+      "cmake_configuration": {
+        "CMAKE_CXX_FLAGS": "/DWIN32 /D_WINDOWS /EHsc",
+        "CMAKE_CXX_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_C_FLAGS": "/DWIN32 /D_WINDOWS",
+        "CMAKE_C_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_GENERATOR": "Visual Studio 18 2026"
+      },
+      "configuration": "Release",
+      "parallel_jobs": 2
+    },
+    "graphics": {
+      "compiler_id": "MSVC",
+      "compiler_version": "19.50.35723.0",
+      "cmake_configuration": {
+        "CMAKE_CXX_FLAGS": "/DWIN32 /D_WINDOWS /EHsc",
+        "CMAKE_CXX_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_GENERATOR": "Visual Studio 18 2026"
+      },
+      "configuration": "Release",
+      "parallel_jobs": 2
+    },
+    "nvn": {
+      "compiler_id": "MSVC",
+      "compiler_version": "19.50.35723.0",
+      "cmake_configuration": {
+        "CMAKE_CXX_FLAGS": "/DWIN32 /D_WINDOWS /EHsc",
+        "CMAKE_CXX_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_GENERATOR": "Visual Studio 18 2026"
+      },
+      "configuration": "Release",
+      "parallel_jobs": 2
+    },
+    "services": {
+      "compiler_id": "MSVC",
+      "compiler_version": "19.50.35723.0",
+      "cmake_configuration": {
+        "CMAKE_CXX_FLAGS": "/DWIN32 /D_WINDOWS /EHsc",
+        "CMAKE_CXX_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_GENERATOR": "Visual Studio 18 2026"
+      },
+      "configuration": "Release",
+      "parallel_jobs": 2
+    },
+    "native_api/test": {
+      "compiler_id": "MSVC",
+      "compiler_version": "19.50.35723.0",
+      "cmake_configuration": {
+        "CMAKE_CXX_FLAGS": "/DWIN32 /D_WINDOWS /EHsc",
+        "CMAKE_CXX_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_C_FLAGS": "/DWIN32 /D_WINDOWS",
+        "CMAKE_C_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+        "CMAKE_GENERATOR": "Visual Studio 18 2026"
+      },
+      "configuration": "Release",
+      "parallel_jobs": 2
+    }
+  },
+  "runtime_library": {
+    "native CPU host": "MultiThreaded static CRT",
+    "graphics/NVN/services": "MSVC default Release dynamic CRT; system Visual C++ runtime required"
+  },
+  "link_boundaries": "CPU map/DLL checks reject emulator/JIT/graphics dependencies; Vulkan tools dynamically load the system driver",
+  "binaries": {
+    "buffer_init_test.exe": {
+      "sha256": "8179be5ebc94fc58450be3cba0b496ae38d5a8fb39df0e9d737ef94426420227",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll"
+      ]
+    },
+    "native_admit.exe": {
+      "sha256": "e824041613dc948062b1dd14e2c41c019afdf45119b1f9020ae93027abddfe40",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "bcrypt.dll",
+        "KERNEL32.dll"
+      ]
+    },
+    "native_emit.exe": {
+      "sha256": "5e971a7930c41bda9cda65c12bc3ea3a23774d9930ee9e6dd57e81cf54e14e8e",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll"
+      ]
+    },
+    "native_graphics_probe.exe": {
+      "sha256": "e01e3a13a5afb8fa3cea6e71a090a7af4ecf6fd36dcaf3f798a8d889b308b252",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll"
+      ]
+    },
+    "native_graphics_resource_test.exe": {
+      "sha256": "cc5b35c0c95845a71b31eada648a6025ddf9d0053fa44287773cecfed26288b3",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll"
+      ]
+    },
+    "native_ipc_test.exe": {
+      "sha256": "1abbc27bc788c60f90bfe30b647dc77a6fa24255aff23bb7fb30e2265f34adf6",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll"
+      ]
+    },
+    "native_loader_test.exe": {
+      "sha256": "d5d0b4b7dc7bc198ffea81c94fa0cda5a60060d26fd31cb04f3eb3c291a0ba6c",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "bcrypt.dll",
+        "KERNEL32.dll"
+      ]
+    },
+    "native_nvn_draw_test.exe": {
+      "sha256": "b0a0ee98dd32145d6cebf8d9294d2bdaee397bee6ca3f68be5f30f778e3cd66f",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll"
+      ]
+    },
+    "native_nvn_pipeline_check.exe": {
+      "sha256": "e1ba602daea81d7459387eacb313bd69cbe12913c25265f9728af0e4fd8e53d9",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-convert-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-filesystem-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll"
+      ]
+    },
+    "native_nvn_resource_test.exe": {
+      "sha256": "c9fad0b0bd8a4d6d094cdd7c6a7aa4e0b33de1ed702bf0b69a15b5c36e65ba60",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll"
+      ]
+    },
+    "native_platform_test.exe": {
+      "sha256": "01f25dd7c632c0bf526a95fe6b6275b8b686616b740a8a68d260f084634fd72c",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll"
+      ]
+    },
+    "native_primitive_test.exe": {
+      "sha256": "0d0a551c3cb7825bf6cc5249718daea8ed6ead49da9cc8f06f4737e634e34a0c",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "KERNEL32.dll"
+      ]
+    },
+    "native_services_test.exe": {
+      "sha256": "e568d129184cccbf6717fdf1b8b517b4d6e716bfa576ce2864da0c3e75270551",
+      "pe_machine": "AMD64",
+      "dll_imports": [
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-filesystem-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "KERNEL32.dll"
+      ]
+    }
+  },
+  "verification_steps": [
+    "platform",
+    "native_entry",
+    "native_rsqrt-configure",
+    "native_rsqrt-build",
+    "native_rsqrt-correctness",
+    "native_api",
+    "buffer_init",
+    "native_nvn-configure",
+    "native_nvn-build",
+    "native_nvn-test",
+    "native_nvn_builders-configure",
+    "native_nvn_builders-build",
+    "native_nvn_builders-test",
+    "services-configure",
+    "services-build",
+    "services-test",
+    "graphics-configure",
+    "graphics-build",
+    "graphics-test",
+    "nvn-configure",
+    "nvn-build",
+    "nvn-test",
+    "base-source-archive"
+  ],
+  "dependencies": {
+    "Vulkan-Headers": {
+      "version": "v1.4.345",
+      "header_sha256": "72b952cc6de70ee12d118d3095e80346b42ff01cfc6f2bbb37ec01800eab1da6"
+    },
+    "Sirit": {
+      "version": "v1.0.5",
+      "static_library_sha256": "eb760e7f0490c3a4a65d82d0bb1511f6962d3e0ed6772f35f42e072dd4c4c149",
+      "source_archive_sha256": "c8c13167b13371d68c6080e2e1e131119b3de44784e56226a72b711fddf0dc0a",
+      "source": "https://github.com/eden-emulator/sirit/tree/v1.0.5"
+    }
+  },
+  "game_code_or_assets_included": false,
+  "full_native_gameplay": false,
+  "limits": [
+    "Development-host verification using existing dependency installations; clean-machine portability unverified",
+    "Actual game-linked native boot, graphics frame/presentation, audio, input and save closure not established",
+    "Frozen-library shader tooling is source-only and excluded from public binary build claims",
+    "Public checkpoint omits the private exact-copy-loop experiment"
+  ]
+}

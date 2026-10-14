@@ -2,7 +2,15 @@
 
 [**suyu v0.0.11**](https://github.com/dougchansan/suyu-v0.0.4/releases/tag/v0.0.11)
 
-Ahead-of-time recompilation of Nintendo Switch AArch64 CPU code to native x86-64 (and AArch64 hosts), using suyu's HLE stack for everything above the CPU. The recompiler and the export pipeline live in the [suyu fork](#the-emulator); this repository holds the scripts, tests and notes used to build, validate and measure them.
+The current goal is a standalone native Mario Kart 8 Deluxe application: statically recompiled CPU code connected to native graphics, platform services, audio, input and storage. This migration is in progress. The working race reference still uses suyu graphics; a fully native playable game is not available yet.
+
+See [native runtime progress](docs/native-runtime-progress.md) for verified results and remaining work. This repository is `dougchansan/mk8-recomp`.
+
+The [native foundations prerelease](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-20261014) contains 13 verified Windows x64 tools and synthetic fixtures. Its source checkpoint is `src/patches/native-runtime.patch` against suyu revision `347fcf91d95cd39cb5c3db50f1b6d827ad699311`. [Build instructions](docs/native-builds.md) and [binary/source verification](native-checkpoint/verification.json) accompany it. A fresh checkout reproduced all 81 checkpoint files and passed the component tests on the development host; clean-machine portability remains unverified.
+
+## Historical static-recompiler release (September 2026)
+
+The following v0.0.11 release and performance information describes the earlier suyu-hosted static CPU work. It does not establish completion of the native graphics/platform migration.
 
 | Mode | When to use it |
 |---|---|
@@ -64,7 +72,7 @@ The exporter rebuilds the host before exporting, builds every module and rejects
 
 Keep baseline and static timing fixtures in separate local directories. The driver copies the chosen fixture for a run and preserves the existing recording. See [library playtesting](docs/library-playtesting.md) for recording, manifests and limitations.
 
-## Next work
+## Historical next work (September 2026)
 
 Broader per-title coverage (late-loaded modules and unimplemented opcodes are what recorded gaps mostly show), reliable full-race visual fixtures, and block/memory/concurrency differential checks. Runtime-loaded NROs and arbitrary generated guest code remain outside the fixed-module builder.
 
@@ -91,10 +99,10 @@ tests/        decoder tests and differential validation
 third_party/  suyu submodule, pinned to a commit on our fork
 ```
 
-## Building
+## Building the historical suyu host
 
-One command per platform, from nothing to built. Each installs the toolchain,
-clones with submodules and builds. Neither fetches a game, keys, or firmware.
+The existing host setup scripts below install the toolchain,
+clone with submodules and build. Neither fetches a game, keys, or firmware. These instructions do not verify a clean build of the new native checkpoint.
 
 **Linux** â€” any distro with `apt`, `dnf`/`yum`, `pacman`, `zypper`, `apk`,
 `xbps` or `eopkg`. Package names are per-distro; unknown ones are reported and

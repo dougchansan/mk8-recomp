@@ -46,12 +46,28 @@ Capture 5 r2 reached EOF but exceeded its shutdown bound. It remains a failed ca
 
 The r3 allocator witness found installed title hooks and sampled cache mode zero at both Device entry and matched return. It observed no selected TLS-cache callback. This narrows the next analysis to the cache-disabled CentralHeap route; live lock/free-span state, complete helper closure and paired allocation/cleanup semantics still require proof. These private game-linked diagnostics are excluded from release assets.
 
-The next draw-input observer is private and incomplete. It targets the exact
-consumed descriptors, views, samplers and physical allocations. A narrowly
-reviewed permanent-stream path also requires host-coherent memory and proof
-that no writer or reuse occurs before the copy drains. Ambiguous failure must
-retain resources or stop the private diagnostic process before unwinding.
-CPU metadata tests and compilation alone do not establish input authority.
+Capture 6 completed a fresh 6,001-frame reference replay with exit 0, no harness
+invalidations, zero JIT and zero unresolved imports. Independent review approves
+bounded input authority for one selected draw: four buffers and two sampled
+images totaling 5,530,476 bytes, plus a closed packed10 destination pair from
+before and after that draw. Payload hashes, actual descriptors/views/samplers,
+physical allocation separation and shader/pipeline provenance match. Both
+recorders reached their drained terminal state; the final racing image was
+inspected. The two destination snapshots differ at 2,073,600 packed pixels.
+
+This private observer retains both cache locks and all copy resources through
+one final GPU drain. The mapped uniform inputs use the narrowly reviewed
+host-coherent permanent stream with stable owner, range and tick; other mapped
+backings are declined. The enabled build preserves class layouts and replaces
+exactly four host video-library members; all other host members and all five
+guest/runtime archives match the previous reference build.
+
+These are authoritative reference inputs for a bounded native draw replay.
+The capture itself uses reference graphics and establishes no native draw,
+frame equivalence, complete producer history or native gameplay. The next step
+is to bind the captured inputs and inherited destination contents through native
+Vulkan while preserving the observed shader and raster semantics. The public
+v5 assets remain unchanged; game-linked captures and diagnostics stay private.
 
 The next private CPU fixture now starts with genuine SDK OS initialization.
 The native kernel supplies its registered main-thread handle, actual OS thread

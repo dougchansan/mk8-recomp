@@ -2,8 +2,10 @@
 
 Updated 2026-10-15. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
 
-The campaign is in component bring-up, before the first end-to-end native game
-draw. Static CPU execution and synthetic native rendering/presentation work.
+The campaign is in component integration, before the first end-to-end native game
+frame. Static CPU execution, native rendering/presentation fixtures and one
+captured game-derived background draw work. The latter matches every packed
+reference pixel; live game-to-native graphics integration remains open.
 The immediate title-integration gates are registered title allocator callbacks, native
 Device creation and authoritative resources for an actual game draw. Native
 audio, controls, save/restart and full standalone gameplay follow those gates.
@@ -32,6 +34,8 @@ audio, controls, save/restart and full standalone gameplay follow those gates.
 | Genuine SDK bootstrap and raw allocator pair | Independently reviewed 1,934 checks across ten cases. Two fresh processes execute SDK OS initialization, constructor, 64 KiB cache-disabled Initialize, one raw allocation of 8,199 bytes at 16-byte alignment, exact Free once and Finalize with an empty live ledger. Each bootstrap uses 16 native queries; allocator phases use zero SVCs, provider commits or GPU work | Earlier private CPU fixture for one raw pair. Title-sized heaps, general TLS, contention and Device integration remain separate gates. |
 | SDK small blocks and three live allocations | Independently reviewed 3,490 checks across 16 cases. Genuine 160-byte and 256-byte allocation/free pairs, then simultaneous 160/256/8,199-byte allocations with exact reverse frees and empty Finalize. Original read-only class tables, surviving payloads, canaries and full callback restoration pass; copied runnable bundle passes a fresh 354-check three-live sequence | Exactly the reviewed sizes, at most three live allocations, one owner and 64 KiB/cache-disabled heaps. General workloads, realloc, contention, title wrappers and Device integration remain unproved. |
 | Genuine SDK callbacks with strict accounting | Independently reviewed 2,794 checks across eleven fresh processes and 76 accounting observations. Both image adapters activate before SDK bootstrap. Each raw pair records 3,293 original entries, one accepted parent call, zero SDK native calls and zero provider work; callbacks and return markers retain exact credits. Copied bundle passes 394 fresh checks | Ordinary dispatch with callback budget one; one admitting image/provider and one operation per binding. Chain execution, title hooks, larger heaps and Device integration remain separate gates. |
+| Genuine SDK chain accounting | Independently reviewed 1,674 checks across four fresh budget controls and 84 observations. One original same-image SDK call uses the existing chain helper; actual interval credits are 1/2/3/557 for budgets 1/2/3/4,096, with chain witnesses 0/1/1/1. Full raw-pair credits remain 3,293; copied budget-4,096 bundle passes 418 fresh checks | One direct SDK edge, one admitting image/provider and one operation per binding. General chaining, title hooks and Device admission remain unproved. |
+| Native captured game draw | Independently reviewed native Vulkan submission completes one indexed draw with three image uploads and two readbacks. All 2,073,600 packed pixels / 8,294,400 bytes exactly match the reference, including alpha; every channel error is zero. Native binary uses fixed offline shaders and links no reference renderer or runtime shader compiler | One captured striped background layer on the verified device. Inputs originate from the reference capture; this is not a complete native frame, live game rendering or standalone gameplay. |
 | Combined fenced pending-work accounting | Independently reviewed synthetic integration passes 1,094 checks and 98 observations in each ordinary/chain mode. Actual accepted calls, guest blocks, copied-input worker units and commits remain distinct through cancellation, revocation and stale completion | After-v5 private fixture with one admitting image/provider and one operation per binding. It does not establish general multi-provider attribution or Device/game integration. |
 
 Synthetic fixtures are deliberate tests of implemented behavior. Their success cannot substitute for game rendering, service coverage, audio, input or persistence.
@@ -64,12 +68,25 @@ backings are declined. The enabled build preserves class layouts and replaces
 exactly four host video-library members; all other host members and all five
 guest/runtime archives match the previous reference build.
 
-These are authoritative reference inputs for a bounded native draw replay.
-The capture itself uses reference graphics and establishes no native draw,
-frame equivalence, complete producer history or native gameplay. The next step
-is to bind the captured inputs and inherited destination contents through native
-Vulkan while preserving the observed shader and raster semantics. The public
-v5 assets remain unchanged; game-linked captures and diagnostics stay private.
+The subsequent private native replay now passes. Fresh offline translation uses
+the exact closed shader bytes, their original instruction addresses and recorded
+specialization. A separately reviewed access proof bounds full uniform reads to
+560 of 768 captured vertex bytes and all 64 fragment bytes, including every
+branch and all four vertex inputs. It requires no invented uniform padding.
+
+On the verified AMD device, native Vulkan recreates the observed sRGB/BC4 images,
+swizzles, sampler, viewport, clip/provoking state and separate RGB/alpha blending.
+It loads the actual inherited destination, submits one indexed draw, waits for
+its fence and closes the native readback. Independent comparison finds zero
+different packed pixels across all 2,073,600 pixels; all 8,294,400 output bytes
+match. Native output and actual readback provenance are independently reviewed.
+The selected image is a striped background layer, separate from the final
+Stadium racing frame inspected after the reference replay.
+
+This closes one captured-input native draw. Complete producer/consumer history,
+live native Device/resource routing, actual game frames and standalone gameplay
+remain open. The public v5 assets remain unchanged; game-derived shaders,
+captures and diagnostic binaries stay private and are indexed locally.
 
 The next private CPU fixture now starts with genuine SDK OS initialization.
 The native kernel supplies its registered main-thread handle, actual OS thread
@@ -113,7 +130,7 @@ public v5 binaries and verification manifest.
 
 Decoded draw state establishes source-alpha blending, a destination-multiplication pass, float2/float3 vertices, linear repeat/clamp sampling and a negative-Y viewport transform. There is no Clear in the submitted graph, and full destination-independent overwrite is unproved. A faithful native replay requires the earlier attachment contents or a complete overwrite proof; an invented black target is not a valid substitute.
 
-The next graphics gate is a faithful actual-game draw/submission/presentation path with complete inherited state and resources. Native audio, input, saves and overall gameplay closure remain pending. A functioning static CPU or native Vulkan fixture alone does not close those gates.
+The next graphics gate is live game-to-native Device/resource/draw/presentation integration, extending beyond the captured background replay. Native audio, input, saves and overall gameplay closure remain pending.
 
 ## Public checkpoint and prerelease
 

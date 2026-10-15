@@ -26,9 +26,11 @@ audio, controls, save/restart and full standalone gameplay follow those gates.
 | Owned shader-input construction | Explicit source/metadata factory shares the offline translator; synthetic ownership/rejection and authored-cache equivalence checks pass | Source-only in this package. Structural acceptance does not attest complete actual shader provenance or raster state. |
 | Real shader translation and pipeline acceptance | Actual shader translation and pipeline acceptance verified separately | No actual-game native draw or presentation established. |
 | Native Win32 presentation | Fresh public build passes seven native graphics suites and an owned-window fixture: 45 queued/retired presents, three swapchain recreations, RGBA8 and packed10 sources, zero source readbacks; both cropped client images inspected | Synthetic presentation. Requires enabled maintenance1 support; validation layers disabled. Driver retirement can block teardown. Actual-game dispatch remains pending. |
-| Guest callbacks and execution fence | Independently reviewed owner callback transport, per-image original/native approval, all-entry checks and unchanged default output; FM0 and FM1/GG1/FPX1 ordinary/chain tests pass | Serialized single-owner scope. Real allocator invocation and native Device remain closed. |
+| Guest callbacks and execution fence | Independently reviewed owner callback transport, per-image original/native approval, all-entry checks and unchanged default output; FM0 and FM1/GG1/FPX1 ordinary/chain tests pass | Serialized single-owner scope. Actual Device allocator routing and native Device creation remain closed. |
 | Opaque-object memory and accounting | Independently reviewed 106-case preflight; 15,524 emitted integration checks and 4,102 accounting checks per chain mode. Full CPU/callback/pending regressions and seven production/three test analysis units pass | Protects native storage from guest accesses, including aliases and split instructions. It does not implement the native Device or a general concurrent scheduler. |
-| Real SDK allocator CPU fixture | Independently reviewed constructor: 408 checks across fresh and negative cases. Genuine 64 KiB supplied-heap initialization: 470 checks, with 105 callback blocks and 266 checked memory operations per successful run; parent context and heap boundary canaries preserved; zero SVCs/provider commits/GPU work | Private static CPU diagnostic through an authored callback driver. Allocation/free/finalize, the title-sized heap and real Device callback routing remain unproved. |
+| Real SDK allocator initialization | Independently reviewed constructor: 408 checks across fresh and negative cases. Genuine 64 KiB supplied-heap initialization: 470 checks, with 105 callback blocks and 266 checked memory operations per successful run; parent context and heap boundary canaries preserved; zero SVCs/provider commits/GPU work | Earlier private static CPU diagnostic through an authored callback driver. Title-sized heaps and real Device callback routing remain unproved. |
+| Genuine SDK bootstrap and raw allocator pair | Independently reviewed 1,934 checks across ten cases. Two fresh processes execute SDK OS initialization, constructor, 64 KiB cache-disabled Initialize, one raw allocation of 8,199 bytes at 16-byte alignment, exact Free once and Finalize with an empty live ledger. Each bootstrap uses 16 native queries; allocator phases use zero SVCs, provider commits or GPU work | Private CPU fixture. Small classes, multiple live allocations, 24 MiB heaps, general TLS, contention and Device integration remain separate gates. |
+| Combined fenced pending-work accounting | Independently reviewed synthetic integration passes 1,094 checks and 98 observations in each ordinary/chain mode. Actual accepted calls, guest blocks, copied-input worker units and commits remain distinct through cancellation, revocation and stale completion | After-v5 private fixture with one admitting image/provider and one operation per binding. It does not establish general multi-provider attribution or Device/game integration. |
 
 Synthetic fixtures are deliberate tests of implemented behavior. Their success cannot substitute for game rendering, service coverage, audio, input or persistence.
 
@@ -51,21 +53,29 @@ that no writer or reuse occurs before the copy drains. Ambiguous failure must
 retain resources or stop the private diagnostic process before unwinding.
 CPU metadata tests and compilation alone do not establish input authority.
 
-The private fresh-heap fixture now calls the real SDK constructor and Initialize
-into an actual 64 KiB owned heap with caching disabled. A finite inventory covers
-570 literal SDK instruction words and eight validated GOT bindings. An explicit
-static call adapter preserves the callback owner's register contract. The SDK
-code creates the allocator, mutex and heap structures; the host does not fill in
-initialized heap, lock, once or SDK thread fields.
+The next private CPU fixture now starts with genuine SDK OS initialization.
+The native kernel supplies its registered main-thread handle, actual OS thread
+identity and BCrypt entropy; original SDK code writes the thread, TLS, lock,
+once and heap structures. The bootstrap argument is a scalar thread handle.
+Static call adapters preserve the callback owner's register contract, and
+phase-specific instruction and whole-memory gates limit execution and access.
 
-This establishes bounded initialization through the native callback owner. It
-does not establish allocation/free/finalize, general SDK thread/TLS state, the
-24 MiB title-sized heap or native Device creation. The larger-span capability,
-any required kernel semantics and actual Device callback schedule remain separate
-integration gates. These game-linked fixture binaries and inputs stay private.
-The fixed-input initialization case is independently reviewed; its negative
-cases exercise constructor revocation and ownership rather than every later
-initialization failure path.
+The independently reviewed ten-case proof passes 1,934 checks, including two
+fresh successful allocation/free/finalize sequences, six rejection routes and
+cancellation before allocator effects. Completed child ledgers are parsed and
+hashed after process exit. A separately copied runnable bundle also passes a
+fresh 242-check allocation pair. Payload, canaries and the full parked parent
+context survive. The earlier constructor and initialization proofs remain
+preserved; their block counts use a different root inventory and should not be
+compared with the new per-instruction admissions.
+
+This closes a bounded raw allocation pair on a 64 KiB cache-disabled heap.
+Small allocation classes, multiple live allocations, general ELF/dynamic TLS,
+contention, post-allocation failure recovery, the 24 MiB title-sized heap and
+native Device creation remain unproved. Actual Device callback scheduling and
+the larger-span capability remain integration gates. These game-linked CPU
+diagnostics and their inputs stay private and are indexed locally; they are
+outside the immutable public v5 binaries and verification manifest.
 
 Decoded draw state establishes source-alpha blending, a destination-multiplication pass, float2/float3 vertices, linear repeat/clamp sampling and a negative-Y viewport transform. There is no Clear in the submitted graph, and full destination-independent overwrite is unproved. A faithful native replay requires the earlier attachment contents or a complete overwrite proof; an invented black target is not a valid substitute.
 

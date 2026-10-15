@@ -28,6 +28,7 @@ audio, controls, save/restart and full standalone gameplay follow those gates.
 | Native Win32 presentation | Fresh public build passes seven native graphics suites and an owned-window fixture: 45 queued/retired presents, three swapchain recreations, RGBA8 and packed10 sources, zero source readbacks; both cropped client images inspected | Synthetic presentation. Requires enabled maintenance1 support; validation layers disabled. Driver retirement can block teardown. Actual-game dispatch remains pending. |
 | Guest callbacks and execution fence | Independently reviewed owner callback transport, per-image original/native approval, all-entry checks and unchanged default output; FM0 and FM1/GG1/FPX1 ordinary/chain tests pass | Serialized single-owner scope. Real allocator invocation and native Device remain closed. |
 | Opaque-object memory and accounting | Independently reviewed 106-case preflight; 15,524 emitted integration checks and 4,102 accounting checks per chain mode. Full CPU/callback/pending regressions and seven production/three test analysis units pass | Protects native storage from guest accesses, including aliases and split instructions. It does not implement the native Device or a general concurrent scheduler. |
+| Real SDK allocator CPU fixture | Independently reviewed constructor: 408 checks across fresh and negative cases. Genuine 64 KiB supplied-heap initialization: 470 checks, with 105 callback blocks and 266 checked memory operations per successful run; parent context and heap boundary canaries preserved; zero SVCs/provider commits/GPU work | Private static CPU diagnostic through an authored callback driver. Allocation/free/finalize, the title-sized heap and real Device callback routing remain unproved. |
 
 Synthetic fixtures are deliberate tests of implemented behavior. Their success cannot substitute for game rendering, service coverage, audio, input or persistence.
 
@@ -50,11 +51,21 @@ that no writer or reuse occurs before the copy drains. Ambiguous failure must
 retain resources or stop the private diagnostic process before unwinding.
 CPU metadata tests and compilation alone do not establish input authority.
 
-The next allocator fixture will call the real SDK constructor/Initialize into
-fresh owned memory. The current 64 KiB pointer-argument cap prevents claiming
-a 24 MiB heap initialization. A genuinely smaller heap is a separate first
-fixture case; the larger-span capability and any required native SVC semantics
-still need implementation and review. No initialized heap fields are fabricated.
+The private fresh-heap fixture now calls the real SDK constructor and Initialize
+into an actual 64 KiB owned heap with caching disabled. A finite inventory covers
+570 literal SDK instruction words and eight validated GOT bindings. An explicit
+static call adapter preserves the callback owner's register contract. The SDK
+code creates the allocator, mutex and heap structures; the host does not fill in
+initialized heap, lock, once or SDK thread fields.
+
+This establishes bounded initialization through the native callback owner. It
+does not establish allocation/free/finalize, general SDK thread/TLS state, the
+24 MiB title-sized heap or native Device creation. The larger-span capability,
+any required kernel semantics and actual Device callback schedule remain separate
+integration gates. These game-linked fixture binaries and inputs stay private.
+The fixed-input initialization case is independently reviewed; its negative
+cases exercise constructor revocation and ownership rather than every later
+initialization failure path.
 
 Decoded draw state establishes source-alpha blending, a destination-multiplication pass, float2/float3 vertices, linear repeat/clamp sampling and a negative-Y viewport transform. There is no Clear in the submitted graph, and full destination-independent overwrite is unproved. A faithful native replay requires the earlier attachment contents or a complete overwrite proof; an invented black target is not a valid substitute.
 

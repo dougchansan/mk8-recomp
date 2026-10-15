@@ -4,7 +4,7 @@ Updated 2026-10-15. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 The campaign is in component bring-up, before the first end-to-end native game
 draw. Static CPU execution and synthetic native rendering/presentation work.
-The immediate title-integration gates are genuine allocator callbacks, native
+The immediate title-integration gates are registered title allocator callbacks, native
 Device creation and authoritative resources for an actual game draw. Native
 audio, controls, save/restart and full standalone gameplay follow those gates.
 
@@ -29,7 +29,8 @@ audio, controls, save/restart and full standalone gameplay follow those gates.
 | Guest callbacks and execution fence | Independently reviewed owner callback transport, per-image original/native approval, all-entry checks and unchanged default output; FM0 and FM1/GG1/FPX1 ordinary/chain tests pass | Serialized single-owner scope. Actual Device allocator routing and native Device creation remain closed. |
 | Opaque-object memory and accounting | Independently reviewed 106-case preflight; 15,524 emitted integration checks and 4,102 accounting checks per chain mode. Full CPU/callback/pending regressions and seven production/three test analysis units pass | Protects native storage from guest accesses, including aliases and split instructions. It does not implement the native Device or a general concurrent scheduler. |
 | Real SDK allocator initialization | Independently reviewed constructor: 408 checks across fresh and negative cases. Genuine 64 KiB supplied-heap initialization: 470 checks, with 105 callback blocks and 266 checked memory operations per successful run; parent context and heap boundary canaries preserved; zero SVCs/provider commits/GPU work | Earlier private static CPU diagnostic through an authored callback driver. Title-sized heaps and real Device callback routing remain unproved. |
-| Genuine SDK bootstrap and raw allocator pair | Independently reviewed 1,934 checks across ten cases. Two fresh processes execute SDK OS initialization, constructor, 64 KiB cache-disabled Initialize, one raw allocation of 8,199 bytes at 16-byte alignment, exact Free once and Finalize with an empty live ledger. Each bootstrap uses 16 native queries; allocator phases use zero SVCs, provider commits or GPU work | Private CPU fixture. Small classes, multiple live allocations, 24 MiB heaps, general TLS, contention and Device integration remain separate gates. |
+| Genuine SDK bootstrap and raw allocator pair | Independently reviewed 1,934 checks across ten cases. Two fresh processes execute SDK OS initialization, constructor, 64 KiB cache-disabled Initialize, one raw allocation of 8,199 bytes at 16-byte alignment, exact Free once and Finalize with an empty live ledger. Each bootstrap uses 16 native queries; allocator phases use zero SVCs, provider commits or GPU work | Earlier private CPU fixture for one raw pair. Title-sized heaps, general TLS, contention and Device integration remain separate gates. |
+| SDK small blocks and three live allocations | Independently reviewed 3,490 checks across 16 cases. Genuine 160-byte and 256-byte allocation/free pairs, then simultaneous 160/256/8,199-byte allocations with exact reverse frees and empty Finalize. Original read-only class tables, surviving payloads, canaries and full callback restoration pass; copied runnable bundle passes a fresh 354-check three-live sequence | Exactly the reviewed sizes, at most three live allocations, one owner and 64 KiB/cache-disabled heaps. General workloads, realloc, contention, title wrappers and Device integration remain unproved. |
 | Combined fenced pending-work accounting | Independently reviewed synthetic integration passes 1,094 checks and 98 observations in each ordinary/chain mode. Actual accepted calls, guest blocks, copied-input worker units and commits remain distinct through cancellation, revocation and stale completion | After-v5 private fixture with one admitting image/provider and one operation per binding. It does not establish general multi-provider attribution or Device/game integration. |
 
 Synthetic fixtures are deliberate tests of implemented behavior. Their success cannot substitute for game rendering, service coverage, audio, input or persistence.
@@ -85,13 +86,23 @@ context survive. The earlier constructor and initialization proofs remain
 preserved; their block counts use a different root inventory and should not be
 compared with the new per-instruction admissions.
 
-This closes a bounded raw allocation pair on a 64 KiB cache-disabled heap.
-Small allocation classes, multiple live allocations, general ELF/dynamic TLS,
-contention, post-allocation failure recovery, the 24 MiB title-sized heap and
-native Device creation remain unproved. Actual Device callback scheduling and
-the larger-span capability remain integration gates. These game-linked CPU
-diagnostics and their inputs stay private and are indexed locally; they are
-outside the immutable public v5 binaries and verification manifest.
+A separate independently reviewed extension passes 3,490 checks across 16 cases.
+It adds original read-only class tables, fresh 160-byte and 256-byte allocation
+pairs, and two fresh runs with three simultaneous allocations followed by exact
+reverse frees. Every surviving payload is checked after later allocations and
+frees; Finalize follows an empty allocation ledger. Table corruption rejects
+before guest execution, table writes are denied, and missing table access
+quarantines with its partial phase recorded. A copied private bundle passes a
+fresh 354-check three-live sequence from its own directory.
+
+These CPU proofs cover the reviewed sizes on a 64 KiB cache-disabled heap.
+General workloads, realloc, general ELF/dynamic TLS, contention, post-allocation
+failure recovery, the 24 MiB title-sized heap and native Device creation remain
+unproved. Strict Host accounting composition, registered title wrappers, actual
+Device callback scheduling and the larger-span capability remain integration
+gates. These game-linked CPU diagnostics and their inputs stay private and are
+indexed locally; they are outside the immutable public v5 binaries and
+verification manifest.
 
 Decoded draw state establishes source-alpha blending, a destination-multiplication pass, float2/float3 vertices, linear repeat/clamp sampling and a negative-Y viewport transform. There is no Clear in the submitted graph, and full destination-independent overwrite is unproved. A faithful native replay requires the earlier attachment contents or a complete overwrite proof; an invented black target is not a valid substitute.
 

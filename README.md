@@ -8,6 +8,8 @@ See [native runtime progress](docs/native-runtime-progress.md) for verified resu
 
 The [native foundations v5 prerelease](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v5-20261015) contains 33 Windows x64 tools and synthetic fixtures. It adds reviewed guest callbacks, execution fencing, whole-instruction memory checks and native-object ownership/accounting to the native Win32 presentation checkpoint. Its 167-file source checkpoint is `src/patches/native-runtime.patch` against suyu revision `347fcf91d95cd39cb5c3db50f1b6d827ad699311`. [Build instructions](docs/native-builds.md) and [binary/source verification](native-checkpoint/verification.json) accompany it. This remains component bring-up: an end-to-end native MK8D draw, allocator/Device admission, audio, controls and save/restart are still pending. Clean-machine portability remains unverified. Earlier [v4](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v4-20261014), [v3](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v3-20261014) and [v2](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-20261014) checkpoints remain available.
 
+Private CPU bring-up now verifies genuine SDK initialization and raw/small heap allocation and free, including three simultaneous allocations. A verified reference draw-input capture is ready for bounded native replay; actual native Device and game rendering remain pending.
+
 ## Historical static-recompiler release (September 2026)
 
 The following v0.0.11 release and performance information describes the earlier suyu-hosted static CPU work. It does not establish completion of the native graphics/platform migration.

@@ -2042,10 +2042,10 @@ index 0000000000000000000000000000000000000000..46b745c778c737679961bcfb0fd6c26d
 +}
 diff --git a/native-runtime/graphics/vulkan_resources.cpp b/native-runtime/graphics/vulkan_resources.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..0815d0f54fc858ac8947437fc8345eb1127c4136
+index 0000000000000000000000000000000000000000..61550c6a19537362d69e6f117430a65db7523b97
 --- /dev/null
 +++ b/native-runtime/graphics/vulkan_resources.cpp
-@@ -0,0 +1,573 @@
+@@ -0,0 +1,679 @@
 +#include "vulkan_resources.h"
 +#define WIN32_LEAN_AND_MEAN
 +#define NOMINMAX
@@ -2108,6 +2108,8 @@ index 0000000000000000000000000000000000000000..0815d0f54fc858ac8947437fc8345eb1
 +  VkPhysicalDeviceMemoryProperties memory{};
 +  bool addresses = false, prefer_noncoherent = false;
 +  bool enabled_shader_image_gather_extended = false;
++  DeviceFeatureCapabilities feature_capabilities;
++  uint32_t custom_border_samplers = 0;
 +  std::thread::id owner = std::this_thread::get_id();
 +  std::map<uint64_t, Pool> pools;
 +  std::map<uint64_t, View> views;
@@ -2217,16 +2219,23 @@ index 0000000000000000000000000000000000000000..0815d0f54fc858ac8947437fc8345eb1
 +};
 +#define V(name) impl->Get<PFN_##name>(#name)
 +VulkanDevice::VulkanDevice(DeviceOptions options)
++    : VulkanDevice(std::move(options), {}) {}
++VulkanDevice::VulkanDevice(DeviceOptions options, const DeviceFeatureRequirements &requirements)
 +    : impl(std::make_unique<Impl>()) {
 +  if (options.unsupported_flags)
 +    throw std::runtime_error("Unsupported device flags");
++  const bool requested_features = requirements.robust_buffer_access || requirements.texture_compression_bc ||
++      requirements.custom_border_colors || requirements.custom_border_without_format ||
++      requirements.depth_clip_control || requirements.provoking_vertex_last || requirements.shader_image_gather_extended;
++  if (requested_features && options.presentation)
++    throw std::runtime_error("Explicit feature requirements with presentation are unsupported");
 +  impl->prefer_noncoherent = options.prefer_noncoherent;
 +  impl->loader = LoadLibraryW(L"vulkan-1.dll");
 +  if (!impl->loader)
 +    throw std::runtime_error("System Vulkan loader unavailable");
 +  VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
 +  app.pApplicationName = "native-resource-device";
-+  app.apiVersion = options.require_device_address || options.presentation
++  app.apiVersion = options.require_device_address || options.presentation || requested_features
 +                       ? VK_API_VERSION_1_2
 +                       : VK_API_VERSION_1_0;
 +  impl->enabled_api_version = app.apiVersion;
@@ -2299,7 +2308,7 @@ index 0000000000000000000000000000000000000000..0815d0f54fc858ac8947437fc8345eb1
 +  for (auto p : devices) {
 +    VkPhysicalDeviceProperties prop{};
 +    V(vkGetPhysicalDeviceProperties)(p, &prop);
-+    if ((options.require_device_address || options.presentation) &&
++    if ((options.require_device_address || options.presentation || requested_features) &&
 +        prop.apiVersion < VK_API_VERSION_1_2)
 +      continue;
 +    if (options.presentation) {
@@ -2379,8 +2388,56 @@ index 0000000000000000000000000000000000000000..0815d0f54fc858ac8947437fc8345eb1
 +  d.pQueueCreateInfos = &q;
 +  VkPhysicalDeviceFeatures supported{}, enabled{};
 +  V(vkGetPhysicalDeviceFeatures)(impl->physical, &supported);
-+  enabled.shaderImageGatherExtended = supported.shaderImageGatherExtended;
++  DeviceFeatureSupport support;
++  support.robust_buffer_access = supported.robustBufferAccess != 0;
++  support.texture_compression_bc = supported.textureCompressionBC != 0;
++  support.shader_image_gather_extended = supported.shaderImageGatherExtended != 0;
++  std::set<std::string> available_extensions;
++  if (impl->enabled_api_version >= VK_API_VERSION_1_1) {
++    uint32_t count = 0;
++    Check(V(vkEnumerateDeviceExtensionProperties)(impl->physical, nullptr, &count, nullptr), "Feature extension count");
++    std::vector<VkExtensionProperties> extensions(count);
++    Check(V(vkEnumerateDeviceExtensionProperties)(impl->physical, nullptr, &count, extensions.data()), "Feature extensions");
++    for (const auto &extension : extensions) available_extensions.insert(extension.extensionName);
++    VkPhysicalDeviceCustomBorderColorFeaturesEXT query_border{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT};
++    VkPhysicalDeviceDepthClipControlFeaturesEXT query_depth{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT};
++    VkPhysicalDeviceProvokingVertexFeaturesEXT query_provoking{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_FEATURES_EXT};
++    VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
++    void **tail = &query.pNext;
++    if (available_extensions.contains(VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME)) { *tail = &query_border; tail = &query_border.pNext; }
++    if (available_extensions.contains(VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME)) { *tail = &query_depth; tail = &query_depth.pNext; }
++    if (available_extensions.contains(VK_EXT_PROVOKING_VERTEX_EXTENSION_NAME)) { *tail = &query_provoking; tail = &query_provoking.pNext; }
++    V(vkGetPhysicalDeviceFeatures2)(impl->physical, &query);
++    support.custom_border_colors = query_border.customBorderColors != 0;
++    support.custom_border_without_format = query_border.customBorderColorWithoutFormat != 0;
++    support.depth_clip_control = query_depth.depthClipControl != 0;
++    support.provoking_vertex_last = query_provoking.provokingVertexLast != 0;
++    support.extended_features_queried = true;
++  }
++  const auto selected = SelectDeviceFeatures(requirements, support);
++  impl->feature_capabilities = {support, selected, std::nullopt};
++  if (support.extended_features_queried && support.custom_border_colors) {
++    VkPhysicalDeviceCustomBorderColorPropertiesEXT border_limits{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_PROPERTIES_EXT};
++    VkPhysicalDeviceProperties2 properties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
++    properties.pNext = &border_limits;
++    V(vkGetPhysicalDeviceProperties2)(impl->physical, &properties);
++    impl->feature_capabilities.max_custom_border_samplers = border_limits.maxCustomBorderColorSamplers;
++    if (selected.custom_border_colors && !border_limits.maxCustomBorderColorSamplers)
++      throw std::runtime_error("Custom border sampler limit is zero");
++  }
++  enabled.robustBufferAccess = selected.robust_buffer_access;
++  enabled.textureCompressionBC = selected.texture_compression_bc;
++  enabled.shaderImageGatherExtended = selected.shader_image_gather_extended;
 +  d.pEnabledFeatures = &enabled;
++  // Fresh enable structures: no supported-but-unrequested bits can leak in.
++  VkPhysicalDeviceCustomBorderColorFeaturesEXT enable_border{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT};
++  enable_border.customBorderColors = selected.custom_border_colors;
++  enable_border.customBorderColorWithoutFormat = selected.custom_border_without_format;
++  VkPhysicalDeviceDepthClipControlFeaturesEXT enable_depth{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT};
++  enable_depth.depthClipControl = selected.depth_clip_control;
++  VkPhysicalDeviceProvokingVertexFeaturesEXT enable_provoking{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_FEATURES_EXT};
++  enable_provoking.provokingVertexLast = selected.provoking_vertex_last;
++  enable_provoking.transformFeedbackPreservesProvokingVertex = VK_FALSE;
 +  VkPhysicalDeviceBufferDeviceAddressFeatures bda{
 +      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES};
 +  bda.bufferDeviceAddress = VK_TRUE;
@@ -2404,6 +2461,20 @@ index 0000000000000000000000000000000000000000..0815d0f54fc858ac8947437fc8345eb1
 +    d.enabledExtensionCount = uint32_t(device_extensions.size());
 +    d.ppEnabledExtensionNames = device_extensions.data();
 +  }
++  auto require_extension = [&](bool needed, const char *name) {
++    if (!needed) return;
++    if (!available_extensions.contains(name)) throw std::runtime_error(std::string("Required device extension missing: ") + name);
++    device_extensions.push_back(name);
++    impl->enabled_device_extensions.emplace_back(name);
++  };
++  require_extension(selected.custom_border_colors, VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME);
++  require_extension(selected.depth_clip_control, VK_EXT_DEPTH_CLIP_CONTROL_EXTENSION_NAME);
++  require_extension(selected.provoking_vertex_last, VK_EXT_PROVOKING_VERTEX_EXTENSION_NAME);
++  if (selected.provoking_vertex_last) { enable_provoking.pNext = const_cast<void *>(d.pNext); d.pNext = &enable_provoking; }
++  if (selected.depth_clip_control) { enable_depth.pNext = const_cast<void *>(d.pNext); d.pNext = &enable_depth; }
++  if (selected.custom_border_colors) { enable_border.pNext = const_cast<void *>(d.pNext); d.pNext = &enable_border; }
++  d.enabledExtensionCount = uint32_t(device_extensions.size());
++  d.ppEnabledExtensionNames = device_extensions.data();
 +  Check(V(vkCreateDevice)(impl->physical, &d, nullptr, &impl->device),
 +        "vkCreateDevice");
 +  impl->addresses = options.require_device_address;
@@ -2619,16 +2690,52 @@ index 0000000000000000000000000000000000000000..0815d0f54fc858ac8947437fc8345eb1
 +          impl->enabled_shader_image_gather_extended};
 +}
 +} // namespace native_graphics
++
++namespace native_graphics {
++EnabledDeviceFeatures SelectDeviceFeatures(const DeviceFeatureRequirements &r, const DeviceFeatureSupport &s) {
++  if (r.custom_border_without_format && !r.custom_border_colors)
++    throw std::runtime_error("Without-format border requires custom border colors");
++  if (!s.extended_features_queried && (r.custom_border_colors || r.custom_border_without_format || r.depth_clip_control || r.provoking_vertex_last))
++    throw std::runtime_error("Required extension feature support is unknown");
++  auto require = [](bool requested, bool available, const char *name) {
++    if (requested && !available) throw std::runtime_error(std::string("Required device feature unavailable: ") + name);
++  };
++  require(r.robust_buffer_access, s.robust_buffer_access, "robustBufferAccess");
++  require(r.texture_compression_bc, s.texture_compression_bc, "textureCompressionBC");
++  require(r.custom_border_colors, s.custom_border_colors, "customBorderColors");
++  require(r.custom_border_without_format, s.custom_border_without_format, "customBorderColorWithoutFormat");
++  require(r.depth_clip_control, s.depth_clip_control, "depthClipControl");
++  require(r.provoking_vertex_last, s.provoking_vertex_last, "provokingVertexLast");
++  require(r.shader_image_gather_extended, s.shader_image_gather_extended, "shaderImageGatherExtended");
++  return {r.robust_buffer_access, r.texture_compression_bc, r.custom_border_colors, r.custom_border_without_format,
++          r.depth_clip_control, r.provoking_vertex_last, s.shader_image_gather_extended};
++}
++DeviceFeatureCapabilities VulkanDevice::GetFeatureCapabilities() const { impl->Thread(); return impl->feature_capabilities; }
++void VulkanDevice::RetainCustomBorderSampler() {
++  impl->Thread();
++  if (!impl->feature_capabilities.enabled.custom_border_colors ||
++      !impl->feature_capabilities.max_custom_border_samplers ||
++      impl->custom_border_samplers >= *impl->feature_capabilities.max_custom_border_samplers)
++    throw std::runtime_error("Custom border sampler allocation limit");
++  ++impl->custom_border_samplers;
++}
++void VulkanDevice::ReleaseCustomBorderSampler() {
++  impl->Thread();
++  if (!impl->custom_border_samplers) throw std::runtime_error("Unbalanced custom border sampler release");
++  --impl->custom_border_samplers;
++}
++}
 diff --git a/native-runtime/graphics/vulkan_resources.h b/native-runtime/graphics/vulkan_resources.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..b28c44c8a0e8bf910d219e0d44c41ca6c205f88f
+index 0000000000000000000000000000000000000000..8bfa53109b90fe5d691f8dbd866a1f97c0a59a46
 --- /dev/null
 +++ b/native-runtime/graphics/vulkan_resources.h
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,127 @@
 +#pragma once
 +#include <cstddef>
 +#include <cstdint>
 +#include <memory>
++#include <optional>
 +#include <span>
 +#include <string>
 +#include <thread>
@@ -2656,6 +2763,35 @@ index 0000000000000000000000000000000000000000..b28c44c8a0e8bf910d219e0d44c41ca6
 +  uint32_t unsupported_flags = 0;
 +  std::shared_ptr<const Win32SurfaceTarget> presentation;
 +};
++// Additive feature API; old DeviceOptions/VulkanHandles retain their ABI/defaults.
++struct DeviceFeatureRequirements {
++  bool robust_buffer_access = false, texture_compression_bc = false;
++  bool custom_border_colors = false, custom_border_without_format = false;
++  bool depth_clip_control = false, provoking_vertex_last = false;
++  bool shader_image_gather_extended = false;
++};
++struct DeviceFeatureSupport {
++  bool robust_buffer_access = false, texture_compression_bc = false;
++  bool custom_border_colors = false, custom_border_without_format = false;
++  bool depth_clip_control = false, provoking_vertex_last = false;
++  bool shader_image_gather_extended = false;
++  // False means extension feature fields are UNKNOWN, rather than unsupported.
++  bool extended_features_queried = false;
++};
++struct EnabledDeviceFeatures {
++  bool robust_buffer_access = false, texture_compression_bc = false;
++  bool custom_border_colors = false, custom_border_without_format = false;
++  bool depth_clip_control = false, provoking_vertex_last = false;
++  bool shader_image_gather_extended = false;
++};
++struct DeviceFeatureCapabilities {
++  DeviceFeatureSupport supported;
++  EnabledDeviceFeatures enabled;
++  std::optional<uint32_t> max_custom_border_samplers;
++};
++// Pure policy; preserves the ordinary automatic image-gather feature policy.
++EnabledDeviceFeatures SelectDeviceFeatures(const DeviceFeatureRequirements &,
++                                           const DeviceFeatureSupport &);
 +struct BufferBinding {
 +  uint64_t native_buffer = 0, offset = 0, size = 0;
 +};
@@ -2688,6 +2824,11 @@ index 0000000000000000000000000000000000000000..b28c44c8a0e8bf910d219e0d44c41ca6
 +class VulkanDevice {
 +public:
 +  explicit VulkanDevice(DeviceOptions options = {});
++  VulkanDevice(DeviceOptions, const DeviceFeatureRequirements &);
++  DeviceFeatureCapabilities GetFeatureCapabilities() const;
++  // Internal shared resource boundary; all FrameImages use this device-wide budget.
++  void RetainCustomBorderSampler();
++  void ReleaseCustomBorderSampler();
 +  ~VulkanDevice();
 +  VulkanDevice(const VulkanDevice &) = delete;
 +  VulkanDevice &operator=(const VulkanDevice &) = delete;
@@ -4623,10 +4764,10 @@ index 0000000000000000000000000000000000000000..e64f1d70eb68b470a65d9e6e977ab4d0
 +} // namespace native
 diff --git a/native-runtime/nvn/CMakeLists.txt b/native-runtime/nvn/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..d450cc6b9b05d7cb7500e3fdb95fe29eec88dfe7
+index 0000000000000000000000000000000000000000..e1fed90a963c5632a3626429fba7e53ec6337a47
 --- /dev/null
 +++ b/native-runtime/nvn/CMakeLists.txt
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,76 @@
 +cmake_minimum_required(VERSION 3.22)
 +if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 +  project(native_nvn_resources LANGUAGES CXX)
@@ -4692,12 +4833,23 @@ index 0000000000000000000000000000000000000000..d450cc6b9b05d7cb7500e3fdb95fe29e
 +target_link_libraries(native_nvn_presentation_conversion_test PRIVATE native_nvn_presentation)
 +add_test(NAME native_nvn_presentation_conversion COMMAND native_nvn_presentation_conversion_test)
 +set_tests_properties(native_nvn_presentation_conversion PROPERTIES TIMEOUT 30)
++
++# Entirely authored extended-format/state fixtures; GPU mode is explicit.
++add_executable(native_nvn_feature_format_test feature_format_test.cpp)
++target_include_directories(native_nvn_feature_format_test SYSTEM PRIVATE "${NATIVE_GRAPHICS_SIRIT_ROOT}/include")
++target_link_libraries(native_nvn_feature_format_test PRIVATE native_nvn_resources "${NATIVE_GRAPHICS_SIRIT_ROOT}/lib/sirit-static.lib")
++if(MSVC)
++ target_compile_options(native_nvn_feature_format_test PRIVATE /W4 /WX /analyze /analyze:external- /utf-8)
++endif()
++add_test(NAME native_nvn_feature_format_cpu COMMAND native_nvn_feature_format_test --cpu-only)
++set_tests_properties(native_nvn_feature_format_cpu PROPERTIES TIMEOUT 30)
++# --gpu is intentionally outside default CTest; run only after source/fixture review.
 diff --git a/native-runtime/nvn/README.md b/native-runtime/nvn/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..a14b90d471c5b6f95d46242682dae27eaae70c61
+index 0000000000000000000000000000000000000000..cdfbff37a4de7370213d94830f620076ab3ea715
 --- /dev/null
 +++ b/native-runtime/nvn/README.md
-@@ -0,0 +1,280 @@
+@@ -0,0 +1,303 @@
 +# Native NVN resource ownership
 +
 +`Resources` owns logical device, pool and buffer objects keyed by aligned guest
@@ -4978,6 +5130,29 @@ index 0000000000000000000000000000000000000000..a14b90d471c5b6f95d46242682dae27e
 +Scoped MSVC W4/analyze/EHsc is clean for the changed units; inherited resource-pin
 +initializer C4244 diagnostics remain separate. Rebuilt affected native_graphics,
 +shader_module_check, BufferInit and Window test consumers accompany the change.
++
++
++## Generic optional features, formats and draw options
++
++Existing DeviceOptions, VulkanHandles, DrawDescription, ViewDescription and SamplerDescription layouts/defaults are preserved. An additive VulkanDevice/Resources creation overload takes DeviceFeatureRequirements. DeviceFeatureCapabilities separates physically supported from actually enabled named features; extended_features_queried=false means extension support is unknown. Unknown required support declines. The ordinary image-gather enablement policy remains intact, including reporting it when no new feature was requested. Optional features are never silently weakened. Explicit requirements with presentation remain unsupported in this slice; ordinary presentation is unchanged.
++
++The added named features are core robustBufferAccess, textureCompressionBC, customBorderColors/without-format, depthClipControl and provokingVertexLast. Query and enable structures are separate; unrelated supported feature bits are not enabled. Custom-border sampler allocations share the actual queried maxCustomBorderColorSamplers budget across all FrameImages on the device, reserve before creation and release on failure/destruction on the owner thread.
++
++ImageFormat adds exact A8B8G8R8_SRGB_PACK32 and BC4_UNORM_BLOCK mappings. CheckedImageFootprint uses checked block columns, block rows and byte counts for allocation budgets, physical backing intervals, full-subresource transfer and typed readback. ImageReadback.row_bytes denotes a block row for compressed formats; its width/height remain texels. Legacy ImageBytesPerTexel and RGBA8 Readback explicitly decline BC4. Compressed color targets are unsupported. Source bytes stay compressed; sRGB sampling and linear alpha follow the Vulkan format rather than a substituted float image.
++
++ViewOptions carries an optional typed ImageUsage subset. Explicit usage requires usable Vulkan 1.1 (the lower of requested application and physical-device versions); ordinary API 1.0 devices retain empty/no-options views and decline explicit overrides before Vulkan image-view creation. No maintenance2 extension or higher API is silently enabled. Unknown/zero/out-of-image bits decline; stored effective usage is checked when a view is sampled or used as an attachment. SamplerOptions carries optional caller-provided normalized float custom-border color and an optional matching typed format; absent format requires the enabled without-format feature. Format mismatch, nonfinite/out-of-range color and missing capability decline. Options are copied, not borrowed. Existing Repeat/ClampToEdge support proves creation/unused-border behavior; ClampToBorder sampling is not introduced. See the [Khronos custom-border reference](https://docs.vulkan.org/refpages/latest/refpages/source/VkSamplerCustomBorderColorCreateInfoEXT.html).
++
++DrawOptions independently selects ZeroToOne/MinusOneToOne NDC depth range and First/Last provoking vertex. DrawWithOptions and direct WithOptions adapters reuse the ordinary backend and immutable record/pin/fence rules. Required options use actually enabled features. Old draw entrypoints retain their original fixed-function defaults. This does not alter caller SPIR-V to match an NDC choice; module semantics remain the caller's responsibility.
++
++All old/new draw paths retain full-declared-block UBO validation. Core robustBufferAccess does not waive it. ValidateProgramUniformRanges exposes the same pure reflection/range check used by submission preflight. No active-range exception, trusted Boolean or fabricated padding is supported.
++
++### Authored feature/format fixture
++
++`native_nvn_feature_format_test --cpu-only` is the default and creates no Vulkan device/window. It tests footprint overflow, both BC4 endpoint orderings and all selectors, known/unknown/supported/enabled feature matrices, all four NDC/provoking combinations, view/custom-border validation and authored declared128B/bound80B UBO rejection. It generates its own modules with existing Sirit; no cache/application inputs are read.
++
++`--gpu` is a separate explicit hardware validation mode, intentionally excluded from default CTest. Run it only after source/fixture review under the hardware owner. It exercises nonuniform partial-block5x7 BC4 upload/nearest and bilinear sampling, packed-sRGB transfer/sampling with breakpoint-adjacent/intermediate channels and linear alpha, swizzles/orientation, independent NDC/provoking output, immutable options/program/UBO records, three descriptors, strict range rejection through old/new APIs, Load/write masks and metadata/usage failures. BC4 comparison permits two UNORM8 steps for decode/filter/target precision; sRGB sampling and blend comparisons permit one; flat-state results, masked alpha and untouched LOAD bytes are exact. Breakpoint-adjacent sRGB checks measure quantized UNORM8 output; their one-step tolerance does not establish branch or floating-point precision. These tolerances are fixed before hardware execution. Missing required support is a named failure, not a successful test or weaker fallback.
++
++No hardware execution result is asserted by this source addition. Publication requires fresh recorded hardware evidence. All fixtures/data are authored synthetic content. No application rendering, full frame, SDK Device admission, presentation or performance conclusion follows.
 diff --git a/native-runtime/nvn/buffer_init.cpp b/native-runtime/nvn/buffer_init.cpp
 new file mode 100644
 index 0000000000000000000000000000000000000000..e393dc366b8fe4e1e649470281ed55991f563951
@@ -5237,10 +5412,10 @@ index 0000000000000000000000000000000000000000..a8ee0f56136bdfeb9add9bfa2f1fc638
 +original reference bodies remain outside this source tree.
 diff --git a/native-runtime/nvn/draw.cpp b/native-runtime/nvn/draw.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..d63de047380e08ebc14d977de87c09c2ef524e60
+index 0000000000000000000000000000000000000000..753e6215fe0436ebe5a83297a7ae3fb0b4d8c567
 --- /dev/null
 +++ b/native-runtime/nvn/draw.cpp
-@@ -0,0 +1,1288 @@
+@@ -0,0 +1,1358 @@
 +#include "draw.h"
 +#define WIN32_LEAN_AND_MEAN
 +#define NOMINMAX
@@ -5516,7 +5691,9 @@ index 0000000000000000000000000000000000000000..d63de047380e08ebc14d977de87c09c2
 +void Validate(Resources &resources, GuestAddress device,
 +              const ProgramDescription &program, const DrawDescription &draw,
 +              std::span<const NativeSample> native_samples = {},
-+              ImageFormat target_format = ImageFormat::Rgba8Unorm) {
++              ImageFormat target_format = ImageFormat::Rgba8Unorm,
++              const DrawOptions *options = nullptr) {
++  if (options) ValidateDrawOptions(*options, resources.Backend(device).GetFeatureCapabilities().enabled);
 +  const auto native = resources.Backend(device).GetNativeHandles();
 +  Owned owner;
 +  VkPhysicalDeviceProperties limits{};
@@ -5648,18 +5825,7 @@ index 0000000000000000000000000000000000000000..d63de047380e08ebc14d977de87c09c2
 +      throw std::runtime_error("Descriptor kind unsupported");
 +    Need(matches == 1, "Missing/duplicate descriptor resource");
 +  }
-+  for (auto stage : {ShaderStage::Vertex, ShaderStage::Fragment}) {
-+    const auto minimum = ValidateShader(
-+        stage == ShaderStage::Vertex ? program.vertex : program.fragment, stage,
-+        program.set0,
-+        resources.Backend(device)
-+            .GetNativeHandles()
-+            .enabled_shader_image_gather_extended);
-+    for (const auto &[binding, size] : minimum)
-+      for (const auto &uniform : draw.uniforms)
-+        if (uniform.binding == binding)
-+          Need(uniform.size >= size, "Uniform range smaller than shader block");
-+  }
++  ValidateProgramUniformRanges(program, draw.uniforms, resources.Backend(device).GetNativeHandles().enabled_shader_image_gather_extended);
 +}
 +
 +} // namespace
@@ -5671,13 +5837,68 @@ index 0000000000000000000000000000000000000000..d63de047380e08ebc14d977de87c09c2
 +    return 2;
 +  case ImageFormat::Rgba8Unorm:
 +  case ImageFormat::Rgba8Srgb:
++  case ImageFormat::A8B8G8R8Srgb:
 +  case ImageFormat::A2B10G10R10Unorm:
 +    return 4;
 +  }
 +  throw std::runtime_error("Unsupported image format");
 +}
++ImageFootprint CheckedImageFootprint(ImageFormat format, uint32_t width, uint32_t height) {
++  Need(width && height, "Empty image extent");
++  // Widen BEFORE ceil-block addition; all uint32 input +3 sums fit uint64.
++  const uint64_t columns = format == ImageFormat::BC4Unorm ? (uint64_t(width) + 3) / 4 : width;
++  const uint64_t rows = format == ImageFormat::BC4Unorm ? (uint64_t(height) + 3) / 4 : height;
++  const uint64_t block = format == ImageFormat::BC4Unorm ? 8 : ImageBytesPerTexel(format);
++  Need(columns <= UINT64_MAX / block, "Image row overflow");
++  const uint64_t row = columns * block;
++  Need(rows <= UINT64_MAX / row && row * rows <= SIZE_MAX, "Image footprint overflow");
++  return {row, rows, row * rows};
++}
++void ValidateImageFormatUsage(ImageFormat format, uint32_t usage) {
++  Need(usage && !(usage & ~15u), "Unsupported image usage bits");
++  (void)NativeImageFormat(format);
++  Need(format != ImageFormat::BC4Unorm || !(usage & ColorTarget), "Compressed color attachment unsupported");
++}
++uint32_t NativeImageUsage(uint32_t usage) {
++  Need(usage && !(usage & ~15u), "Unsupported image usage bits");
++  VkImageUsageFlags flags = 0;
++  if (usage & ColorTarget) flags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
++  if (usage & Sampled) flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
++  if (usage & TransferSource) flags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
++  if (usage & TransferDestination) flags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
++  return flags;
++}
++void ValidateDrawOptions(const DrawOptions &options, const native_graphics::EnabledDeviceFeatures &enabled) {
++  Need(options.depth_range == NdcDepthRange::ZeroToOne || options.depth_range == NdcDepthRange::MinusOneToOne,
++       "Unknown NDC depth range");
++  Need(options.provoking_vertex == ProvokingVertex::First || options.provoking_vertex == ProvokingVertex::Last,
++       "Unknown provoking vertex");
++  Need(options.depth_range != NdcDepthRange::MinusOneToOne || enabled.depth_clip_control,
++       "Depth clip control was not enabled");
++  Need(options.provoking_vertex != ProvokingVertex::Last || enabled.provoking_vertex_last,
++       "Last provoking vertex was not enabled");
++}
++void ValidateProgramUniformRanges(const ProgramDescription &program, std::span<const UniformBinding> uniforms,
++                                  bool enabled_gather) {
++  for (auto stage : {ShaderStage::Vertex, ShaderStage::Fragment}) {
++    const auto minimum = ValidateShader(stage == ShaderStage::Vertex ? program.vertex : program.fragment,
++                                        stage, program.set0, enabled_gather);
++    for (const auto &[binding, size] : minimum) {
++      size_t matches = 0;
++      for (const auto &uniform : uniforms) if (uniform.binding == binding) {
++        Need(uniform.size >= size, "Uniform range smaller than shader block");
++        ++matches;
++      }
++      Need(matches == 1, "Missing or duplicate uniform range");
++    }
++  }
++}
 +uint32_t NativeImageFormat(ImageFormat f) {
 +  switch (f) {
++  case ImageFormat::A8B8G8R8Srgb:
++    return VK_FORMAT_A8B8G8R8_SRGB_PACK32;
++  case ImageFormat::BC4Unorm:
++    return VK_FORMAT_BC4_UNORM_BLOCK;
 +  case ImageFormat::R8Unorm:
 +    return VK_FORMAT_R8_UNORM;
 +  case ImageFormat::Rg8Unorm:
@@ -5732,6 +5953,8 @@ index 0000000000000000000000000000000000000000..d63de047380e08ebc14d977de87c09c2
 +}
 +ImageSupport QueryImageSupport(Resources &r, GuestAddress key, ImageFormat f,
 +                               uint32_t usage) {
++  ValidateImageFormatUsage(f, usage);
++  if (f == ImageFormat::BC4Unorm) Need(r.Backend(key).GetFeatureCapabilities().enabled.texture_compression_bc, "BC compression was not enabled");
 +  return QueryFormatSupport(r, key, VkFormat(NativeImageFormat(f)), usage);
 +}
 +uint32_t NativePresentationFormat(PresentationFormat f) {
@@ -5834,10 +6057,11 @@ index 0000000000000000000000000000000000000000..d63de047380e08ebc14d977de87c09c2
 +               const ProgramDescription &program, const DrawDescription &draw,
 +               bool pipeline_only, const NativeTarget *target = nullptr,
 +               std::span<const NativeSample> native_samples = {},
-+               std::span<const UniformSnapshot> snapshots = {}) {
++               std::span<const UniformSnapshot> snapshots = {},
++               const DrawOptions *options = nullptr) {
 +  if (!pipeline_only)
 +    Validate(resources, device_key, program, draw, native_samples,
-+             target ? target->format : ImageFormat::Rgba8Unorm);
++             target ? target->format : ImageFormat::Rgba8Unorm, options);
 +  auto &backend = resources.Backend(device_key);
 +  const auto handles = backend.GetNativeHandles();
 +  if (target && target->presentation_format) {
@@ -6259,12 +6483,18 @@ index 0000000000000000000000000000000000000000..d63de047380e08ebc14d977de87c09c2
 +                   {draw.scissor.width, draw.scissor.height}};
 +  VkPipelineViewportStateCreateInfo vp{
 +      VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
++  VkPipelineViewportDepthClipControlCreateInfoEXT depth_range{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLIP_CONTROL_CREATE_INFO_EXT};
++  depth_range.negativeOneToOne = VK_TRUE;
++  if (options && options->depth_range == NdcDepthRange::MinusOneToOne) vp.pNext = &depth_range;
 +  vp.viewportCount = 1;
 +  vp.pViewports = &viewport;
 +  vp.scissorCount = 1;
 +  vp.pScissors = &scissor;
 +  VkPipelineRasterizationStateCreateInfo raster{
 +      VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
++  VkPipelineRasterizationProvokingVertexStateCreateInfoEXT provoking{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_PROVOKING_VERTEX_STATE_CREATE_INFO_EXT};
++  provoking.provokingVertexMode = VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT;
++  if (options && options->provoking_vertex == ProvokingVertex::Last) raster.pNext = &provoking;
 +  raster.polygonMode = VK_POLYGON_MODE_FILL;
 +  raster.cullMode = draw.raster.cull == CullFace::Back ? VK_CULL_MODE_BACK_BIT
 +                                                       : VK_CULL_MODE_NONE;
@@ -6509,6 +6739,21 @@ index 0000000000000000000000000000000000000000..d63de047380e08ebc14d977de87c09c2
 +                  ImageFormat target_format) {
 +  Validate(r, d, p, draw, samples, target_format);
 +}
++void ValidateDrawWithOptions(Resources &r, GuestAddress d, const ProgramDescription &p,
++                             const DrawDescription &draw, const DrawOptions &options,
++                             std::span<const NativeSample> samples, ImageFormat format) {
++  Validate(r, d, p, draw, samples, format, &options);
++}
++void DrawIntoTargetWithOptions(Resources &r, GuestAddress d, const ProgramDescription &p,
++                               const DrawDescription &draw, const DrawOptions &options, const NativeTarget &target,
++                               std::span<const NativeSample> samples, std::span<const UniformSnapshot> snapshots) {
++  BuildOffscreen(r, d, p, draw, false, &target, samples, snapshots, &options);
++}
++DrawResult DrawOffscreenWithOptions(Resources &r, GuestAddress d, const ProgramDescription &p,
++                                    const DrawDescription &draw, const DrawOptions &options) {
++  Need(draw.width <= 2048 && draw.height <= 2048, "Legacy fixture target size unsupported");
++  return BuildOffscreen(r, d, p, draw, false, nullptr, {}, {}, &options);
++}
 +void DrawIntoTarget(Resources &r, GuestAddress d, const ProgramDescription &p,
 +                    const DrawDescription &draw, const NativeTarget &target,
 +                    std::span<const NativeSample> samples,
@@ -6531,10 +6776,10 @@ index 0000000000000000000000000000000000000000..d63de047380e08ebc14d977de87c09c2
 +} // namespace native_nvn
 diff --git a/native-runtime/nvn/draw.h b/native-runtime/nvn/draw.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..1a4faf8091645616451e968ba7e7ebc4f74ebac1
+index 0000000000000000000000000000000000000000..45642509f533917da3b703d8c018a8770a92b670
 --- /dev/null
 +++ b/native-runtime/nvn/draw.h
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,203 @@
 +#pragma once
 +#include "resources.h"
 +#include <array>
@@ -6567,7 +6812,9 @@ index 0000000000000000000000000000000000000000..1a4faf8091645616451e968ba7e7ebc4
 +  R8Unorm,
 +  Rg8Unorm,
 +  Rgba8Srgb,
-+  A2B10G10R10Unorm
++  A2B10G10R10Unorm,
++  A8B8G8R8Srgb,
++  BC4Unorm
 +};
 +enum ImageUsage : uint32_t {
 +  ColorTarget = 1,
@@ -6576,6 +6823,10 @@ index 0000000000000000000000000000000000000000..1a4faf8091645616451e968ba7e7ebc4
 +  TransferDestination = 8
 +};
 +uint32_t ImageBytesPerTexel(ImageFormat);
++struct ImageFootprint { uint64_t row_bytes, rows, bytes; };
++ImageFootprint CheckedImageFootprint(ImageFormat, uint32_t width, uint32_t height);
++void ValidateImageFormatUsage(ImageFormat, uint32_t usage);
++uint32_t NativeImageUsage(uint32_t usage);
 +uint32_t NativeImageFormat(ImageFormat); // Internal Vulkan format mapping.
 +struct ImageSupport {
 +  uint32_t max_width = 0, max_height = 0;
@@ -6617,6 +6868,14 @@ index 0000000000000000000000000000000000000000..1a4faf8091645616451e968ba7e7ebc4
 +  bool depth_test = false, depth_write = false, stencil = false,
 +       depth_bias = false, discard = false;
 +};
++enum class NdcDepthRange { ZeroToOne, MinusOneToOne };
++enum class ProvokingVertex { First, Last };
++// Separate additive options keep DrawDescription and its ordinary defaults intact.
++struct DrawOptions {
++  NdcDepthRange depth_range = NdcDepthRange::ZeroToOne;
++  ProvokingVertex provoking_vertex = ProvokingVertex::First;
++};
++void ValidateDrawOptions(const DrawOptions &, const native_graphics::EnabledDeviceFeatures &);
 +enum class ViewportOrientation { PositiveY, InvertY };
 +enum class Topology { Triangles, TriangleStrip };
 +enum class Blend { Disabled, SourceAlpha };
@@ -6686,6 +6945,17 @@ index 0000000000000000000000000000000000000000..1a4faf8091645616451e968ba7e7ebc4
 +  uintptr_t wait_semaphore = 0, signal_semaphore = 0;
 +  std::function<void()> pump;
 +};
++// Pure reflection/range preflight. Core robustness never relaxes this policy.
++void ValidateProgramUniformRanges(const ProgramDescription &, std::span<const UniformBinding>,
++                                  bool enabled_image_gather_extended);
++void ValidateDrawWithOptions(Resources &, GuestAddress, const ProgramDescription &, const DrawDescription &,
++                             const DrawOptions &, std::span<const NativeSample> = {},
++                             ImageFormat target_format = ImageFormat::Rgba8Unorm);
++void DrawIntoTargetWithOptions(Resources &, GuestAddress, const ProgramDescription &, const DrawDescription &,
++                               const DrawOptions &, const NativeTarget &, std::span<const NativeSample>,
++                               std::span<const UniformSnapshot>);
++DrawResult DrawOffscreenWithOptions(Resources &, GuestAddress, const ProgramDescription &, const DrawDescription &,
++                                    const DrawOptions &);
 +void ValidateDraw(Resources &, GuestAddress, const ProgramDescription &,
 +                  const DrawDescription &, std::span<const NativeSample> = {},
 +                  ImageFormat target_format = ImageFormat::Rgba8Unorm);
@@ -6936,12 +7206,355 @@ index 0000000000000000000000000000000000000000..af3bf034c96ccc98fd54367206066a30
 +    return 1;
 +  }
 +}
+diff --git a/native-runtime/nvn/feature_format_test.cpp b/native-runtime/nvn/feature_format_test.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..6cec6d4b1a76f6d95119220cca9b92432ce073b9
+--- /dev/null
++++ b/native-runtime/nvn/feature_format_test.cpp
+@@ -0,0 +1,337 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Authored synthetic fixtures. CPU is the default; --gpu is an explicit hardware run.
++#include "frame.h"
++#include <sirit/sirit.h>
++#include <algorithm>
++#include <array>
++#include <cmath>
++#include <cstring>
++#include <functional>
++#include <iostream>
++#include <iomanip>
++#include <limits>
++#include <string>
++using namespace native_nvn;
++namespace {
++size_t checks = 0, draws = 0, compared_pixels = 0;
++void Check(bool value, const char *message) {
++  ++checks;
++  if (!value) throw std::runtime_error(message);
++}
++template<class F> void Reject(F &&f) {
++  bool rejected = false;
++  try { f(); } catch (const std::runtime_error &) { rejected = true; }
++  Check(rejected, "Expected explicit unsupported/preflight rejection");
++}
++template<class F> void RejectRange(F &&f) {
++  bool rejected = false;
++  try { f(); } catch (const std::runtime_error &error) {
++    Check(std::string(error.what()).find("Uniform range smaller than shader block") != std::string::npos,
++          "Short UBO failed for an unrelated reason");
++    rejected = true;
++  }
++  Check(rejected, "Short UBO was accepted");
++}
++int Quantize(double v) { return int(std::lround(std::clamp(v, 0.0, 1.0) * 255.0)); }
++double DecodeSrgb(unsigned byte) {
++  const double encoded = double(byte) / 255.0;
++  return encoded <= 0.04045 ? encoded / 12.92 : std::pow((encoded + 0.055) / 1.055, 2.4);
++}
++// Independent BC4 reference: no production footprint/decoder helper is used.
++double DecodeBc4(const std::byte *block, unsigned texel) {
++  if (!block || texel >= 16) throw std::runtime_error("BC4 oracle input bounds");
++  const unsigned a = unsigned(block[0]), b = unsigned(block[1]);
++  std::array<double, 8> palette{};
++  palette[0] = double(a) / 255; palette[1] = double(b) / 255;
++  if (a > b) {
++    for (unsigned n = 2; n < 8; ++n)
++      palette[n] = double((8 - n) * a + (n - 1) * b) / (7 * 255);
++  } else {
++    for (unsigned n = 2; n < 6; ++n)
++      palette[n] = double((6 - n) * a + (n - 1) * b) / (5 * 255);
++    palette[6] = 0; palette[7] = 1;
++  }
++  uint64_t selectors = 0;
++  for (unsigned n = 0; n < 6; ++n) selectors |= uint64_t(block[n + 2]) << (8 * n);
++  const auto selector = size_t((selectors >> (3 * texel)) & uint64_t{7});
++  if (selector >= palette.size()) throw std::runtime_error("BC4 oracle selector bounds");
++  return palette[selector];
++}
++std::vector<std::byte> Bc4Data() {
++  std::vector<std::byte> bytes(32);
++  const std::array<std::array<unsigned,2>,4> endpoints{{{220,20},{15,210},{35,180},{245,75}}};
++  for (size_t block = 0; block < 4; ++block) {
++    bytes[block * 8] = std::byte(endpoints[block][0]);
++    bytes[block * 8 + 1] = std::byte(endpoints[block][1]);
++    uint64_t packed = 0;
++    for (unsigned n = 0; n < 16; ++n) packed |= uint64_t(n % 8) << (3 * n);
++    for (unsigned n = 0; n < 6; ++n) bytes[block * 8 + n + 2] = std::byte((packed >> (8 * n)) & 255);
++  }
++  return bytes;
++}
++std::vector<std::byte> SrgbData() {
++  // Both sides of the encoded sRGB transfer breakpoint, intermediate RGB and LINEAR alpha.
++  constexpr std::array<unsigned,24> values{0,10,11,13, 12,64,128,64, 255,8,127,127,
++                                         32,192,240,200, 11,10,9,240, 128,255,64,255};
++  std::vector<std::byte> bytes;
++  for (unsigned v : values) bytes.push_back(std::byte(v));
++  return bytes;
++}
++enum class Fragment { Sample, Flat, Uniform, Combined, Constant };
++std::vector<uint32_t> Vertex(bool flat, float z) {
++  Sirit::Module m(0x00010000);
++  m.AddCapability(spv::Capability::Shader);
++  m.SetMemoryModel(spv::AddressingModel::Logical, spv::MemoryModel::GLSL450);
++  const auto f=m.TypeFloat(32), v=m.TypeVector(f,4), integer=m.TypeInt(32,true);
++  const auto position=m.AddGlobalVariable(m.TypePointer(spv::StorageClass::Output,v),spv::StorageClass::Output);
++  m.Decorate(position,spv::Decoration::BuiltIn,spv::BuiltIn::Position);
++  const auto index=m.AddGlobalVariable(m.TypePointer(spv::StorageClass::Input,integer),spv::StorageClass::Input);
++  m.Decorate(index,spv::Decoration::BuiltIn,spv::BuiltIn::VertexIndex);
++  const auto varying=m.AddGlobalVariable(m.TypePointer(spv::StorageClass::Output,v),spv::StorageClass::Output);
++  m.Decorate(varying,spv::Decoration::Location,0u);
++  if(flat)m.Decorate(varying,spv::Decoration::Flat);
++  const auto zero=m.Constant(f,0.f),one=m.Constant(f,1.f),minus=m.Constant(f,-1.f),three=m.Constant(f,3.f),half=m.Constant(f,.5f);
++  const auto iz=m.Constant(integer,0),io=m.Constant(integer,1),it=m.Constant(integer,2);
++  const auto fn=m.OpFunction(m.TypeVoid(),spv::FunctionControlMask::MaskNone,m.TypeFunction(m.TypeVoid()));m.AddLabel();
++  const auto id=m.OpLoad(integer,index);
++  const auto x=m.OpSelect(f,m.OpIEqual(m.TypeBool(),id,io),three,minus);
++  const auto y=m.OpSelect(f,m.OpIEqual(m.TypeBool(),id,it),three,minus);
++  m.OpStore(position,m.OpCompositeConstruct(v,x,y,m.Constant(f,z),one));
++  if(flat) m.OpStore(varying,m.OpCompositeConstruct(v,
++      m.OpSelect(f,m.OpIEqual(m.TypeBool(),id,iz),one,zero),
++      m.OpSelect(f,m.OpIEqual(m.TypeBool(),id,io),one,zero),
++      m.OpSelect(f,m.OpIEqual(m.TypeBool(),id,it),one,zero),one));
++  else m.OpStore(varying,m.OpCompositeConstruct(v,m.OpFAdd(f,m.OpFMul(f,x,half),half),m.OpFAdd(f,m.OpFMul(f,y,half),half),zero,one));
++  m.OpReturn();m.OpFunctionEnd();m.AddEntryPoint(spv::ExecutionModel::Vertex,fn,"main",index,position,varying);
++  return m.Assemble();
++}
++std::vector<uint32_t> Pixel(Fragment kind, std::array<float,4> color={.6f,.2f,.8f,.5f}) {
++  Sirit::Module m(0x00010000);m.AddCapability(spv::Capability::Shader);
++  m.SetMemoryModel(spv::AddressingModel::Logical,spv::MemoryModel::GLSL450);
++  const auto f=m.TypeFloat(32),v=m.TypeVector(f,4),v2=m.TypeVector(f,2),u=m.TypeInt(32,false);
++  const auto out=m.AddGlobalVariable(m.TypePointer(spv::StorageClass::Output,v),spv::StorageClass::Output);
++  m.Decorate(out,spv::Decoration::Location,0u);
++  Sirit::Id input{},ubo{},uniform_pointer{},sampled_type{};std::array<Sirit::Id,2> textures{};
++  if(kind==Fragment::Sample||kind==Fragment::Flat||kind==Fragment::Combined){
++    input=m.AddGlobalVariable(m.TypePointer(spv::StorageClass::Input,v),spv::StorageClass::Input);m.Decorate(input,spv::Decoration::Location,0u);
++    if(kind==Fragment::Flat)m.Decorate(input,spv::Decoration::Flat);
++  }
++  if(kind==Fragment::Uniform||kind==Fragment::Combined){
++    const auto array=m.TypeArray(v,m.Constant(u,8u));m.Decorate(array,spv::Decoration::ArrayStride,16u);
++    const auto block=m.TypeStruct(array);m.Decorate(block,spv::Decoration::Block);m.MemberDecorate(block,0u,spv::Decoration::Offset,0u);
++    ubo=m.AddGlobalVariable(m.TypePointer(spv::StorageClass::Uniform,block),spv::StorageClass::Uniform);m.Decorate(ubo,spv::Decoration::DescriptorSet,0u);m.Decorate(ubo,spv::Decoration::Binding,4u);
++    uniform_pointer=m.TypePointer(spv::StorageClass::Uniform,v);
++  }
++  if(kind==Fragment::Sample||kind==Fragment::Combined){
++    const auto image=m.TypeImage(f,spv::Dim::Dim2D,0,false,false,1,spv::ImageFormat::Unknown);sampled_type=m.TypeSampledImage(image);
++    const size_t count=kind==Fragment::Combined?2:1;
++    for(size_t n=0;n<count;++n){textures[n]=m.AddGlobalVariable(m.TypePointer(spv::StorageClass::UniformConstant,sampled_type),spv::StorageClass::UniformConstant);m.Decorate(textures[n],spv::Decoration::DescriptorSet,0u);m.Decorate(textures[n],spv::Decoration::Binding,5u+uint32_t(n));}
++  }
++  const auto zero=m.Constant(u,0u);
++  const auto fn=m.OpFunction(m.TypeVoid(),spv::FunctionControlMask::MaskNone,m.TypeFunction(m.TypeVoid()));m.AddLabel();
++  Sirit::Id value{};
++  if(kind==Fragment::Flat)value=m.OpLoad(v,input);
++  else if(kind==Fragment::Constant)value=m.ConstantComposite(v,m.Constant(f,color[0]),m.Constant(f,color[1]),m.Constant(f,color[2]),m.Constant(f,color[3]));
++  else {
++    Sirit::Id uniform{},a{},b{};
++    if(kind==Fragment::Uniform||kind==Fragment::Combined)uniform=m.OpLoad(v,m.OpAccessChain(uniform_pointer,ubo,zero,zero));
++    if(kind==Fragment::Sample||kind==Fragment::Combined){
++      const auto coord=m.OpLoad(v,input);const auto uv=m.OpCompositeConstruct(v2,m.OpCompositeExtract(f,coord,0u),m.OpCompositeExtract(f,coord,1u));
++      a=m.OpImageSampleImplicitLod(v,m.OpLoad(sampled_type,textures[0]),uv);
++      if(kind==Fragment::Combined)b=m.OpImageSampleImplicitLod(v,m.OpLoad(sampled_type,textures[1]),uv);
++    }
++    if(kind==Fragment::Uniform)value=uniform;
++    else if(kind==Fragment::Sample)value=a;
++    else {const auto q=m.Constant(f,.25f),h=m.Constant(f,.5f);const auto qv=m.ConstantComposite(v,q,q,q,q),hv=m.ConstantComposite(v,h,h,h,h);value=m.OpFAdd(v,m.OpFMul(v,uniform,hv),m.OpFMul(v,m.OpFAdd(v,a,b),qv));}
++  }
++  m.OpStore(out,value);m.OpReturn();m.OpFunctionEnd();
++  if(kind==Fragment::Sample||kind==Fragment::Flat||kind==Fragment::Combined)m.AddEntryPoint(spv::ExecutionModel::Fragment,fn,"main",input,out);
++  else m.AddEntryPoint(spv::ExecutionModel::Fragment,fn,"main",out);
++  m.AddExecutionMode(fn,spv::ExecutionMode::OriginUpperLeft);return m.Assemble();
++}
++struct Program {
++  std::vector<uint32_t> vertex,fragment;std::vector<DescriptorPlan> plan;
++  Program(Fragment kind,float z=0):vertex(Vertex(kind==Fragment::Flat,z)),fragment(Pixel(kind)){
++    if(kind==Fragment::Uniform||kind==Fragment::Combined)plan.push_back({4,DescriptorKind::UniformBuffer,ShaderStage::Fragment});
++    if(kind==Fragment::Sample||kind==Fragment::Combined)plan.push_back({5,DescriptorKind::CombinedImageSampler2D,ShaderStage::Fragment});
++    if(kind==Fragment::Combined)plan.push_back({6,DescriptorKind::CombinedImageSampler2D,ShaderStage::Fragment});
++  }
++  ProgramDescription Description()const{return{vertex,fragment,plan};}
++};
++void Cpu() {
++  static_assert(uint32_t(ImageFormat::Rgba8Unorm)==0&&uint32_t(ImageFormat::A2B10G10R10Unorm)==4);
++  Check(NativeImageFormat(ImageFormat::A8B8G8R8Srgb)==57&&NativeImageFormat(ImageFormat::BC4Unorm)==139,"Exact standard format mapping");
++  for(auto size:std::array<std::array<uint32_t,2>,5>{{{1,1},{5,7},{4,8},{13,3},{8,4}}}){
++    const auto p=CheckedImageFootprint(ImageFormat::BC4Unorm,size[0],size[1]);
++    const uint64_t columns=size[0]/4+(size[0]%4!=0),rows=size[1]/4+(size[1]%4!=0);
++    Check(p.row_bytes==columns*8&&p.rows==rows&&p.bytes==columns*rows*8,"Independent block footprint");
++  }
++  Check(CheckedImageFootprint(ImageFormat::A8B8G8R8Srgb,3,2).bytes==24,"Packed sRGB footprint");
++  Reject([]{CheckedImageFootprint(ImageFormat::Rgba8Unorm,UINT32_MAX,UINT32_MAX);});Reject([]{CheckedImageFootprint(ImageFormat::BC4Unorm,0,1);});Reject([]{ImageBytesPerTexel(ImageFormat::BC4Unorm);});Reject([]{CheckedImageFootprint(ImageFormat(999),1,1);});
++  Reject([]{ValidateImageFormatUsage(ImageFormat::BC4Unorm,ColorTarget|Sampled);});Reject([]{ValidateImageFormatUsage(ImageFormat::Rgba8Unorm,32);});
++  Check(NativeImageUsage(ColorTarget)==0x10&&NativeImageUsage(Sampled)==4&&NativeImageUsage(TransferSource)==1&&NativeImageUsage(TransferDestination)==2,"Standard Vulkan usage bits");
++  const auto data=Bc4Data();std::array<std::array<bool,8>,2> seen{};
++  for(unsigned y=0;y<7;++y)for(unsigned x=0;x<5;++x){const auto block=(y/4)*2+x/4;const auto local=(y%4)*4+x%4;const bool order=unsigned(data[block*8])>unsigned(data[block*8+1]);seen[order?1:0][local%8]=true;const double v=DecodeBc4(data.data()+block*8,local);Check(v>=0&&v<=1,"BC4 oracle range");}
++  for(const auto &order:seen)for(bool selector:order)Check(selector,"All selectors in both endpoint orderings");
++  Check(DecodeBc4(data.data()+16,6)==0&&DecodeBc4(data.data()+16,7)==1,"BC4 special zero/one entries");
++  Check(std::abs(DecodeSrgb(10)-(10.0/255/12.92))<1e-12&&DecodeSrgb(11)>DecodeSrgb(10),"sRGB breakpoint neighbors");
++  Check(std::abs(DecodeSrgb(128)-.21586050011389926)<1e-12,"Independent intermediate sRGB value");
++  native_graphics::DeviceFeatureSupport support{true,true,true,true,true,true,true,true};
++  native_graphics::DeviceFeatureRequirements all{true,true,true,true,true,true,true};
++  const auto enabled=native_graphics::SelectDeviceFeatures(all,support);Check(enabled.robust_buffer_access&&enabled.texture_compression_bc&&enabled.provoking_vertex_last,"Requested feature selection");
++  const auto ordinary=native_graphics::SelectDeviceFeatures({},support);Check(ordinary.shader_image_gather_extended&&!ordinary.robust_buffer_access&&!ordinary.depth_clip_control&&!ordinary.provoking_vertex_last,"Old gather default without unrequested bits");
++  auto unknown=support;unknown.extended_features_queried=false;Reject([&]{native_graphics::SelectDeviceFeatures(all,unknown);});
++  native_graphics::DeviceFeatureRequirements core_only;core_only.robust_buffer_access=true;core_only.texture_compression_bc=true;
++  Check(native_graphics::SelectDeviceFeatures(core_only,unknown).robust_buffer_access,"Core support stays known without extension query");
++  for(unsigned n=0;n<4;++n){native_graphics::DeviceFeatureRequirements required;if(n==0)required.custom_border_colors=true;if(n==1){required.custom_border_colors=true;required.custom_border_without_format=true;}if(n==2)required.depth_clip_control=true;if(n==3)required.provoking_vertex_last=true;Reject([&]{native_graphics::SelectDeviceFeatures(required,unknown);});}
++  for(unsigned n=0;n<7;++n){auto missing=support;if(n==0)missing.robust_buffer_access=false;if(n==1)missing.texture_compression_bc=false;if(n==2)missing.custom_border_colors=false;if(n==3)missing.custom_border_without_format=false;if(n==4)missing.depth_clip_control=false;if(n==5)missing.provoking_vertex_last=false;if(n==6)missing.shader_image_gather_extended=false;Reject([&]{native_graphics::SelectDeviceFeatures(all,missing);});}
++  auto invalid=all;invalid.custom_border_colors=false;Reject([&]{native_graphics::SelectDeviceFeatures(invalid,support);});
++  for(auto depth:{NdcDepthRange::ZeroToOne,NdcDepthRange::MinusOneToOne})for(auto provoking:{ProvokingVertex::First,ProvokingVertex::Last}){
++    DrawOptions options{depth,provoking};ValidateDrawOptions(options,enabled);Check(true,"Independent state combination");
++    for(bool d:{false,true})for(bool p:{false,true}){auto e=enabled;e.depth_clip_control=d;e.provoking_vertex_last=p;const bool valid=(depth==NdcDepthRange::ZeroToOne||d)&&(provoking==ProvokingVertex::First||p);if(valid){ValidateDrawOptions(options,e);Check(true,"Enabled state matrix");}else Reject([&]{ValidateDrawOptions(options,e);});}
++  }
++  Reject([&]{ValidateDrawOptions({NdcDepthRange(999),ProvokingVertex::First},enabled);});Reject([&]{ValidateDrawOptions({NdcDepthRange::ZeroToOne,ProvokingVertex(999)},enabled);});
++  for(uint32_t mask=1;mask<16;++mask){ValidateViewOptions({mask},15);Check(NativeImageUsage(mask)!=0,"Typed usage mapping");}
++  constexpr uint32_t api10=1u<<22, api11=api10|(1u<<12), api12=api10|(2u<<12), api13=api10|(3u<<12);
++  for(auto physical:{api10,api11,api12,api13}) {
++    ValidateViewOptions({},Sampled,std::min(api10,physical));
++    Reject([&]{ValidateViewOptions({Sampled},Sampled,std::min(api10,physical));});
++  }
++  Reject([&]{ValidateViewOptions({Sampled},Sampled,std::min(api12,api10));});
++  for(auto usable:{api11,api12}) { ValidateViewOptions({Sampled},Sampled,usable); Check(true,"Supported explicit view usage"); }
++  ValidateViewOptions({},Sampled);Reject([]{ValidateViewOptions({0},15);});Reject([]{ValidateViewOptions({32},15);});Reject([]{ValidateViewOptions({ColorTarget},Sampled);});
++  SamplerOptions border; border.custom_border=CustomFloatBorder{{.125f,.375f,.625f,.875f},std::nullopt};ValidateSamplerOptions(border,enabled);Check(true,"Caller supplied custom border");
++  auto no_format=enabled;no_format.custom_border_without_format=false;Reject([&]{ValidateSamplerOptions(border,no_format);});border.custom_border->format=ImageFormat::Rgba8Unorm;ValidateSamplerOptions(border,no_format);Check(true,"Explicit border format");auto disabled=enabled;disabled.custom_border_colors=false;Reject([&]{ValidateSamplerOptions(border,disabled);});
++  for(float value:{-1.f,2.f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}){auto bad=border;bad.custom_border->color[2]=value;Reject([&]{ValidateSamplerOptions(bad,enabled);});}border.custom_border->format=ImageFormat(999);Reject([&]{ValidateSamplerOptions(border,enabled);});
++  Program uniform(Fragment::Uniform);ValidateProgram(uniform.Description(),ordinary.shader_image_gather_extended);
++  std::array<UniformBinding,1> binding{{{4,8,0,80}}};RejectRange([&]{ValidateProgramUniformRanges(uniform.Description(),binding,enabled.shader_image_gather_extended);});binding[0].size=128;ValidateProgramUniformRanges(uniform.Description(),binding,true);Check(true,"Full declared range passes");binding[0].binding=3;Reject([&]{ValidateProgramUniformRanges(uniform.Description(),binding,true);});
++  for(auto kind:{Fragment::Flat,Fragment::Sample,Fragment::Combined,Fragment::Constant}){Program p(kind);ValidateProgram(p.Description(),true);Check(p.plan.size()!=2,"Descriptor counts are authored zero/one/three");}
++}
++struct Memory {
++  std::array<std::byte,4096> bytes{};
++  static bool Read(void *u,GuestAddress address,std::span<std::byte> out){auto&m=*static_cast<Memory*>(u);if(address<4096||address-4096>m.bytes.size()||out.size()>m.bytes.size()-(address-4096))return false;std::memcpy(out.data(),m.bytes.data()+size_t(address-4096),out.size());return true;}
++  static bool Write(void *u,GuestAddress address,std::span<const std::byte> in){auto&m=*static_cast<Memory*>(u);if(address<4096||address-4096>m.bytes.size()||in.size()>m.bytes.size()-(address-4096))return false;std::memcpy(m.bytes.data()+size_t(address-4096),in.data(),in.size());return true;}
++};
++DrawDescription Draw(uint32_t width,uint32_t height){DrawDescription d;d.width=width;d.height=height;d.count=3;d.procedural_triangle=true;d.viewport.width=float(width);d.viewport.height=float(height);d.scissor={0,0,width,height};return d;}
++void Oracle(const ImageReadback &image,const std::function<std::array<double,4>(uint32_t,uint32_t)> &pixel,int tolerance){
++  Check(image.format==ImageFormat::Rgba8Unorm&&image.bytes.size()==uint64_t(image.width)*image.height*4,"Typed oracle target");
++  for(uint32_t y=0;y<image.height;++y)for(uint32_t x=0;x<image.width;++x){const auto expected=pixel(x,y);for(size_t c=0;c<4;++c){const auto actual=int(image.bytes[(size_t(y)*image.width+x)*4+c]);if(std::abs(actual-Quantize(expected[c]))>tolerance)throw std::runtime_error("Independent GPU oracle mismatch at "+std::to_string(x)+","+std::to_string(y)+" channel"+std::to_string(c)+" actual"+std::to_string(actual)+" expected"+std::to_string(Quantize(expected[c])));}++compared_pixels;}
++}
++template<class T> void PrintFeatures(const T &f) {
++  auto value=[](bool b){return b ? "true" : "false";};
++  std::cout << "{\"robust_buffer_access\":" << value(f.robust_buffer_access)
++    << ",\"texture_compression_bc\":" << value(f.texture_compression_bc)
++    << ",\"custom_border_colors\":" << value(f.custom_border_colors)
++    << ",\"custom_border_without_format\":" << value(f.custom_border_without_format)
++    << ",\"depth_clip_control\":" << value(f.depth_clip_control)
++    << ",\"provoking_vertex_last\":" << value(f.provoking_vertex_last)
++    << ",\"shader_image_gather_extended\":" << value(f.shader_image_gather_extended) << "}";
++}
++struct BorderReservations {
++  native_graphics::VulkanDevice &device;
++  uint32_t held = 0;
++  ~BorderReservations() { while (held) { device.ReleaseCustomBorderSampler(); --held; } }
++};
++void Gpu(){
++  Memory memory;Resources resources({&memory,Memory::Read,Memory::Write});
++  native_graphics::DeviceFeatureRequirements requirements{true,true,true,true,true,true,true};
++  resources.CreateDevice(8,{false,false,0},requirements);
++  const auto capabilities=resources.Backend(8).GetFeatureCapabilities();
++  Check(capabilities.supported.extended_features_queried&&capabilities.enabled.robust_buffer_access&&capabilities.enabled.texture_compression_bc&&capabilities.enabled.custom_border_without_format&&capabilities.enabled.depth_clip_control&&capabilities.enabled.provoking_vertex_last,"Actual enabled feature profile");
++  resources.CreatePool(16,{8,4096,4096});resources.CreateBuffer(24,{8,16,0,128});
++  const std::array<float,4> ucolor{.3f,.5f,.7f,.4f};std::memcpy(memory.bytes.data(),ucolor.data(),sizeof(ucolor));resources.FlushBuffer(24,0,128);
++  FrameImages images(resources,8);
++  Check(capabilities.max_custom_border_samplers && *capabilities.max_custom_border_samplers > 0 &&
++        *capabilities.max_custom_border_samplers <= 65536, "Custom border budget fixture bound");
++  // Pending creation reservations exercise the device-wide limit without allocating
++  // thousands of driver objects; a second FrameImages must observe the same budget.
++  {
++    BorderReservations reservations{resources.Backend(8)};
++    for (; reservations.held < *capabilities.max_custom_border_samplers; ++reservations.held)
++      reservations.device.RetainCustomBorderSampler();
++    FrameImages second(resources,8);
++    SamplerOptions options;options.custom_border=CustomFloatBorder{{.2f,.3f,.4f,.5f},std::nullopt};
++    Reject([&]{second.CreateSampler({},options);});
++    const auto ordinary=second.CreateSampler();second.DestroySampler(ordinary);
++  }
++  {
++    FrameImages second(resources,8);
++    SamplerOptions options;options.custom_border=CustomFloatBorder{{.2f,.3f,.4f,.5f},std::nullopt};
++    const auto custom=second.CreateSampler({},options);second.DestroySampler(custom);
++  }
++  auto create=[&](uint32_t w,uint32_t h,ImageFormat format,uint32_t usage){ImageDescription d;d.width=w;d.height=h;d.format=format;d.usage=usage;return images.CreateImage(d);};
++  const auto target=create(5,7,ImageFormat::Rgba8Unorm,ColorTarget|Sampled|TransferSource|TransferDestination);const auto target_view=images.CreateView(target);
++  const auto source=create(5,7,ImageFormat::BC4Unorm,Sampled|TransferSource|TransferDestination);ViewDescription bv;bv.format=ImageFormat::BC4Unorm;bv.swizzle={ViewDescription::Component::R,ViewDescription::Component::R,ViewDescription::Component::R,ViewDescription::Component::One};const auto source_view=images.CreateView(source,bv,ViewOptions{Sampled});const auto nearest=images.CreateSampler();const auto bc=Bc4Data();images.UploadInitialContents(source,bc);
++  const auto blocks=images.ReadbackImage(source);Check(blocks.bytes==bc&&blocks.row_bytes==16&&blocks.bytes.size()==32,"Partial-block transfer/readback");Reject([&]{images.Readback(source);});
++  auto submit=[&](Program &p,const DrawDescription &d,const TargetPass &pass,std::span<const SampleBinding> samples,const DrawOptions *options=nullptr){FrameEncoder frame(images);if(options)frame.DrawWithOptions(p.Description(),d,*options,pass,samples);else frame.Draw(p.Description(),d,pass,samples);frame.SubmitAndWait();++draws;};
++  TargetPass pass;pass.view=target_view;pass.load=AttachmentLoad::Clear;pass.clear={1,1,0,0};Program sample(Fragment::Sample);const std::array<SampleBinding,1> bs{{{5,source_view,nearest}}};submit(sample,Draw(5,7),pass,bs);
++  // BC4 interpolation permits implementation precision; two UNORM8 steps include final target quantization.
++  Oracle(images.ReadbackImage(target),[&](uint32_t x,uint32_t y){const double v=DecodeBc4(bc.data()+((y/4)*2+x/4)*8,(y%4)*4+x%4);return std::array<double,4>{v,v,v,1};},2);
++  const auto linear_target=create(10,14,ImageFormat::Rgba8Unorm,ColorTarget|TransferSource);const auto linear_view=images.CreateView(linear_target);
++  SamplerDescription ld;SamplerState ls;ls.min=ls.mag=TextureFilter::Linear;ld.state=ls;const auto linear=images.CreateSampler(ld);const std::array<SampleBinding,1> lb{{{5,source_view,linear}}};TargetPass lp;lp.view=linear_view;lp.load=AttachmentLoad::Clear;submit(sample,Draw(10,14),lp,lb);
++  Oracle(images.ReadbackImage(linear_target),[&](uint32_t x,uint32_t y){
++    const double sx=(double(x)+.5)/2-.5,sy=(double(y)+.5)/2-.5;const int ix=int(std::floor(sx)),iy=int(std::floor(sy));const double fx=sx-ix,fy=sy-iy;
++    auto texel=[&](int tx,int ty){const auto xx=uint32_t(std::clamp(tx,0,4)),yy=uint32_t(std::clamp(ty,0,6));return DecodeBc4(bc.data()+((yy/4)*2+xx/4)*8,(yy%4)*4+xx%4);};
++    const double a=texel(ix,iy)*(1-fx)+texel(ix+1,iy)*fx,b=texel(ix,iy+1)*(1-fx)+texel(ix+1,iy+1)*fx,v=a*(1-fy)+b*fy;
++    return std::array<double,4>{v,v,v,1};},2);
++  const auto srgb=create(3,2,ImageFormat::A8B8G8R8Srgb,ColorTarget|Sampled|TransferSource|TransferDestination);const auto encoded=SrgbData();images.UploadInitialContents(srgb,encoded);Check(images.ReadbackImage(srgb).bytes==encoded,"Raw packed-sRGB roundtrip");Reject([&]{images.Readback(srgb);});
++  const auto small=create(3,2,ImageFormat::Rgba8Unorm,ColorTarget|TransferSource|TransferDestination);const auto small_view=images.CreateView(small);TargetPass sp;sp.view=small_view;sp.load=AttachmentLoad::Clear;
++  for(bool swizzle:{false,true})for(bool invert:{false,true}){
++    ViewDescription vd;vd.format=ImageFormat::A8B8G8R8Srgb;if(swizzle)vd.swizzle={ViewDescription::Component::B,ViewDescription::Component::R,ViewDescription::Component::G,ViewDescription::Component::A};ViewOptions view_options{Sampled};const auto view=images.CreateView(srgb,vd,view_options);view_options.usage=ColorTarget;
++    SamplerDescription sd;SamplerState state;state.max_lod=2;state.u=AddressMode::Repeat;sd.state=state;SamplerOptions options;options.custom_border=CustomFloatBorder{{.125f,.375f,.625f,.875f},std::nullopt};const auto custom=images.CreateSampler(sd,options);
++    const std::array<SampleBinding,1> binding{{{5,view,custom}}};auto d=Draw(3,2);if(invert)d.viewport.orientation=ViewportOrientation::InvertY;submit(sample,d,sp,binding);
++    Oracle(images.ReadbackImage(small),[&](uint32_t x,uint32_t y){if(invert)y=1-y;const size_t at=(size_t(y)*3+x)*4;const std::array<unsigned,3> order=swizzle?std::array<unsigned,3>{2,0,1}:std::array<unsigned,3>{0,1,2};return std::array<double,4>{DecodeSrgb(unsigned(encoded[at+order[0]])),DecodeSrgb(unsigned(encoded[at+order[1]])),DecodeSrgb(unsigned(encoded[at+order[2]])),double(unsigned(encoded[at+3]))/255};},1);
++    images.DestroySampler(custom);images.DestroyView(view);
++  }
++  // Both new options vary independently. Mutating caller options after record must not change it.
++  for(auto depth:{NdcDepthRange::ZeroToOne,NdcDepthRange::MinusOneToOne})for(auto provoking:{ProvokingVertex::First,ProvokingVertex::Last}){
++    Program flat(Fragment::Flat,depth==NdcDepthRange::MinusOneToOne?-.25f:0.f);DrawOptions options{depth,provoking};FrameEncoder frame(images);frame.DrawWithOptions(flat.Description(),Draw(5,7),options,pass);options.depth_range=NdcDepthRange::ZeroToOne;options.provoking_vertex=ProvokingVertex::First;flat.vertex[0]=0;frame.SubmitAndWait();++draws;
++    const auto expected=provoking==ProvokingVertex::First?std::array<double,4>{1,0,0,1}:std::array<double,4>{0,0,1,1};Oracle(images.ReadbackImage(target),[&](uint32_t,uint32_t){return expected;},0);
++  }
++  for(auto provoking:{ProvokingVertex::First,ProvokingVertex::Last}){Program clipped(Fragment::Flat,-.25f);DrawOptions options{NdcDepthRange::ZeroToOne,provoking};submit(clipped,Draw(5,7),pass,{},&options);Oracle(images.ReadbackImage(target),[&](uint32_t,uint32_t){return std::array<double,4>{Quantize(pass.clear[0])/255.0,Quantize(pass.clear[1])/255.0,Quantize(pass.clear[2])/255.0,Quantize(pass.clear[3])/255.0};},0);}
++  Program uniform(Fragment::Uniform);std::array<UniformBinding,1> short_range{{{4,24,0,80}}};auto ud=Draw(5,7);ud.uniforms=short_range;const auto before=images.Counters();
++  RejectRange([&]{ValidateDraw(resources,8,uniform.Description(),ud);});RejectRange([&]{ValidateDrawWithOptions(resources,8,uniform.Description(),ud,{});});RejectRange([&]{DrawOffscreen(resources,8,uniform.Description(),ud);});RejectRange([&]{DrawOffscreenWithOptions(resources,8,uniform.Description(),ud,{});});
++  {FrameEncoder frame(images);RejectRange([&]{frame.Draw(uniform.Description(),ud,pass);});RejectRange([&]{frame.DrawWithOptions(uniform.Description(),ud,{},pass);});}
++  {auto retained=images.BorrowPresentation(target_view,nearest);const auto native=retained.Sample(0);bool attempted=false,accepted=false;NativeTarget nt{native.image,native.view,native.layout,AttachmentLoad::Load,AttachmentStore::Store,{0,0,0,0},&attempted,&accepted};RejectRange([&]{DrawIntoTarget(resources,8,uniform.Description(),ud,nt,{},{});});RejectRange([&]{DrawIntoTargetWithOptions(resources,8,uniform.Description(),ud,{},nt,{},{});});Check(!attempted&&!accepted,"Short range direct APIs never submit");}
++  Check(images.Counters().recorded==before.recorded&&images.Counters().submitted==before.submitted,"Strict range failed before recording/submission even core RBA");
++  // Three descriptors, exact full block; UBO bytes are frozen before mutation.
++  short_range[0].size=128;ud.uniforms=short_range;submit(uniform,ud,pass,{});Oracle(images.ReadbackImage(target),[&](uint32_t,uint32_t){return std::array<double,4>{ucolor[0],ucolor[1],ucolor[2],ucolor[3]};},1);
++  Program combined(Fragment::Combined);
++  const auto rgba=create(5,7,ImageFormat::Rgba8Unorm,Sampled|TransferDestination);std::vector<std::byte> rgba_bytes(5*7*4);for(size_t i=0;i<rgba_bytes.size();++i)rgba_bytes[i]=std::byte(i%4==0?80:i%4==1?120:i%4==2?160:200);images.UploadInitialContents(rgba,rgba_bytes);const auto rgba_view=images.CreateView(rgba);
++  const std::array<SampleBinding,2> three{{{5,source_view,nearest},{6,rgba_view,nearest}}};
++  {FrameEncoder frame(images);frame.Draw(combined.Description(),ud,pass,three);std::fill_n(memory.bytes.begin(),128,std::byte{});resources.FlushBuffer(24,0,128);frame.SubmitAndWait();++draws;}
++  Oracle(images.ReadbackImage(target),[&](uint32_t x,uint32_t y){const double v=DecodeBc4(bc.data()+((y/4)*2+x/4)*8,(y%4)*4+x%4);return std::array<double,4>{.5*ucolor[0]+.25*(v+80.0/255),.5*ucolor[1]+.25*(v+120.0/255),.5*ucolor[2]+.25*(v+160.0/255),.5*ucolor[3]+.25*(1+200.0/255)};},2);
++  // Existing separate RGB/alpha factors and Load/write masks remain behavior locks.
++  std::vector<std::byte> inherited(5*7*4);const std::array<unsigned,4> initial{100,150,50,60};
++  for(size_t n=0;n<inherited.size();++n)inherited[n]=std::byte(initial[n%4]);images.UploadInitialContents(target,inherited);
++  Program constant(Fragment::Constant);auto alpha_draw=Draw(5,7);alpha_draw.blend_state=BlendState{true,BlendFactor::SourceAlpha,BlendFactor::OneMinusSourceAlpha,BlendFactor::SourceAlpha,BlendFactor::OneMinusSourceAlpha};TargetPass load=pass;load.load=AttachmentLoad::Load;
++  submit(constant,alpha_draw,load,{});Oracle(images.ReadbackImage(target),[&](uint32_t,uint32_t){return std::array<double,4>{.6*.5+(100.0/255)*.5,.2*.5+(150.0/255)*.5,.8*.5+(50.0/255)*.5,.5*.5+(60.0/255)*.5};},1);
++  for(size_t n=3;n<inherited.size();n+=4)inherited[n]=std::byte{};images.UploadInitialContents(target,inherited);auto masked=Draw(5,7);masked.blend_state=BlendState{};masked.blend_state->write_mask=7;masked.scissor={0,0,2,3};submit(constant,masked,load,{});
++  const auto masked_result=images.ReadbackImage(target);
++  Oracle(masked_result,[&](uint32_t x,uint32_t y){if(x<2&&y<3)return std::array<double,4>{.6,.2,.8,0};return std::array<double,4>{100.0/255,150.0/255,50.0/255,0};},1);
++  for(uint32_t y=0;y<7;++y)for(uint32_t x=0;x<5;++x){
++    const size_t at=(size_t(y)*5+x)*4;
++    Check(masked_result.bytes[at+3]==inherited[at+3],"Masked alpha must be preserved exactly");
++    if(x>=2||y>=3)for(size_t c=0;c<4;++c)
++      Check(masked_result.bytes[at+c]==inherited[at+c],"Untouched LOAD pixel must be preserved exactly");
++  }
++  SamplerOptions formatted;formatted.custom_border=CustomFloatBorder{{.1f,.2f,.3f,.4f},ImageFormat::R8Unorm};const auto format_sampler=images.CreateSampler({},formatted);formatted.custom_border->format=ImageFormat::A8B8G8R8Srgb;ViewDescription sv;sv.format=ImageFormat::A8B8G8R8Srgb;const auto svh=images.CreateView(srgb,sv);const std::array<SampleBinding,1> wrong_format{{{5,svh,format_sampler}}};{FrameEncoder frame(images);Reject([&]{frame.Draw(sample.Description(),Draw(3,2),sp,wrong_format);});}images.DestroySampler(format_sampler);
++  const auto color_only=images.CreateView(srgb,ViewDescription{ImageFormat::A8B8G8R8Srgb},ViewOptions{ColorTarget});const std::array<SampleBinding,1> invalid_sample{{{5,color_only,nearest}}};{FrameEncoder frame(images);Reject([&]{frame.Draw(sample.Description(),Draw(3,2),sp,invalid_sample);});}
++  const auto sample_only_target=images.CreateView(target,{},ViewOptions{Sampled});TargetPass invalid_target;invalid_target.view=sample_only_target;{FrameEncoder frame(images);Program invalid_program(Fragment::Constant);Reject([&]{frame.Draw(invalid_program.Description(),Draw(5,7),invalid_target);});}
++  Check(images.Counters().completed==draws&&images.Counters().failures==0,"All authored draws fence completed");
++  std::cout << "{\"mode\":\"gpu\",\"status\":\"PASS\",\"draws\":" << draws
++    << ",\"compared_pixels\":" << compared_pixels << ",\"checks\":" << checks
++    << ",\"strict_full_ubo\":true,\"authored_only\":true,\"GPU_executed\":true,\"device\":" << std::quoted(resources.Backend(8).DeviceName())
++    << ",\"api_version\":" << resources.Backend(8).GetCapabilities().api_version
++    << ",\"queue_family\":" << resources.Backend(8).GetNativeHandles().queue_family
++    << ",\"extended_support_queried\":" << (capabilities.supported.extended_features_queried ? "true" : "false")
++    << ",\"max_custom_border_samplers\":" << *capabilities.max_custom_border_samplers << ",\"requested\":";
++  PrintFeatures(requirements);std::cout << ",\"supported\":";PrintFeatures(capabilities.supported);
++  std::cout << ",\"enabled\":";PrintFeatures(capabilities.enabled);std::cout << "}\n";
++}
++}
++int main(int argc,char **argv){try{
++  if(argc==1||(argc==2&&std::string(argv[1])=="--cpu-only")){Cpu();std::cout<<"{\"mode\":\"cpu\",\"status\":\"PASS\",\"checks\":"<<checks<<",\"GPU_executed\":false,\"authored_only\":true}\n";return 0;}
++  if(argc==2&&std::string(argv[1])=="--gpu"){Gpu();return 0;}
++  throw std::runtime_error("Use --cpu-only (default) or explicit --gpu");
++}catch(const std::exception&e){std::cerr<<e.what()<<'\n';return 1;}}
 diff --git a/native-runtime/nvn/frame.cpp b/native-runtime/nvn/frame.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e6eb070cd
+index 0000000000000000000000000000000000000000..b51e752931957852d98afc83c305475a0b69a844
 --- /dev/null
 +++ b/native-runtime/nvn/frame.cpp
-@@ -0,0 +1,913 @@
+@@ -0,0 +1,975 @@
 +#include "frame.h"
 +#define WIN32_LEAN_AND_MEAN
 +#define NOMINMAX
@@ -7015,11 +7628,13 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +    VkImageView view;
 +    uint32_t references = 0;
 +    ViewDescription description;
++    uint32_t usage = 0;
 +  };
 +  struct Sampler {
 +    VkSampler sampler;
 +    uint32_t references = 0;
 +    SamplerState state;
++    std::optional<CustomFloatBorder> custom_border;
 +  };
 +  Resources &resources;
 +  Resources::Lease device_lease;
@@ -7076,7 +7691,10 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +    auto &v = Get(s.view);
 +    auto &image = images.at(v.image);
 +    auto &sampler = Get(s.sampler);
-+    Require(image.d.usage & Sampled, "Sample usage missing");
++    Require((image.d.usage & Sampled) && (v.usage & Sampled), "Image/view sample usage missing");
++    Require(!sampler.custom_border || !sampler.custom_border->format ||
++                *sampler.custom_border->format == v.description.format,
++            "Custom border format differs from sampled view");
 +    return {s.binding,
 +            image.d.width,
 +            image.d.height,
@@ -7116,14 +7734,13 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +  void Transfer(Image &image, std::span<std::byte> bytes, bool upload) {
 +    Ready();
 +    Require(!image.references, "Image retained by recording/in-flight frame");
-+    Require(bytes.size() == uint64_t(image.d.width) * image.d.height *
-+                                ImageBytesPerTexel(image.d.format),
++    Require(bytes.size() == CheckedImageFootprint(image.d.format, image.d.width, image.d.height).bytes,
 +            "Image transfer extent mismatch");
 +    Require(image.d.usage & (upload ? TransferDestination : TransferSource),
 +            "Image transfer usage missing");
 +    Require(upload || image.committed_valid, "Readback of undefined contents");
-+    Cleanup cleanup;
 +    bool submitted = false;
++    Cleanup cleanup;
 +    VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
 +    bi.size = bytes.size();
 +    bi.usage = upload ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT
@@ -7256,8 +7873,10 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +    F(vkDeviceWaitIdle)(device);
 +    for (auto &[id, v] : views)
 +      F(vkDestroyImageView)(device, v.view, nullptr);
-+    for (auto &[id, s] : samplers)
++    for (auto &[id, s] : samplers) {
 +      F(vkDestroySampler)(device, s.sampler, nullptr);
++      if (s.custom_border) device_lease.Backend().ReleaseCustomBorderSampler();
++    }
 +    for (auto &[id, i] : images) {
 +      F(vkDestroyImage)(device, i.image, nullptr);
 +      F(vkFreeMemory)(device, i.memory, nullptr);
@@ -7281,6 +7900,27 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +              !s.compare && s.anisotropy == 1,
 +          "Unsupported sampler LOD/compare/anisotropy/coordinates");
 +}
++void ValidateViewOptions(const ViewOptions &options, uint32_t image_usage) {
++  (void)NativeImageUsage(image_usage);
++  if (options.usage) {
++    (void)NativeImageUsage(*options.usage);
++    Require((*options.usage & image_usage) == *options.usage, "View usage exceeds created image usage");
++  }
++}
++void ValidateViewOptions(const ViewOptions &options, uint32_t image_usage, uint32_t usable_api_version) {
++  ValidateViewOptions(options, image_usage);
++  Require(!options.usage || usable_api_version >= VK_API_VERSION_1_1,
++          "Explicit view usage requires usable Vulkan 1.1");
++}
++void ValidateSamplerOptions(const SamplerOptions &options, const native_graphics::EnabledDeviceFeatures &enabled) {
++  if (!options.custom_border) return;
++  Require(enabled.custom_border_colors, "Custom border colors were not enabled");
++  if (options.custom_border->format) (void)NativeImageFormat(*options.custom_border->format);
++  else Require(enabled.custom_border_without_format, "Custom border without-format was not enabled");
++  // This API currently exposes normalized float-sampled formats only.
++  for (float value : options.custom_border->color)
++    Require(std::isfinite(value) && value >= 0 && value <= 1, "Custom normalized border color out of range");
++}
 +FrameImages::FrameImages(Resources &r, GuestAddress d, uint64_t budget)
 +    : impl_(std::make_shared<Impl>(r, d, budget)) {}
 +FrameImages::~FrameImages() = default;
@@ -7291,15 +7931,16 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +          "Unsupported image extent/subresources");
 +  Require(d.format == ImageFormat::Rgba8Unorm ||
 +              d.format == ImageFormat::A2B10G10R10Unorm ||
++              d.format == ImageFormat::A8B8G8R8Srgb ||
 +              !(d.usage & ColorTarget),
-+          "Only linear RGBA8 or packed10 targets supported");
++          "Only linear RGBA8, packed10 or packed-sRGB color images supported");
 +  const auto support = QueryImageSupport(i.resources, i.key, d.format, d.usage);
 +  const auto caps = i.device_lease.Backend().GetCapabilities();
 +  Require(d.width <= caps.max_image_dimension_2d &&
 +              d.height <= caps.max_image_dimension_2d &&
 +              d.width <= support.max_width && d.height <= support.max_height,
 +          "Image device dimensions unsupported");
-+  Require(uint64_t(d.width) * d.height * ImageBytesPerTexel(d.format) <=
++  Require(CheckedImageFootprint(d.format, d.width, d.height).bytes <=
 +              i.allocation_budget,
 +          "Image byte budget exceeded");
 +  Require(d.backing.offset <= UINT64_MAX - d.backing.size,
@@ -7310,7 +7951,7 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +  if (d.backing.identity) {
 +    Require(d.backing.generation &&
 +                d.backing.size ==
-+                    uint64_t(d.width) * d.height * ImageBytesPerTexel(d.format),
++                    CheckedImageFootprint(d.format, d.width, d.height).bytes,
 +            "Invalid backing identity/extent");
 +    for (auto &[id, img] : i.images) {
 +      auto &b = img.d.backing;
@@ -7337,14 +7978,7 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +  ci.samples = VK_SAMPLE_COUNT_1_BIT;
 +  ci.tiling = VK_IMAGE_TILING_OPTIMAL;
 +  ci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-+  if (d.usage & ColorTarget)
-+    ci.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-+  if (d.usage & Sampled)
-+    ci.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-+  if (d.usage & TransferSource)
-+    ci.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-+  if (d.usage & TransferDestination)
-+    ci.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
++  ci.usage = NativeImageUsage(d.usage);
 +  Check(i.F(vkCreateImage)(i.device, &ci, nullptr, &image.image),
 +        "Create persistent image");
 +  try {
@@ -7374,7 +8008,9 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +  i.allocated_bytes += image.allocation_size;
 +  return {id};
 +}
-+ViewHandle FrameImages::CreateView(ImageHandle h, const ViewDescription &d) {
++ViewHandle FrameImages::CreateView(ImageHandle h, const ViewDescription &d) { return CreateViewInternal(h, d, nullptr); }
++ViewHandle FrameImages::CreateView(ImageHandle h, const ViewDescription &d, const ViewOptions &options) { return CreateViewInternal(h, d, &options); }
++ViewHandle FrameImages::CreateViewInternal(ImageHandle h, const ViewDescription &d, const ViewOptions *options) {
 +  auto &i = *impl_;
 +  i.Ready();
 +  auto &img = i.Get(h);
@@ -7386,6 +8022,14 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +  ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
 +  ci.format = VkFormat(NativeImageFormat(d.format));
 +  ci.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
++  VkImageViewUsageCreateInfo usage{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
++  if (options) {
++    // GetCapabilities clamps the requested application API to the physical API.
++    // This device does not enable VK_KHR_maintenance2 as an alternate admission.
++    ValidateViewOptions(*options, img.d.usage,
++                        i.device_lease.Backend().GetCapabilities().api_version);
++    if (options->usage) { usage.usage = NativeImageUsage(*options->usage); ci.pNext = &usage; }
++  }
 +  auto component = [](ViewDescription::Component c) {
 +    switch (c) {
 +    case ViewDescription::Component::Zero:
@@ -7408,7 +8052,7 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +  const std::array identity{
 +      ViewDescription::Component::R, ViewDescription::Component::G,
 +      ViewDescription::Component::B, ViewDescription::Component::A};
-+  if (d.swizzle != identity)
++  if (d.swizzle != identity || (options && options->usage))
 +    ci.components = {component(d.swizzle[0]), component(d.swizzle[1]),
 +                     component(d.swizzle[2]), component(d.swizzle[3])};
 +  VkImageView v{};
@@ -7416,7 +8060,7 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +        "Create persistent view");
 +  auto id = NewHandle();
 +  try {
-+    i.views.emplace(id, Impl::View{h.value, v, 0, d});
++    i.views.emplace(id, Impl::View{h.value, v, 0, d, options && options->usage ? *options->usage : img.d.usage});
 +  } catch (...) {
 +    i.F(vkDestroyImageView)(i.device, v, nullptr);
 +    throw;
@@ -7424,7 +8068,9 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +  ++img.views;
 +  return {id};
 +}
-+SamplerHandle FrameImages::CreateSampler(const SamplerDescription &d) {
++SamplerHandle FrameImages::CreateSampler(const SamplerDescription &d) { return CreateSamplerInternal(d, nullptr); }
++SamplerHandle FrameImages::CreateSampler(const SamplerDescription &d, const SamplerOptions &options) { return CreateSamplerInternal(d, &options); }
++SamplerHandle FrameImages::CreateSamplerInternal(const SamplerDescription &d, const SamplerOptions *options) {
 +  auto &i = *impl_;
 +  i.Ready();
 +  Require(d.nearest && d.clamp && !d.compare && d.min_lod == 0 &&
@@ -7450,17 +8096,32 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +  ci.minLod = state.min_lod;
 +  ci.maxLod = state.max_lod;
 +  ci.mipLodBias = state.bias;
++  VkSamplerCustomBorderColorCreateInfoEXT border{VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT};
++  if (options) {
++    ValidateSamplerOptions(*options, i.device_lease.Backend().GetFeatureCapabilities().enabled);
++    if (options->custom_border) {
++      for (size_t n = 0; n < 4; ++n) border.customBorderColor.float32[n] = options->custom_border->color[n];
++      border.format = options->custom_border->format ? VkFormat(NativeImageFormat(*options->custom_border->format)) : VK_FORMAT_UNDEFINED;
++      ci.borderColor = VK_BORDER_COLOR_FLOAT_CUSTOM_EXT;
++      ci.maxAnisotropy = state.anisotropy;
++      ci.pNext = &border;
++    }
++  }
++  const bool custom = options && options->custom_border.has_value();
++  if (custom) i.device_lease.Backend().RetainCustomBorderSampler();
 +  VkSampler s{};
-+  Check(i.F(vkCreateSampler)(i.device, &ci, nullptr, &s),
-+        "Create persistent sampler");
-+  auto id = NewHandle();
++  bool created = false;
 +  try {
-+    i.samplers.emplace(id, Impl::Sampler{s, 0, state});
++    Check(i.F(vkCreateSampler)(i.device, &ci, nullptr, &s), "Create persistent sampler");
++    created = true;
++    const auto id = NewHandle();
++    i.samplers.emplace(id, Impl::Sampler{s, 0, state, options ? options->custom_border : std::nullopt});
++    return {id};
 +  } catch (...) {
-+    i.F(vkDestroySampler)(i.device, s, nullptr);
++    if (created) i.F(vkDestroySampler)(i.device, s, nullptr);
++    if (custom) i.device_lease.Backend().ReleaseCustomBorderSampler();
 +    throw;
 +  }
-+  return {id};
 +}
 +void FrameImages::DestroyImage(ImageHandle h) {
 +  auto &i = *impl_;
@@ -7487,14 +8148,14 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +  auto &s = i.Get(h);
 +  Require(!s.references, "Sampler retained by frame");
 +  i.F(vkDestroySampler)(i.device, s.sampler, nullptr);
++  if (s.custom_border) i.device_lease.Backend().ReleaseCustomBorderSampler();
 +  i.samplers.erase(h.value);
 +}
 +void FrameImages::UploadInitialContents(ImageHandle h,
 +                                        std::span<const std::byte> b) {
 +  auto &i = *impl_;
 +  auto &img = i.Get(h);
-+  Require(b.size() == uint64_t(img.d.width) * img.d.height *
-+                          ImageBytesPerTexel(img.d.format),
++  Require(b.size() == CheckedImageFootprint(img.d.format, img.d.width, img.d.height).bytes,
 +          "Image upload extent mismatch");
 +  std::vector<std::byte> copy(b.begin(), b.end());
 +  i.Transfer(img, copy, true);
@@ -7502,9 +8163,10 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +ImageReadback FrameImages::ReadbackImage(ImageHandle h) {
 +  auto &i = *impl_;
 +  auto &img = i.Get(h);
-+  const uint64_t row = uint64_t(img.d.width) * ImageBytesPerTexel(img.d.format);
++  const auto footprint = CheckedImageFootprint(img.d.format, img.d.width, img.d.height);
++  const uint64_t row = footprint.row_bytes;
 +  ImageReadback out{img.d.format, img.d.width, img.d.height, row,
-+                    std::vector<std::byte>(row * img.d.height)};
++                    std::vector<std::byte>(footprint.bytes)};
 +  i.Transfer(img, out.bytes, false);
 +  return out;
 +}
@@ -7536,7 +8198,7 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +    auto &vw = owner->Get(v);
 +    auto &im = owner->images.at(vw.image);
 +    owner->Get(s);
-+    Require(im.committed_valid && (im.d.usage & Sampled),
++    Require(im.committed_valid && (im.d.usage & Sampled) && (vw.usage & Sampled),
 +            "Presentation source undefined/not sampled");
 +    Require(im.d.format == ImageFormat::Rgba8Unorm ||
 +                im.d.format == ImageFormat::A2B10G10R10Unorm,
@@ -7594,6 +8256,7 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +    std::vector<uint32_t> vertex, fragment;
 +    std::vector<DescriptorPlan> plan;
 +    DrawDescription draw;
++    std::optional<DrawOptions> options;
 +    TargetPass pass;
 +    std::vector<SampleBinding> samples;
 +    std::vector<UniformBinding> uniforms;
@@ -7646,7 +8309,13 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +void FrameEncoder::Draw(const ProgramDescription &p,
 +                        const DrawDescription &draw, const TargetPass &pass,
 +                        std::span<const SampleBinding> samples,
-+                        FrameRecordFault fault) {
++                        FrameRecordFault fault) { RecordDraw(p, draw, pass, samples, fault, nullptr); }
++void FrameEncoder::DrawWithOptions(const ProgramDescription &p, const DrawDescription &draw, const DrawOptions &options,
++                                   const TargetPass &pass, std::span<const SampleBinding> samples, FrameRecordFault fault) {
++  RecordDraw(p, draw, pass, samples, fault, &options);
++}
++void FrameEncoder::RecordDraw(const ProgramDescription &p, const DrawDescription &draw, const TargetPass &pass,
++                              std::span<const SampleBinding> samples, FrameRecordFault fault, const DrawOptions *options) {
 +  auto &f = *impl_;
 +  auto &o = f.owner;
 +  o.Ready();
@@ -7655,7 +8324,7 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +  Require(o.Get(pass.view).description.swizzle == ViewDescription{}.swizzle,
 +          "Attachment view swizzle unsupported");
 +  Require(draw.width == target.d.width && draw.height == target.d.height &&
-+              (target.d.usage & ColorTarget) &&
++              (target.d.usage & ColorTarget) && (o.Get(pass.view).usage & ColorTarget) &&
 +              (target.d.usage & TransferSource),
 +          "Target extent/usage mismatch");
 +  std::vector<NativeSample> native;
@@ -7666,7 +8335,8 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +            "Image feedback/sample usage unsupported");
 +    native.push_back(o.Sample(s));
 +  }
-+  ValidateDraw(o.resources, o.key, p, draw, native, target.d.format);
++  if (options) ValidateDrawWithOptions(o.resources, o.key, p, draw, *options, native, target.d.format);
++  else ValidateDraw(o.resources, o.key, p, draw, native, target.d.format);
 +  uint64_t bytes = uint64_t(p.vertex.size() + p.fragment.size()) * 4;
 +  for (const auto &u : draw.uniforms)
 +    bytes += u.size;
@@ -7680,6 +8350,7 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +  r->fragment.assign(p.fragment.begin(), p.fragment.end());
 +  r->plan.assign(p.set0.begin(), p.set0.end());
 +  r->draw = draw;
++  if (options) r->options = *options;
 +  r->pass = pass;
 +  r->samples.assign(samples.begin(), samples.end());
 +  r->uniforms.assign(draw.uniforms.begin(), draw.uniforms.end());
@@ -7773,7 +8444,9 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +    std::vector<NativeSample> native;
 +    for (auto &sample : r->samples)
 +      native.push_back(o.Sample(sample));
-+    ValidateDraw(o.resources, o.key, {r->vertex, r->fragment, r->plan}, r->draw,
++    if (r->options) ValidateDrawWithOptions(o.resources, o.key, {r->vertex, r->fragment, r->plan}, r->draw,
++                 *r->options, native, o.images.at(target).d.format);
++    else ValidateDraw(o.resources, o.key, {r->vertex, r->fragment, r->plan}, r->draw,
 +                 native, o.images.at(target).d.format);
 +  }
 +  if (fault == FrameFault::BeforeSubmit) {
@@ -7820,7 +8493,9 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +          : fault == FrameFault::DeviceLoss  ? NativeDrawFault::DeviceLost
 +                                             : NativeDrawFault::None;
 +      try {
-+        DrawIntoTarget(o.resources, o.key, {r->vertex, r->fragment, r->plan},
++        if (r->options) DrawIntoTargetWithOptions(o.resources, o.key, {r->vertex, r->fragment, r->plan},
++                       r->draw, *r->options, target, native, snapshots);
++        else DrawIntoTarget(o.resources, o.key, {r->vertex, r->fragment, r->plan},
 +                       r->draw, target, native, snapshots);
 +      } catch (...) {
 +        any_attempt |= attempted;
@@ -7857,10 +8532,10 @@ index 0000000000000000000000000000000000000000..7a4fda58be1d585ba181c17f9c72715e
 +} // namespace native_nvn
 diff --git a/native-runtime/nvn/frame.h b/native-runtime/nvn/frame.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..bc5f72b49502a77f83753d9a55ec3b51d175b208
+index 0000000000000000000000000000000000000000..9ec3134d125ec2fea00708dbb0338308234bc526
 --- /dev/null
 +++ b/native-runtime/nvn/frame.h
-@@ -0,0 +1,155 @@
+@@ -0,0 +1,179 @@
 +#pragma once
 +#include "draw.h"
 +#include <array>
@@ -7895,6 +8570,13 @@ index 0000000000000000000000000000000000000000..bc5f72b49502a77f83753d9a55ec3b51
 +  std::array<Component, 4> swizzle{Component::R, Component::G, Component::B,
 +                                   Component::A};
 +};
++struct ViewOptions {
++  // Same typed ImageUsage bits as ImageDescription; absence preserves image usage.
++  std::optional<uint32_t> usage;
++};
++void ValidateViewOptions(const ViewOptions &, uint32_t image_usage);
++// Explicit usage overrides require usable (application AND physical) Vulkan 1.1.
++void ValidateViewOptions(const ViewOptions &, uint32_t image_usage, uint32_t usable_api_version);
 +enum class TextureFilter { Nearest, Linear };
 +enum class MipmapFilter { Nearest, Linear };
 +enum class AddressMode { ClampToEdge, Repeat };
@@ -7915,6 +8597,14 @@ index 0000000000000000000000000000000000000000..bc5f72b49502a77f83753d9a55ec3b51
 +  float min_lod = 0, max_lod = 0;
 +  std::optional<SamplerState> state;
 +};
++struct CustomFloatBorder {
++  std::array<float, 4> color{0, 0, 0, 0};
++  std::optional<ImageFormat> format;
++};
++struct SamplerOptions {
++  std::optional<CustomFloatBorder> custom_border;
++};
++void ValidateSamplerOptions(const SamplerOptions &, const native_graphics::EnabledDeviceFeatures &);
 +struct SampleBinding {
 +  uint32_t binding;
 +  ViewHandle view;
@@ -7958,6 +8648,8 @@ index 0000000000000000000000000000000000000000..bc5f72b49502a77f83753d9a55ec3b51
 +  ImageHandle CreateImage(const ImageDescription &);
 +  ViewHandle CreateView(ImageHandle, const ViewDescription & = {});
 +  SamplerHandle CreateSampler(const SamplerDescription & = {});
++  ViewHandle CreateView(ImageHandle, const ViewDescription &, const ViewOptions &);
++  SamplerHandle CreateSampler(const SamplerDescription &, const SamplerOptions &);
 +  void DestroyImage(ImageHandle);
 +  void DestroyView(ViewHandle);
 +  void DestroySampler(SamplerHandle);
@@ -7972,6 +8664,8 @@ index 0000000000000000000000000000000000000000..bc5f72b49502a77f83753d9a55ec3b51
 +private:
 +  struct Impl;
 +  std::shared_ptr<Impl> impl_;
++  ViewHandle CreateViewInternal(ImageHandle, const ViewDescription &, const ViewOptions *);
++  SamplerHandle CreateSamplerInternal(const SamplerDescription &, const SamplerOptions *);
 +  friend class FrameEncoder;
 +  friend class PresentSource;
 +};
@@ -8008,10 +8702,15 @@ index 0000000000000000000000000000000000000000..bc5f72b49502a77f83753d9a55ec3b51
 +            FrameRecordFault = FrameRecordFault::None);
 +  // Optional diagnostic observer executes after real submission, before fence
 +  // wait.
++  void DrawWithOptions(const ProgramDescription &, const DrawDescription &, const DrawOptions &,
++                       const TargetPass &, std::span<const SampleBinding> = {},
++                       FrameRecordFault = FrameRecordFault::None);
 +  void SubmitAndWait(FrameFault = FrameFault::None,
 +                     std::function<void()> after_submit = {});
 +
 +private:
++  void RecordDraw(const ProgramDescription &, const DrawDescription &, const TargetPass &,
++                  std::span<const SampleBinding>, FrameRecordFault, const DrawOptions *);
 +  struct Impl;
 +  std::unique_ptr<Impl> impl_;
 +};
@@ -10194,10 +10893,10 @@ index 0000000000000000000000000000000000000000..30abf824df698d42384aeca61adf58d4
 +}
 diff --git a/native-runtime/nvn/resources.cpp b/native-runtime/nvn/resources.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..86e0233b60fffea0eeed2a7d137b100f58184aac
+index 0000000000000000000000000000000000000000..617419d2103789f82fd1cdc13b30c782515336de
 --- /dev/null
 +++ b/native-runtime/nvn/resources.cpp
-@@ -0,0 +1,276 @@
+@@ -0,0 +1,282 @@
 +#include "resources.h"
 +#include <algorithm>
 +#include <stdexcept>
@@ -10287,6 +10986,12 @@ index 0000000000000000000000000000000000000000..86e0233b60fffea0eeed2a7d137b100f
 +  CheckNewKey(key);
 +  auto backend =
 +      std::make_shared<native_graphics::VulkanDevice>(std::move(options));
++  devices_.emplace(key, Device{std::move(backend)});
++}
++void Resources::CreateDevice(GuestAddress key, native_graphics::DeviceOptions options,
++                             const native_graphics::DeviceFeatureRequirements &requirements) {
++  CheckNewKey(key);
++  auto backend = std::make_shared<native_graphics::VulkanDevice>(std::move(options), requirements);
 +  devices_.emplace(key, Device{std::move(backend)});
 +}
 +void Resources::DestroyDevice(GuestAddress key) {
@@ -10476,10 +11181,10 @@ index 0000000000000000000000000000000000000000..86e0233b60fffea0eeed2a7d137b100f
 +} // namespace native_nvn
 diff --git a/native-runtime/nvn/resources.h b/native-runtime/nvn/resources.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..951b0e10d7975ab8b7b032fe5bcce80ce3cb64dd
+index 0000000000000000000000000000000000000000..8db7b0d6378b2327579a31ab81f70e00195054df
 --- /dev/null
 +++ b/native-runtime/nvn/resources.h
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,123 @@
 +#pragma once
 +#include "../graphics/vulkan_resources.h"
 +#include <map>
@@ -10552,6 +11257,8 @@ index 0000000000000000000000000000000000000000..951b0e10d7975ab8b7b032fe5bcce80c
 +  Resources &operator=(const Resources &) = delete;
 +  void CreateDevice(GuestAddress key,
 +                    native_graphics::DeviceOptions options = {true, false, 0});
++  void CreateDevice(GuestAddress key, native_graphics::DeviceOptions,
++                    const native_graphics::DeviceFeatureRequirements &);
 +  void DestroyDevice(GuestAddress key);
 +  void CreatePool(GuestAddress key, const PoolDescription &description);
 +  void DestroyPool(GuestAddress key);
@@ -10575,18 +11282,18 @@ index 0000000000000000000000000000000000000000..951b0e10d7975ab8b7b032fe5bcce80c
 +private:
 +  struct Device {
 +    std::shared_ptr<native_graphics::VulkanDevice> backend;
-+    std::shared_ptr<uint8_t> pin = std::make_shared<uint8_t>(0);
++    std::shared_ptr<uint8_t> pin = std::make_shared<uint8_t>(uint8_t{0});
 +  };
 +  struct Pool {
 +    PoolDescription description;
 +    native_graphics::PoolHandle handle;
 +    native_graphics::BufferViewHandle view;
-+    std::shared_ptr<uint8_t> pin = std::make_shared<uint8_t>(0);
++    std::shared_ptr<uint8_t> pin = std::make_shared<uint8_t>(uint8_t{0});
 +  };
 +  struct Buffer {
 +    BufferDescription description;
 +    native_graphics::BufferViewHandle view;
-+    std::shared_ptr<uint8_t> pin = std::make_shared<uint8_t>(0);
++    std::shared_ptr<uint8_t> pin = std::make_shared<uint8_t>(uint8_t{0});
 +  };
 +  GuestMemory memory_;
 +  std::thread::id owner_;
@@ -14960,10 +15667,10 @@ index 0000000000000000000000000000000000000000..9a049f754dbcc36f41bf6ed8e5a11681
 +set_tests_properties(native_shader_native_input PROPERTIES TIMEOUT 30)
 diff --git a/native-runtime/shaders/README.md b/native-runtime/shaders/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..93b807142473bb163bc658dc7add37d62e1d88de
+index 0000000000000000000000000000000000000000..b6eb78dcfe2759e5f515cb437a53c14126aac90e
 --- /dev/null
 +++ b/native-runtime/shaders/README.md
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,100 @@
 +# Native Maxwell-to-SPIR-V bridge
 +
 +`Snapshot` owns a checked graphics shader environment. `TranslatePair` calls the existing shader-only flow CFG, Maxwell translation and SPIR-V emitter using native-owned pools; it creates no Maxwell3D, GPU command processor, Core::System or guest-memory objects. The standalone target links the frozen current-host shader_recompiler/common/fmt/Sirit/Boost libraries; no video_core library or public video_core header is used.
@@ -14976,7 +15683,7 @@ index 0000000000000000000000000000000000000000..93b807142473bb163bc658dc7add37d6
 +
 +`native_shader_module_check vertex.spv fragment.spv` uses the existing native graphics resource device and system loader to create/destroy both VkShaderModules. This is driver module acceptance, not SPIR-V formal validation, pipeline creation or a draw. It submits no command buffers. Run GPU-facing checks only under the root's replay coordination.
 +
-+First observed MK8 pair: vertex input location0 float4; vertex output Position and locations1/2 float4; fragment input locations1/2 float4, color output0 float4. Descriptor set0 has vertex cbuf3 at binding0, fragment cbuf3 at binding1, and two fragment combined2D image samplers at bindings2/3, sourced from cbuf2 offsets0x20/0x28. No push constants. The cache supplies compile-time handle/type words, not complete cbuf3 bytes, texels, sampler states, vertex data, viewport/scissor, blend/depth or render-target contents. A correct real native draw requires those runtime resources and state; a fabricated uniform/texture fixture would not establish MK8 rendering correctness.
++A compiled interface/resource plan describes module declarations, not the complete runtime resources or draw state. Callers must independently own and validate uniform bytes, texels, samplers, vertex/index data, viewport/raster/blend state and inherited target contents. Authored synthetic fixtures cannot establish compatibility with an external application.
 +
 +The parser follows the pinned serialized schema documented in src/video_core/shader_environment.cpp without including that implementation. Existing shader sources carry their GPL/SPDX notices; retain those licenses and frozen-library provenance. No LAS shader translator or shaderc dependency was imported.
 +
@@ -15059,6 +15766,11 @@ index 0000000000000000000000000000000000000000..93b807142473bb163bc658dc7add37d6
 +Vulkan module/pipeline acceptance or native rendered frame. TranslatePair retains
 +its documented conservative profile/triangle/float specialization assumptions;
 +unknown actual draw specialization remains a gate.
++
++
++## Additional named semantic formats
++
++`NativePixelFormat::A8B8G8R8Srgb` and `NativePixelFormat::BC4Unorm` map to the corresponding named shader texture formats. Synthetic factory tests cover these mappings and the existing ownership/missing-metadata rules. The conservative `TranslatePair` profile, interface and defaults are unchanged. No fixed translation specialization, source address, descriptor recipe, query-log state or application input is added by these mappings.
 diff --git a/native-runtime/shaders/cache_index.cpp b/native-runtime/shaders/cache_index.cpp
 new file mode 100644
 index 0000000000000000000000000000000000000000..815b851c991c8ff14213487d8cdabb9d5bcabb78
@@ -15901,10 +16613,10 @@ index 0000000000000000000000000000000000000000..fa6c3b9da09368814f91e95c03ac13d3
 +}
 diff --git a/native-runtime/shaders/native_input_test.cpp b/native-runtime/shaders/native_input_test.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..583002edfd48dfbecf250ae0d9e4bae1c59459d0
+index 0000000000000000000000000000000000000000..3b8865b20a4c9bb214d25432c90a9eb7e814db44
 --- /dev/null
 +++ b/native-runtime/shaders/native_input_test.cpp
-@@ -0,0 +1,361 @@
+@@ -0,0 +1,363 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "native_shaders.h"
 +#include <cstring>
@@ -16204,6 +16916,8 @@ index 0000000000000000000000000000000000000000..583002edfd48dfbecf250ae0d9e4bae1
 +    }
 +    const std::pair<NativePixelFormat, Shader::TexturePixelFormat>
 +        format_cases[] = {
++            {NativePixelFormat::A8B8G8R8Srgb, Shader::TexturePixelFormat::A8B8G8R8_SRGB},
++            {NativePixelFormat::BC4Unorm, Shader::TexturePixelFormat::BC4_UNORM},
 +            {NativePixelFormat::RGBA8Unorm,
 +             Shader::TexturePixelFormat::A8B8G8R8_UNORM},
 +            {NativePixelFormat::RGBA8Snorm,
@@ -16268,10 +16982,10 @@ index 0000000000000000000000000000000000000000..583002edfd48dfbecf250ae0d9e4bae1
 +}
 diff --git a/native-runtime/shaders/native_shaders.cpp b/native-runtime/shaders/native_shaders.cpp
 new file mode 100644
-index 0000000000000000000000000000000000000000..4a6c40ade3741b46a859daf29fc1f43a91aa24ef
+index 0000000000000000000000000000000000000000..4b2741ac2547d7aa2b6a7b53e16dcba3132d2e2c
 --- /dev/null
 +++ b/native-runtime/shaders/native_shaders.cpp
-@@ -0,0 +1,428 @@
+@@ -0,0 +1,432 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "native_shaders.h"
 +#include "shader_recompiler/backend/spirv/emit_spirv.h"
@@ -16367,6 +17081,10 @@ index 0000000000000000000000000000000000000000..4a6c40ade3741b46a859daf29fc1f43a
 +  auto format = [](NativePixelFormat value) {
 +    using F = Shader::TexturePixelFormat;
 +    switch (value) {
++    case NativePixelFormat::A8B8G8R8Srgb:
++      return F::A8B8G8R8_SRGB;
++    case NativePixelFormat::BC4Unorm:
++      return F::BC4_UNORM;
 +    case NativePixelFormat::RGBA8Unorm:
 +      return F::A8B8G8R8_UNORM;
 +    case NativePixelFormat::RGBA8Snorm:
@@ -16702,10 +17420,10 @@ index 0000000000000000000000000000000000000000..4a6c40ade3741b46a859daf29fc1f43a
 +} // namespace native_shaders
 diff --git a/native-runtime/shaders/native_shaders.h b/native-runtime/shaders/native_shaders.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..78721b8badfeee0bd0af42e33bead1a85d4fd8e3
+index 0000000000000000000000000000000000000000..236e3620149ac77d1d4e49214e215b12811b0798
 --- /dev/null
 +++ b/native-runtime/shaders/native_shaders.h
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,97 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include "shader_recompiler/environment.h"
@@ -16730,7 +17448,9 @@ index 0000000000000000000000000000000000000000..78721b8badfeee0bd0af42e33bead1a8
 +  R32Uint,
 +  RGBA32Float,
 +  RGBA32Sint,
-+  RGBA32Uint
++  RGBA32Uint,
++  A8B8G8R8Srgb,
++  BC4Unorm
 +};
 +struct NativeCbufWord {
 +  u64 bank, offset;

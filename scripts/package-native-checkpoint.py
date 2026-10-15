@@ -49,13 +49,13 @@ def main():
     build.mkdir(parents=True, exist_ok=True)
     records = []
 
-    def run(label, command, cwd=None):
+    def run(label, command, cwd=None, timeout=None):
         command = list(map(str, command))
         print(f"{label} ...", flush=True)
         log = build / f"{label}.log"
         with log.open("w", encoding="utf-8") as stream:
             result = subprocess.run(command, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT,
-                                    creationflags=subprocess.BELOW_NORMAL_PRIORITY_CLASS)
+                                    creationflags=subprocess.NORMAL_PRIORITY_CLASS, timeout=timeout)
         if result.returncode:
             raise RuntimeError(f"{label} failed ({result.returncode}); see {log}")
         replacements = {str(source): "<source>", str(build): "<build>",
@@ -67,6 +67,7 @@ def main():
             public_command.append(word)
         records.append({"step": label, "command": public_command, "exit_code": 0,
                         "log_sha256": sha(log)})
+        return log
 
     def executable(folder, name):
         for path in (folder / "Release" / f"{name}.exe", folder / f"{name}.exe"):
@@ -119,12 +120,25 @@ def main():
                                       f"-DNATIVE_TEXTURE_FMT_ROOT={fmt}"])
         run(f"{component}-build", ["cmake", "--build", build / component, "--config", "Release", "--parallel", "2"])
         run(f"{component}-test", ["ctest", "--test-dir", build / component, "-C", "Release", "--output-on-failure"])
+    feature_fixture = executable(build / "nvn", "native_nvn_feature_format_test")
+    feature_sha = sha(feature_fixture)
+    feature_log = run("nvn-feature-format-gpu", [feature_fixture, "--gpu"], timeout=45)
+    feature_result = json.loads(feature_log.read_text(encoding="utf-8"))
+    expected = {"mode": "gpu", "status": "PASS", "GPU_executed": True,
+                "authored_only": True, "strict_full_ubo": True, "draws": 16,
+                "compared_pixels": 549}
+    if any(feature_result.get(key) != value for key, value in expected.items()):
+        raise RuntimeError("Authored feature/format GPU coverage differs from the checkpoint")
+    if sha(feature_fixture) != feature_sha:
+        raise RuntimeError("Feature/format executable changed during verification")
+    records[-1].update({"result": feature_result, "executable_sha256": feature_sha})
     tools = {
         "platform": ("native_emit", "native_admit", "native_platform_test", "native_primitive_test",
                      "native_loader_test", "native_ipc_test", "native_event_test", "native_wait_test"),
         "graphics": ("native_graphics_probe", "native_graphics_resource_test"),
         "nvn": ("native_nvn_resource_test", "native_nvn_draw_test", "native_nvn_pipeline_check", "native_nvn_frame_test", "native_nvn_state_test",
-                "native_nvn_presentation_policy_test", "native_nvn_presentation_conversion_test", "native_nvn_presentation_fixture"),
+                "native_nvn_presentation_policy_test", "native_nvn_presentation_conversion_test", "native_nvn_presentation_fixture",
+                "native_nvn_feature_format_test"),
         "services": ("native_services_test", "native_services_event_test", "native_services_lifecycle_test"),
         "native_api/test": ("buffer_init_test",),
         "native_pending/test-on": ("pending_test",),
@@ -156,7 +170,7 @@ def main():
         destination = output / "dependencies/vulkan/LICENSES" / notice.name
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(notice, destination)
-    run("base-source-archive", ["git", "-C", source, "archive", "--format=tar.gz",
+    run("base-source-archive", ["git", "-c", "core.autocrlf=false", "-C", source, "archive", "--format=tar.gz",
                                f"--output={output / 'suyu-base-source.tar.gz'}", manifest["base_commit"]])
     shutil.copy2(manifest_path, output / "SOURCE.json")
     patch = project / "src/patches/native-runtime.patch"

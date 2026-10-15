@@ -1,6 +1,6 @@
 # Native foundations build checkpoint
 
-This Windows x64 v5 prerelease contains 33 native CPU/service, window, texture and
+This Windows x64 v6 prerelease contains 34 native CPU/service, window, texture and
 Vulkan verification tools. It does not boot or play Mario Kart 8 Deluxe. Actual title code and data
 are supplied locally; no game-linked executable is distributed.
 
@@ -42,6 +42,8 @@ From the extracted release directory:
 .\bin\native_nvn_draw_test.exe
 .\bin\native_nvn_frame_test.exe
 .\bin\native_nvn_state_test.exe
+.\bin\native_nvn_feature_format_test.exe --cpu-only
+.\bin\native_nvn_feature_format_test.exe --gpu
 .\bin\native_nvn_presentation_policy_test.exe
 .\bin\native_nvn_presentation_conversion_test.exe
 .\bin\native_nvn_presentation_fixture.exe --visible --frames 45 --exercise-resize
@@ -57,6 +59,17 @@ configurations explicitly. Its source stays on the GPU through presentation.
 The final SDR8 display conversion quantizes packed10 output. The
 window test briefly creates owned diagnostic windows and records real OS state;
 it does not establish game input, rendering or foreground activation.
+The feature/format fixture generates all inputs in memory. Its default and
+`--cpu-only` modes run 148 CPU checks without creating a Vulkan device. Explicit
+`--gpu` runs 16 authored draws with 549 pixel comparisons, covering BC4,
+packed sRGB, swizzles, independent depth/provoking state, full uniform blocks,
+blending and exact preservation of masked and untouched pixels. Computed colors
+use documented UNORM8 tolerances; breakpoint-adjacent sRGB samples do not prove
+floating-point precision. This mode requires the seven explicitly requested
+features and fails on unsupported hardware. Custom-border checks cover creation,
+metadata and capacity, with no ClampToBorder sampling claim. Explicit image-view
+usage requires usable Vulkan 1.1 or later. The full declared uniform-block extent
+is required even with robust buffer access enabled.
 `native_texture_probe DESCRIPTOR32 STORAGE TEXELS JSON` converts caller-supplied
 bounded texture data into unused output paths. Its output pair is not transactional:
 a later failure can leave the first newly created file, while existing files are
@@ -100,6 +113,11 @@ CPU, service, entry/API v2/v3, estimate, window, texture and graphics tests, the
 explicit list of tools and generated synthetic fixtures. Failed tests prevent
 package creation. The build directory retains detailed logs. A new output
 directory is required for each package.
+Serialize the complete package command against other compiler jobs when sharing
+a two-job budget. Packaging also runs GPU and owned-window tests, including the
+explicit feature/format `--gpu` command; a successful CPU-only invocation does not
+substitute for hardware coverage. `BUILD.json` records that executable's hash
+and parsed draw/pixel results.
 
 Sirit's tagged source is available at
 [`eden-emulator/sirit` v1.0.5](https://github.com/eden-emulator/sirit/tree/v1.0.5),
@@ -113,10 +131,12 @@ other operating systems and different GPU drivers remain unverified. Shader
 capture tooling in the patch still depends on separately supplied, matching
 shader-recompiler libraries; it is not part of this binary package.
 
-This v5 checkpoint adds reviewed callback transport, per-image execution fences,
+The earlier v5 checkpoint added reviewed callback transport, per-image execution fences,
 whole-instruction memory preflight, central opaque-object permissions and strict
-Host accounting. Its 167 source files preserve the 17 reviewed v4 presentation
-files literally. The synthetic ownership tests cover 106 instruction cases,
+Host accounting. It had 167 source files and preserved the 17 reviewed v4
+presentation files literally. V6 has 168 source files: it updates 14 generic
+graphics/NVN/shader files and adds one authored feature/format fixture. Window
+and Presenter implementations retain their v5 bytes. The synthetic ownership tests cover 106 instruction cases,
 2,544 strict guard mutations, 15,524 real emitted integration checks and 4,102
 accounting checks in each chain mode. Guest authority is restricted to runtime
 bus callbacks; native adapters need explicit grants. Lifetime grant storage is
@@ -134,8 +154,8 @@ The existing presentation fixture uses GPU-produced inputs without source
 readback. Validation layers were disabled. Safe WSI teardown can wait for the
 driver. The emitted and CPU-owner
 v3 suites run with FM1/GG1/FPX1 using synthetic inputs. Real native DeviceInitialize,
-actual-game draw/presentation and gameplay remain unproved. Real allocator AOT
-and the next private draw-input observer are outside this release. Earlier v4,
+live game-driven frames and gameplay remain open. Captured game draw/presentation
+diagnostics and real allocator AOT are outside this release. Earlier v5, v4,
 v3 and v2 releases remain separate immutable archives.
 The development checkout records verified local binaries in the gitignored
 `local/native-builds/latest.json` index. That index distinguishes public tools,

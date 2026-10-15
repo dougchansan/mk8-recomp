@@ -1,457 +1,583 @@
 {
   "schema": 1,
-  "release": "native-foundations-v5-20261015",
+  "release": "native-foundations-v6-20261015",
   "status": "Verified synthetic native foundations prerelease",
-  "archive_name": "native-foundations-v5-windows-x64-20261015.zip",
-  "archive_sha256": "0fa1ee0a00dfe9f702f085324c209848892dd540e1663c08bdf40ea2a9349118",
-  "archive_bytes": 26989055,
+  "archive_name": "native-foundations-v6-windows-x64-20261015.zip",
+  "archive_sha256": "f6a785f897a8c65e1434970aa7250c37ffbd89fad995b2c39232758e8682457b",
+  "archive_bytes": 27103482,
+  "archive_regular_files": 192,
+  "archive_directories": 20,
   "source_provenance": {
     "source_base_commit": "347fcf91d95cd39cb5c3db50f1b6d827ad699311",
-    "source_patch_sha256": "ea8ced576e201082ff0498ddab68b1088960ef05230e7b3831103baeb8f5279a",
-    "source_files_verified": 167
+    "source_patch_sha256": "9259dedf7a76d57deb606a4cc17ebba49d2dc0931c8c86ca754800cc741c7eca",
+    "source_files_verified": 168,
+    "modified_v5_subjects": 14,
+    "new_authored_subjects": 1,
+    "literal_v5_subjects": 153,
+    "base_source_archive_sha256": "4706d15e8274d7c9e0fe51c5f7898a4bca9c57e8b41b93f8deb8200c9667582a",
+    "archived_base_files_matching_pristine_checkout": 5389
   },
-  "public_source_manifest_sha256": "0d0c89e12f0ea8b756be980edb8dc070b8654d0dd4ab158ec36d22ec53de22af",
-  "package_build_manifest_sha256": "5469bc7fbd6e2980fb5fba751bcd7fa251779f3f69a2d5d50374a9e55eb93f8a",
+  "public_source_manifest_sha256": "e7478774cd708ad1f530552cee3d55b4e20a35adc720e95d7cb008af815aaaac",
+  "package_build_manifest_sha256": "8ccb03b41fe918009ef71083c7dd76945b0359cd64393407448a7afd192942f2",
   "public_repo_and_archive_source_byte_identity": true,
-  "source_helper_reproduction": "Root ran the final public prepare helper against a new detached worktree; all167 source hashes matched",
+  "source_helper_reproduction": "Final public prepare helper applied the cumulative patch in a new detached worktree; all168 hashes matched. All5389 exported base files match the pristine pinned checkout.",
   "binaries": {
-    "buffer_init_test.exe": {
-      "sha256": "d7a5aa359d5250db1ba0edeaebb2d5941ba0f46037dc583b507b4d770f054f6a",
+    "native_emit.exe": {
+      "sha256": "9512bcc9115359c6153596ada0a90a9ccaa10ca4b9550ef51baa9a0a71e3398b",
       "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
       "dll_imports": [
-        "KERNEL32.dll",
-        "USER32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
-    },
-    "fence_test.exe": {
-      "sha256": "98520367bd779fadf230c7b6fe5fb2b875d0917586bf3fd9735a4ee0faabb696",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-convert-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-environment-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
-    },
-    "memory_test.exe": {
-      "sha256": "108cc2c2cb77d807a4e77975604a16cba040da50d2e5f766c213dd1c3fe228b0",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-convert-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-environment-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
+        "KERNEL32.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
     },
     "native_admit.exe": {
-      "sha256": "6007cdc7c4de758b616472b74dd143009a6fdf2aa4efb8393e080c27dd8a9dd4",
+      "sha256": "9a11392992b57f74f3729a6fc74664d434e42e049181b5b21a8fead3245d1367",
       "pe_machine": "AMD64",
-      "dll_imports": [
-        "bcrypt.dll",
-        "KERNEL32.dll"
-      ]
-    },
-    "native_emit.exe": {
-      "sha256": "a30eb432f95754c264676c8fdb40a67aa91d344c2af40e13e2ffdcbb4408e933",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll"
-      ]
-    },
-    "native_event_test.exe": {
-      "sha256": "fa453ffa5ecbab3f6391d81a6680c0f7a0af03e2daddfdf8c472ad3ffcd46b76",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll"
-      ]
-    },
-    "native_graphics_probe.exe": {
-      "sha256": "7b77926e12c9e115ad90151b590a099fadd92ffbfc6eb35cf9276e8ffcaefa5e",
-      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
       "dll_imports": [
         "KERNEL32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll"
-      ]
-    },
-    "native_graphics_resource_test.exe": {
-      "sha256": "ff319ba6d43f3265e7fdeccc6f5b0c3b822ec0e599decb2db6500d87e671d5ad",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll",
-        "USER32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
-    },
-    "native_guest_callback_test.exe": {
-      "sha256": "dce8ce70510d2697618ca9b992c3c23a21c2451b682ec08ce2f7e3778b60c5e2",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll"
-      ]
-    },
-    "native_ipc_test.exe": {
-      "sha256": "8e3ae03cb76dc8ff08c1f2f05ff47448502673c06433ba2e3a3d070cba3fc551",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll"
-      ]
-    },
-    "native_loader_test.exe": {
-      "sha256": "6063021f0a712a12945c4a79e57f6a003ba707cef6d1a14ae4ee0ea9ace2fe2a",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "bcrypt.dll",
-        "KERNEL32.dll"
-      ]
-    },
-    "native_nvn_draw_test.exe": {
-      "sha256": "bb3e240fe1f0f4c3dbb483a7545a47d0fb2c443c2a5bf986e2931b55fb659df0",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll",
-        "USER32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
-    },
-    "native_nvn_frame_test.exe": {
-      "sha256": "157e3b0f762e04643d4f1b2e41c142069b140b0478fee2faee14c600d8a0f597",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll",
-        "USER32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
-    },
-    "native_nvn_pipeline_check.exe": {
-      "sha256": "0b1677c10fd7a92402f2bb583df550c2df39cbc96d9774dade947dab09995a88",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll",
-        "USER32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-convert-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-filesystem-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
-    },
-    "native_nvn_presentation_conversion_test.exe": {
-      "sha256": "90c330bd5368ddad641e6829f944b3451100e2c8f6609b7264a8f23d026a363e",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "USER32.dll",
-        "KERNEL32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
-    },
-    "native_nvn_presentation_fixture.exe": {
-      "sha256": "11e9fabe61f4181c2c833453bf9f455bfc73ceddc105ccc9426ad980b674a95a",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "GDI32.dll",
-        "USER32.dll",
-        "KERNEL32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-convert-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-filesystem-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
-    },
-    "native_nvn_presentation_policy_test.exe": {
-      "sha256": "a4faae2ab3a0e1b3455213b918e7f6403c21f02ff87e50c9b5c1b3f026a02483",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
-    },
-    "native_nvn_resource_test.exe": {
-      "sha256": "1ca4f532e94e46ee1dfa94c29af92a2d82003ed7301f9a34842c61320bb9216d",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll",
-        "USER32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
-    },
-    "native_nvn_state_test.exe": {
-      "sha256": "67b2776f6bd06d6f77f5fdfaa0003745cef635744e9685d8e558904f764ac973",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll",
-        "USER32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
-    },
-    "native_ownership_accounting_test.exe": {
-      "sha256": "6b31e2eec715e276176d7dcd64e71c72151b7dd924d3b523bc12265ee82eeb13",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "bcrypt.dll",
-        "KERNEL32.dll"
-      ]
-    },
-    "native_ownership_memory_integration.exe": {
-      "sha256": "c1bdc8353fd612f7ed56d13d2805ce21e56119297d1b4289599c2b68e64a47dc",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "bcrypt.dll",
-        "KERNEL32.dll"
-      ]
-    },
-    "native_ownership_memory_test.exe": {
-      "sha256": "903ee05c0803d48cbe2b854a1aa48edc6ec466733b5c8de1ea0ddf20550d855b",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll"
-      ]
-    },
-    "native_pending_host_test.exe": {
-      "sha256": "1bfae9ea87a388d5b0fc944c00faa34ea9448afeff2071be69bf6e2f9c0a0b4c",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "KERNEL32.dll"
-      ]
+        "bcrypt.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
     },
     "native_platform_test.exe": {
-      "sha256": "1c6c7a28790f11051baa605cb41f16f5d1edd4db42eb366f359db4cf0e6a6835",
+      "sha256": "155ec048fcaa88466629d21a36369effd56e6560c298969c4dbdf3ab8a24d268",
       "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
       "dll_imports": [
         "KERNEL32.dll"
-      ]
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
     },
     "native_primitive_test.exe": {
-      "sha256": "cf572f25c449fba3a5c8bd1fb785cefd0724bc6d1210416a095a8f0141234043",
+      "sha256": "95f911e8ff6a4f51c9fcabf13611d4403b33615878b4e4629c3cd228984406a6",
       "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
       "dll_imports": [
         "KERNEL32.dll"
-      ]
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
     },
-    "native_services_event_test.exe": {
-      "sha256": "dfb4eb8df0a18111996c392a7da4627a6814b3bda378dbdb48b37438a4897dda",
+    "native_loader_test.exe": {
+      "sha256": "7550a0d9bb14c3c3eb14ef660d72b7bbd8c8258b99b5e161e2a89ee934de0825",
       "pe_machine": "AMD64",
-      "dll_imports": [
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll",
-        "KERNEL32.dll"
-      ]
-    },
-    "native_services_lifecycle_test.exe": {
-      "sha256": "3037c88e80c2281cd00e12ccaf11a5a2025c3ee826b98b63d4c65c03d8ef6a01",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll",
-        "KERNEL32.dll"
-      ]
-    },
-    "native_services_test.exe": {
-      "sha256": "a6fb44f2078c1099ff75a1c3602e3c116d70c552f9615a7d93f347f426fdb69e",
-      "pe_machine": "AMD64",
-      "dll_imports": [
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-filesystem-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "KERNEL32.dll"
-      ]
-    },
-    "native_texture_probe.exe": {
-      "sha256": "fb824a83cbc3f3b4586971045dc6b1c5cbe57377d2367764c6b5c1ab7c834d9f",
-      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
       "dll_imports": [
         "KERNEL32.dll",
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-filesystem-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll"
-      ]
+        "bcrypt.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
     },
-    "native_texture_test.exe": {
-      "sha256": "2848facfd2bd9621c8e3eb5f1a4e54de0016688a7055c2d76135defcbc23f939",
+    "native_ipc_test.exe": {
+      "sha256": "ff89feac06a1823e0e6f4be7531fae1f39433cedf551d9d67b48f76487ea2b99",
       "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
       "dll_imports": [
-        "MSVCP140.dll",
-        "VCRUNTIME140.dll",
-        "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll",
         "KERNEL32.dll"
-      ]
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_event_test.exe": {
+      "sha256": "271bf0c073a393c44c91ea3d4e4de41313634ff02aa895cd9e996392f39ffc5e",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
     },
     "native_wait_test.exe": {
-      "sha256": "e4e4db9cc5915d9ba24c4636df4cc505a3d55cd5fe5e4b06aba07c50478347a0",
+      "sha256": "79a9ff1493c5b390efd3e92a161a585ef13778a5d0f86b8c39861b38126ecf9a",
       "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
       "dll_imports": [
         "KERNEL32.dll"
-      ]
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_graphics_probe.exe": {
+      "sha256": "c319820c6706ef9441ec1ae3c88daf66c58ba1d1720dc89c11c28a22fdf9208e",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_graphics_resource_test.exe": {
+      "sha256": "71459f0e756157fd9c185dfa5715187f77a07d15374c6d4fdca59a18a38f0a80",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "USER32.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_nvn_resource_test.exe": {
+      "sha256": "e09aaaef67aefcf5284b3a4c0fff0fd9c02b42791748f2a122981ecf4a718847",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "USER32.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_nvn_draw_test.exe": {
+      "sha256": "bc67c01fdfc53a0c5b9eecb308c29c2fe8546e46b008b52ee1c3292fa2d38feb",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "USER32.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_nvn_pipeline_check.exe": {
+      "sha256": "620f79b4870c6222837f426948d1a1ae355deb5490fcadc940a9555db2bac1cc",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "USER32.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-convert-l1-1-0.dll",
+        "api-ms-win-crt-filesystem-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_nvn_frame_test.exe": {
+      "sha256": "ce1a8a93a17fcf8347d5750d62b5ebefef1957537acaf99260ea4fa394754dcf",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "USER32.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_nvn_state_test.exe": {
+      "sha256": "87abb7fac63f571b8d7a89d223401e7e8bb2bfa7e20cb620299725e159f0efd0",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "USER32.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_nvn_presentation_policy_test.exe": {
+      "sha256": "2dd0246ab3472e0a7ef05b4e3bb2ad32fd3bc8c8852192abeaa89978a0c560a8",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_nvn_presentation_conversion_test.exe": {
+      "sha256": "93e13e6bf774e89db086af85ac88f407205ac6d450f2ac1a191fcb057e32d6d1",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "USER32.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_nvn_presentation_fixture.exe": {
+      "sha256": "f5e51ff23a3efecd0abdbbafe7631e11d71652919a86f48f85443e976e18ef68",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "GDI32.dll",
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "USER32.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-convert-l1-1-0.dll",
+        "api-ms-win-crt-filesystem-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_nvn_feature_format_test.exe": {
+      "sha256": "c7f2d8b9a16a1d47dc939410f3f9cc597c2d1a7cea67ee13a5cca38fc9222e0e",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "USER32.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_services_test.exe": {
+      "sha256": "2f6384f332f8f44851dd51bf17c817405ea0abe7af0b7cf1f8f6d4c66da9c5bf",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-filesystem-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_services_event_test.exe": {
+      "sha256": "2a2ace131a27f5034bb36911386b599adb7a751143cf9fc39760423a1314e76a",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_services_lifecycle_test.exe": {
+      "sha256": "8cd092eea21c4040271151e459061d2d6070425ccb45cc3e88a8e689b64adf96",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "buffer_init_test.exe": {
+      "sha256": "2a97d312528be8e387f7d54cbbe0a3500d1e148f191d4d8885a0fd945b26cd7a",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "USER32.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
     },
     "pending_test.exe": {
-      "sha256": "bed0e3820d9be342237ab61a8b36b593271f12e5a90f39b4398e5e9930cf541e",
+      "sha256": "b61f6fd576366eb619c6fa52dc8efad45aac21b4c53b965a87f0023b755b6417",
       "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
       "dll_imports": [
         "KERNEL32.dll",
         "MSVCP140.dll",
         "VCRUNTIME140.dll",
         "VCRUNTIME140_1.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
         "api-ms-win-crt-convert-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
-        "api-ms-win-crt-heap-l1-1-0.dll",
         "api-ms-win-crt-environment-l1-1-0.dll",
-        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
         "api-ms-win-crt-math-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_pending_host_test.exe": {
+      "sha256": "3b71e310a9768f0b33628b96e1c2503fcf275a3032320cbd2b23f49b1d453acf",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
     },
     "window_test.exe": {
-      "sha256": "a4d354d55e79008039bc3f5a9dc78d94b3cd071b86befc4c320525036645d23c",
+      "sha256": "00c497de83e493e8949c4dd694e5bd9136b7d73eee4a59c5a2d77ca4c09cbadc",
       "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
       "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
         "USER32.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_texture_probe.exe": {
+      "sha256": "e3ae256974178a65c11b3618d36431875ea9caabdf0671c46f5ccef9347bc654",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-filesystem-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_texture_test.exe": {
+      "sha256": "c7a8b631f9b52622097536c5bc791a22535eb37171f18137dba83e4cbcacf7f4",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
         "KERNEL32.dll",
         "MSVCP140.dll",
         "VCRUNTIME140.dll",
         "VCRUNTIME140_1.dll",
         "api-ms-win-crt-heap-l1-1-0.dll",
-        "api-ms-win-crt-runtime-l1-1-0.dll",
-        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
         "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
         "api-ms-win-crt-stdio-l1-1-0.dll",
-        "api-ms-win-crt-locale-l1-1-0.dll"
-      ]
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "fence_test.exe": {
+      "sha256": "2206d424cc2971d35b8909bd0180da79f542d7d82a638291fae2e47d49ea9b3e",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-convert-l1-1-0.dll",
+        "api-ms-win-crt-environment-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "memory_test.exe": {
+      "sha256": "dc105a63ea575aba2a63b9b76b015047737e9b2a9b7b5a4cdb6beb7f2be4e433",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "MSVCP140.dll",
+        "VCRUNTIME140.dll",
+        "VCRUNTIME140_1.dll",
+        "api-ms-win-crt-convert-l1-1-0.dll",
+        "api-ms-win-crt-environment-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_guest_callback_test.exe": {
+      "sha256": "cc4c42621b2bf58b1fee50946033b66b127f175e715f918ab925fddc2e50769c",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_ownership_memory_test.exe": {
+      "sha256": "1cb5c3862c6d57e42c06b4a8c918233797605280f86f063090554748716f92c3",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_ownership_memory_integration.exe": {
+      "sha256": "432ccff0ea0eb64436df23ba1a33df43f92caa69aff2566e353a53f2e165bf03",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "bcrypt.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
+    },
+    "native_ownership_accounting_test.exe": {
+      "sha256": "f9276de8a32f6bb3741b27d7346effb3032f19efdb9bba2e1992def1f18f214d",
+      "pe_machine": "AMD64",
+      "optional_magic": "PE32+",
+      "dll_imports": [
+        "KERNEL32.dll",
+        "bcrypt.dll"
+      ],
+      "delay_dll_imports": [],
+      "excluded_scope_markers_absent": true
     }
   },
   "verification_steps": [
@@ -464,7 +590,7 @@
         "<build>\\platform"
       ],
       "exit_code": 0,
-      "log_sha256": "0c24f2b720e05e318405dac45ffa3231f34c2d5d2ac5e887aedba3a1f0bf9cbf"
+      "log_sha256": "55de6a3e745a7260fa1adf672288d1af9598aceff1cb1a8d925fdbdb0622c11d"
     },
     {
       "step": "native_entry",
@@ -475,7 +601,7 @@
         "<build>\\native_entry"
       ],
       "exit_code": 0,
-      "log_sha256": "ca3dbdb0126c610895b6deeaf86e56fa9db6e268a6e759f9975a38ada78ea458"
+      "log_sha256": "1443c220c359e2dfc20d41d4fd4005e3cf9da87a9fa929df0ea03f2bd1d6ab63"
     },
     {
       "step": "native_rsqrt-configure",
@@ -488,7 +614,7 @@
         "-DSUYU_SOURCE=<source>"
       ],
       "exit_code": 0,
-      "log_sha256": "96f6cb8bcccb2527d64b5e6efa7090eda2fc1aaff8db8ea6273cb77ff7b314a2"
+      "log_sha256": "ae5c99954ca98df13b01782d5c54ec9614c1e2cbef11aa53d6e517483328257e"
     },
     {
       "step": "native_rsqrt-build",
@@ -502,7 +628,7 @@
         "2"
       ],
       "exit_code": 0,
-      "log_sha256": "350190e504ef763e3c60aa1dc2b1199b50cd36c2d6066c152543f76c0597ab66"
+      "log_sha256": "5b4b2bc4a19c445d135c1fd066748f8c103e2b6727970d1e166cdbf06d641baa"
     },
     {
       "step": "native_rsqrt-correctness",
@@ -523,7 +649,7 @@
         "<vulkan-include>"
       ],
       "exit_code": 0,
-      "log_sha256": "96854337b56b8a91aa20f3877a91d67be73e3fc268ef526ee7b2d01a217f0292"
+      "log_sha256": "d92d47834a009c654989c2167a9709c72c706c51cb215599758cacc6c79003e2"
     },
     {
       "step": "buffer_init",
@@ -543,7 +669,7 @@
         "--native-profile"
       ],
       "exit_code": 0,
-      "log_sha256": "083b9129e524ca6efc38597b76935acc510a24cedfc0fd36d48eb2d40bc080f4"
+      "log_sha256": "2a6c7c8f2e5b2494d33a0ebd488dab27d80cbbedbdc88be112f7de70a4b7f7a4"
     },
     {
       "step": "native_pending_host",
@@ -556,7 +682,7 @@
         "<build>\\native_pending\\generated"
       ],
       "exit_code": 0,
-      "log_sha256": "18536ff663486a21c2253c1d86fc304fbea17aedc6518adbb4a9007e12a5d66f"
+      "log_sha256": "b8a8043ffac0326ab61617f31c22fab3a786f0df714583f92d342b164838f6f7"
     },
     {
       "step": "ownership_fence",
@@ -567,7 +693,7 @@
         "<build>\\ownership_fence"
       ],
       "exit_code": 0,
-      "log_sha256": "ccaeb0a396c939932cbdf3751b0c1a4a39565d1900862c2c6eab56bedcc21131"
+      "log_sha256": "baa6d5589b9c6f51e525f9f81df4c89dd20690fdbd1f2d6cc89d7f790698d330"
     },
     {
       "step": "memory_operation",
@@ -578,7 +704,7 @@
         "<build>\\memory_operation"
       ],
       "exit_code": 0,
-      "log_sha256": "6b589d97c20428d6fc2754378aadbacd6b098c976d0b33619a05ef3a57327b9b"
+      "log_sha256": "644e97bee7fa91004ab527c89f9aeefd1505d6505dae43f37e5f7cad4d3de091"
     },
     {
       "step": "guest_callback",
@@ -592,7 +718,7 @@
         "--native-profile"
       ],
       "exit_code": 0,
-      "log_sha256": "a3f4aa8364e98807bbd4837c43c8cd42a327b01603ca4662c39d11ae90c30fe2"
+      "log_sha256": "0f74eafacf6f5514759bda5cb4fda36e737ff38fde51d44ee3662f85938d2026"
     },
     {
       "step": "pending_default",
@@ -603,7 +729,7 @@
         "<build>\\native_pending_default"
       ],
       "exit_code": 0,
-      "log_sha256": "c2a3a6fcae614ac5987eb648cc372f05b9b5d592d7d90a389e6052fb0f7b37a4"
+      "log_sha256": "08b7af8549bfac318e382434f36488fd81ebfacfbe9f30fb897685453978958b"
     },
     {
       "step": "guest_callback_default",
@@ -616,7 +742,7 @@
         "<build>\\native_pending_default\\generated"
       ],
       "exit_code": 0,
-      "log_sha256": "6d90264076f91cbd5ababf86adc05a4b2648140b567e55ef195724b9176181d2"
+      "log_sha256": "cc814691b1a9292978d1fbc6982e843daad637173479236d9b64c152917b348a"
     },
     {
       "step": "accounting-generate-ordinary",
@@ -643,7 +769,7 @@
         "<build>\\memory_operation\\gg\\generated"
       ],
       "exit_code": 0,
-      "log_sha256": "338c6c0ca9d9fed0cde82b7330d103e98d764bd39ee92e2e071bcd79a10f3a21"
+      "log_sha256": "ce2668cb5e8dc39a99c098579f426b70d2cab0e4dc1475939df4915d2293b1b6"
     },
     {
       "step": "accounting-generate-chain",
@@ -669,7 +795,7 @@
         "<build>\\ownership_accounting_chain\\generated"
       ],
       "exit_code": 0,
-      "log_sha256": "f0a4768c83b6d388c7fe9aff9a1f1d11e26a24d2321ebf6cd68c8a0d229aeda8"
+      "log_sha256": "3a06c3644defa9094c0277a12870af7d722c9d16b7b9f11f8684df5062ea746d"
     },
     {
       "step": "native_nvn-configure",
@@ -681,7 +807,7 @@
         "<build>\\native_nvn"
       ],
       "exit_code": 0,
-      "log_sha256": "1d93842fdddd55ea3869ab1359d813673985aac858c5341c3876e7d4c960976f"
+      "log_sha256": "e8712f47abee9ab0e948222de505e6adaa1022716d77b201561e77e0889dc01e"
     },
     {
       "step": "native_nvn-build",
@@ -695,7 +821,7 @@
         "2"
       ],
       "exit_code": 0,
-      "log_sha256": "80750303109d38b836ceae76e009ce0aa79bf9a2fb2c04b31f6a6b39ebdbc167"
+      "log_sha256": "d416d3bf9abaf8cb35624652768dd082720d349bb82d61da0c081c75dc5e525b"
     },
     {
       "step": "native_nvn-test",
@@ -708,7 +834,7 @@
         "--output-on-failure"
       ],
       "exit_code": 0,
-      "log_sha256": "c089cb225ffd2461c7b7f87acbfebd056fa8646f571f774524cfa38af97c2fd4"
+      "log_sha256": "3fe03ff2ca8bd0015d875c2cc55e4552a3e8a5f8bdd7d486c91cc7fbeb864830"
     },
     {
       "step": "native_nvn_builders-configure",
@@ -720,7 +846,7 @@
         "<build>\\native_nvn_builders"
       ],
       "exit_code": 0,
-      "log_sha256": "98e6ea28a2309bb00d4b5eb216011873b1bcc0e13cafd1b790fe32eef686f7f2"
+      "log_sha256": "5d9ac2f9177e07aab220f0f43478d133bee0d34aac96f74b646560c25ae1229b"
     },
     {
       "step": "native_nvn_builders-build",
@@ -734,7 +860,7 @@
         "2"
       ],
       "exit_code": 0,
-      "log_sha256": "cf1eec9c3a7d96c244ec39ed2c0b65ccc7b43146e07289a4da3ac997e698709d"
+      "log_sha256": "be9e851df824da95fe29136fbbde463f21eabddd7a95c3e3d3a5b5b053ad5d92"
     },
     {
       "step": "native_nvn_builders-test",
@@ -747,7 +873,7 @@
         "--output-on-failure"
       ],
       "exit_code": 0,
-      "log_sha256": "eed40c76e5b6ced0e2f8c3c201214f0c674d089579ec1da395a6f3e4d202a5b5"
+      "log_sha256": "a14cad22dfb71629b8b06a464f14b9975f0c2f2bc1b021f6c774cdbdcd1ae408"
     },
     {
       "step": "services-configure",
@@ -761,7 +887,7 @@
         "-DNATIVE_GRAPHICS_SIRIT_ROOT=<sirit-root>"
       ],
       "exit_code": 0,
-      "log_sha256": "8089478f75778588fbb05844c9c2d7a5fb5b767738f55a799e40283cbd5450cf"
+      "log_sha256": "386dfc656cb4bf4bb4352e814a0cac46fa58d7973203df123045c158832bb127"
     },
     {
       "step": "services-build",
@@ -775,7 +901,7 @@
         "2"
       ],
       "exit_code": 0,
-      "log_sha256": "4daad9837b868bdd9b501acbc36698232c317fecfe3fa4adcbd6e819c3138d5b"
+      "log_sha256": "a2d4fb1f37f8e78be5ca8a7181db3540b3a6d2935f8aac6b78c45d1e72c29ce9"
     },
     {
       "step": "services-test",
@@ -788,7 +914,7 @@
         "--output-on-failure"
       ],
       "exit_code": 0,
-      "log_sha256": "68157e9c3e61c0a0303e8f8b055b946aa2fcf45205b25e8ea50194d553fce53e"
+      "log_sha256": "e7983e38ed1700d70ecc8ceb270d71c047dc2a2b727cc7def6dda028ec54cb9d"
     },
     {
       "step": "graphics-configure",
@@ -802,7 +928,7 @@
         "-DNATIVE_GRAPHICS_SIRIT_ROOT=<sirit-root>"
       ],
       "exit_code": 0,
-      "log_sha256": "dd043f31cca597b67f0a19b7802ff0ae1c1ac3ebf27f44e7cf724bbbb772fb3a"
+      "log_sha256": "24505aadc6a425d0cf7dd23cf58adb8211e29861b90baa4b45f81a5f2dd13bfa"
     },
     {
       "step": "graphics-build",
@@ -816,7 +942,7 @@
         "2"
       ],
       "exit_code": 0,
-      "log_sha256": "f0b07913924d7a0d586b0124001732f114cc01c968b9080d748a1f42ff1f3cf1"
+      "log_sha256": "31b83a46bf3a0809b593ee82e04bdc77437e3d8dba9b2db141ace5716d0fd379"
     },
     {
       "step": "graphics-test",
@@ -829,7 +955,7 @@
         "--output-on-failure"
       ],
       "exit_code": 0,
-      "log_sha256": "37d2f90d0f619940f765aab94321f4e34e9c9c284d0dcbb173720e5628c86a6e"
+      "log_sha256": "05ba5be3d5b982513a4a34857bf999a889108ed70e7f536512ecc308b3281fe0"
     },
     {
       "step": "nvn-configure",
@@ -843,7 +969,7 @@
         "-DNATIVE_GRAPHICS_SIRIT_ROOT=<sirit-root>"
       ],
       "exit_code": 0,
-      "log_sha256": "9c844b7bf7e1a01e25ba4c627c6d0107e1dddd8adeaba0a2336e4e5789c4d63a"
+      "log_sha256": "ede37e53437e3e8043ce4810b3986ecccf074c39178bb116c9b60fae3f19d244"
     },
     {
       "step": "nvn-build",
@@ -857,7 +983,7 @@
         "2"
       ],
       "exit_code": 0,
-      "log_sha256": "642f3126a9e1e89389b7334d13deff5e676e440ac49c2009a2fe35ca0b66ef30"
+      "log_sha256": "1b6cf8a1a80e6a855736e8d01c3a41dc78dd876d33f516c734c685a19221a3f2"
     },
     {
       "step": "nvn-test",
@@ -870,7 +996,7 @@
         "--output-on-failure"
       ],
       "exit_code": 0,
-      "log_sha256": "bba5afbdebebec0fc74a0e1d1e19398a260302879c670e3376deae4f794bbef1"
+      "log_sha256": "1bb1894c104f221ebc13abca86253bf2f5359e9a2af280c692f7f846f2d22b3d"
     },
     {
       "step": "window-configure",
@@ -883,7 +1009,7 @@
         "-DNATIVE_TEXTURE_FMT_ROOT=<fmt-root>"
       ],
       "exit_code": 0,
-      "log_sha256": "f03d0d38183fdc9229232ea549636c0b3a349a54e88525ce11571ee6549128a9"
+      "log_sha256": "7bbfd30407d7a0ccb266d6de362631f002b35694e869166eb2c3eae81c1c6b3d"
     },
     {
       "step": "window-build",
@@ -897,7 +1023,7 @@
         "2"
       ],
       "exit_code": 0,
-      "log_sha256": "f03e15c48668c1a2aed1b306627760f8aeb0dccba9b6f826db4fcd138c031dc4"
+      "log_sha256": "2d335586d5fc761c37af4ea99d99648d6fdd08c2d442e5332401ed9225af9e6c"
     },
     {
       "step": "window-test",
@@ -910,7 +1036,7 @@
         "--output-on-failure"
       ],
       "exit_code": 0,
-      "log_sha256": "a1bfd22d4b8b8d3d20649c3605ff89524389846bafd84d0d188d2221a5067357"
+      "log_sha256": "551c9eb0a96499b20ae573626e129c97ae3b1dfb6a1871f7c8c645cf7f0d2215"
     },
     {
       "step": "textures-configure",
@@ -923,7 +1049,7 @@
         "-DNATIVE_TEXTURE_FMT_ROOT=<fmt-root>"
       ],
       "exit_code": 0,
-      "log_sha256": "4e8627b61bfc341aca3da66d0f8ef31f2fe034155d739f7e387faabb39cc86e4"
+      "log_sha256": "c65ff57f308922504c504f86046e3888d26f00aea9d5f65bc6d663bcce4c0b3e"
     },
     {
       "step": "textures-build",
@@ -937,7 +1063,7 @@
         "2"
       ],
       "exit_code": 0,
-      "log_sha256": "aa3bf8a0ae8856f18eb2a9a9ffd25a8e1029e2e3c0da1465ba2e54ede91e6aca"
+      "log_sha256": "0cfd2577f9f921a40ed94cd8d75394f11bc895d12db82b679105747afbbd8701"
     },
     {
       "step": "textures-test",
@@ -950,17 +1076,71 @@
         "--output-on-failure"
       ],
       "exit_code": 0,
-      "log_sha256": "9a302c9f381565f5b2992e66231e375190aac44ad98ab4cd801de9a2930dd73d"
+      "log_sha256": "0847a39c6e88de002734c9a8f9c46b3da9ded6bb38a6d710dee673aa85217c76"
+    },
+    {
+      "step": "nvn-feature-format-gpu",
+      "command": [
+        "<build>\\nvn\\Release\\native_nvn_feature_format_test.exe",
+        "--gpu"
+      ],
+      "exit_code": 0,
+      "log_sha256": "54ca2d01eb25bbff281b5469f505f2677abc6807702458349f1df5ff83b36692",
+      "result": {
+        "mode": "gpu",
+        "status": "PASS",
+        "draws": 16,
+        "compared_pixels": 549,
+        "checks": 196,
+        "strict_full_ubo": true,
+        "authored_only": true,
+        "GPU_executed": true,
+        "device": "AMD Radeon RX 9070 XT",
+        "api_version": 4202496,
+        "queue_family": 0,
+        "extended_support_queried": true,
+        "max_custom_border_samplers": 4096,
+        "requested": {
+          "robust_buffer_access": true,
+          "texture_compression_bc": true,
+          "custom_border_colors": true,
+          "custom_border_without_format": true,
+          "depth_clip_control": true,
+          "provoking_vertex_last": true,
+          "shader_image_gather_extended": true
+        },
+        "supported": {
+          "robust_buffer_access": true,
+          "texture_compression_bc": true,
+          "custom_border_colors": true,
+          "custom_border_without_format": true,
+          "depth_clip_control": true,
+          "provoking_vertex_last": true,
+          "shader_image_gather_extended": true
+        },
+        "enabled": {
+          "robust_buffer_access": true,
+          "texture_compression_bc": true,
+          "custom_border_colors": true,
+          "custom_border_without_format": true,
+          "depth_clip_control": true,
+          "provoking_vertex_last": true,
+          "shader_image_gather_extended": true
+        }
+      },
+      "executable_sha256": "c7f2d8b9a16a1d47dc939410f3f9cc597c2d1a7cea67ee13a5cca38fc9222e0e"
     },
     {
       "step": "base-source-archive",
       "command": [
         "git",
+        "-c",
+        "core.autocrlf=false",
         "-C",
         "<source>",
         "archive",
         "--format=tar.gz",
-        "--output=G:\\suyu\\mk8-native-runtime\\public-native-foundations-v5-20261015\\suyu-base-source.tar.gz",
+        "--output=<package>/suyu-base-source.tar.gz",
         "347fcf91d95cd39cb5c3db50f1b6d827ad699311"
       ],
       "exit_code": 0,
@@ -992,46 +1172,42 @@
   },
   "files_sha256": {
     "BC-decoder-MPL-2.0.txt": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
-    "BUILD.json": "5469bc7fbd6e2980fb5fba751bcd7fa251779f3f69a2d5d50374a9e55eb93f8a",
+    "bin/buffer_init_test.exe": "2a97d312528be8e387f7d54cbbe0a3500d1e148f191d4d8885a0fd945b26cd7a",
+    "bin/fence_test.exe": "2206d424cc2971d35b8909bd0180da79f542d7d82a638291fae2e47d49ea9b3e",
+    "bin/memory_test.exe": "dc105a63ea575aba2a63b9b76b015047737e9b2a9b7b5a4cdb6beb7f2be4e433",
+    "bin/native_admit.exe": "9a11392992b57f74f3729a6fc74664d434e42e049181b5b21a8fead3245d1367",
+    "bin/native_emit.exe": "9512bcc9115359c6153596ada0a90a9ccaa10ca4b9550ef51baa9a0a71e3398b",
+    "bin/native_event_test.exe": "271bf0c073a393c44c91ea3d4e4de41313634ff02aa895cd9e996392f39ffc5e",
+    "bin/native_graphics_probe.exe": "c319820c6706ef9441ec1ae3c88daf66c58ba1d1720dc89c11c28a22fdf9208e",
+    "bin/native_graphics_resource_test.exe": "71459f0e756157fd9c185dfa5715187f77a07d15374c6d4fdca59a18a38f0a80",
+    "bin/native_guest_callback_test.exe": "cc4c42621b2bf58b1fee50946033b66b127f175e715f918ab925fddc2e50769c",
+    "bin/native_ipc_test.exe": "ff89feac06a1823e0e6f4be7531fae1f39433cedf551d9d67b48f76487ea2b99",
+    "bin/native_loader_test.exe": "7550a0d9bb14c3c3eb14ef660d72b7bbd8c8258b99b5e161e2a89ee934de0825",
+    "bin/native_nvn_draw_test.exe": "bc67c01fdfc53a0c5b9eecb308c29c2fe8546e46b008b52ee1c3292fa2d38feb",
+    "bin/native_nvn_feature_format_test.exe": "c7f2d8b9a16a1d47dc939410f3f9cc597c2d1a7cea67ee13a5cca38fc9222e0e",
+    "bin/native_nvn_frame_test.exe": "ce1a8a93a17fcf8347d5750d62b5ebefef1957537acaf99260ea4fa394754dcf",
+    "bin/native_nvn_pipeline_check.exe": "620f79b4870c6222837f426948d1a1ae355deb5490fcadc940a9555db2bac1cc",
+    "bin/native_nvn_presentation_conversion_test.exe": "93e13e6bf774e89db086af85ac88f407205ac6d450f2ac1a191fcb057e32d6d1",
+    "bin/native_nvn_presentation_fixture.exe": "f5e51ff23a3efecd0abdbbafe7631e11d71652919a86f48f85443e976e18ef68",
+    "bin/native_nvn_presentation_policy_test.exe": "2dd0246ab3472e0a7ef05b4e3bb2ad32fd3bc8c8852192abeaa89978a0c560a8",
+    "bin/native_nvn_resource_test.exe": "e09aaaef67aefcf5284b3a4c0fff0fd9c02b42791748f2a122981ecf4a718847",
+    "bin/native_nvn_state_test.exe": "87abb7fac63f571b8d7a89d223401e7e8bb2bfa7e20cb620299725e159f0efd0",
+    "bin/native_ownership_accounting_test.exe": "f9276de8a32f6bb3741b27d7346effb3032f19efdb9bba2e1992def1f18f214d",
+    "bin/native_ownership_memory_integration.exe": "432ccff0ea0eb64436df23ba1a33df43f92caa69aff2566e353a53f2e165bf03",
+    "bin/native_ownership_memory_test.exe": "1cb5c3862c6d57e42c06b4a8c918233797605280f86f063090554748716f92c3",
+    "bin/native_pending_host_test.exe": "3b71e310a9768f0b33628b96e1c2503fcf275a3032320cbd2b23f49b1d453acf",
+    "bin/native_platform_test.exe": "155ec048fcaa88466629d21a36369effd56e6560c298969c4dbdf3ab8a24d268",
+    "bin/native_primitive_test.exe": "95f911e8ff6a4f51c9fcabf13611d4403b33615878b4e4629c3cd228984406a6",
+    "bin/native_services_event_test.exe": "2a2ace131a27f5034bb36911386b599adb7a751143cf9fc39760423a1314e76a",
+    "bin/native_services_lifecycle_test.exe": "8cd092eea21c4040271151e459061d2d6070425ccb45cc3e88a8e689b64adf96",
+    "bin/native_services_test.exe": "2f6384f332f8f44851dd51bf17c817405ea0abe7af0b7cf1f8f6d4c66da9c5bf",
+    "bin/native_texture_probe.exe": "e3ae256974178a65c11b3618d36431875ea9caabdf0671c46f5ccef9347bc654",
+    "bin/native_texture_test.exe": "c7a8b631f9b52622097536c5bc791a22535eb37171f18137dba83e4cbcacf7f4",
+    "bin/native_wait_test.exe": "79a9ff1493c5b390efd3e92a161a585ef13778a5d0f86b8c39861b38126ecf9a",
+    "bin/pending_test.exe": "b61f6fd576366eb619c6fa52dc8efad45aac21b4c53b965a87f0023b755b6417",
+    "bin/window_test.exe": "00c497de83e493e8949c4dd694e5bd9136b7d73eee4a59c5a2d77ca4c09cbadc",
+    "BUILD.json": "8ccb03b41fe918009ef71083c7dd76945b0359cd64393407448a7afd192942f2",
     "COPYING.txt": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
-    "README.md": "eadaf431cfbbdbae502e2f0278fc8ed790efcbeb357790ae4ef0c76a3aca6338",
-    "SOURCE.json": "0d0c89e12f0ea8b756be980edb8dc070b8654d0dd4ab158ec36d22ec53de22af",
-    "Sirit-LICENSE.txt": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
-    "Sirit-v1.0.5-source.tar.gz": "c8c13167b13371d68c6080e2e1e131119b3de44784e56226a72b711fddf0dc0a",
-    "bin/buffer_init_test.exe": "d7a5aa359d5250db1ba0edeaebb2d5941ba0f46037dc583b507b4d770f054f6a",
-    "bin/fence_test.exe": "98520367bd779fadf230c7b6fe5fb2b875d0917586bf3fd9735a4ee0faabb696",
-    "bin/memory_test.exe": "108cc2c2cb77d807a4e77975604a16cba040da50d2e5f766c213dd1c3fe228b0",
-    "bin/native_admit.exe": "6007cdc7c4de758b616472b74dd143009a6fdf2aa4efb8393e080c27dd8a9dd4",
-    "bin/native_emit.exe": "a30eb432f95754c264676c8fdb40a67aa91d344c2af40e13e2ffdcbb4408e933",
-    "bin/native_event_test.exe": "fa453ffa5ecbab3f6391d81a6680c0f7a0af03e2daddfdf8c472ad3ffcd46b76",
-    "bin/native_graphics_probe.exe": "7b77926e12c9e115ad90151b590a099fadd92ffbfc6eb35cf9276e8ffcaefa5e",
-    "bin/native_graphics_resource_test.exe": "ff319ba6d43f3265e7fdeccc6f5b0c3b822ec0e599decb2db6500d87e671d5ad",
-    "bin/native_guest_callback_test.exe": "dce8ce70510d2697618ca9b992c3c23a21c2451b682ec08ce2f7e3778b60c5e2",
-    "bin/native_ipc_test.exe": "8e3ae03cb76dc8ff08c1f2f05ff47448502673c06433ba2e3a3d070cba3fc551",
-    "bin/native_loader_test.exe": "6063021f0a712a12945c4a79e57f6a003ba707cef6d1a14ae4ee0ea9ace2fe2a",
-    "bin/native_nvn_draw_test.exe": "bb3e240fe1f0f4c3dbb483a7545a47d0fb2c443c2a5bf986e2931b55fb659df0",
-    "bin/native_nvn_frame_test.exe": "157e3b0f762e04643d4f1b2e41c142069b140b0478fee2faee14c600d8a0f597",
-    "bin/native_nvn_pipeline_check.exe": "0b1677c10fd7a92402f2bb583df550c2df39cbc96d9774dade947dab09995a88",
-    "bin/native_nvn_presentation_conversion_test.exe": "90c330bd5368ddad641e6829f944b3451100e2c8f6609b7264a8f23d026a363e",
-    "bin/native_nvn_presentation_fixture.exe": "11e9fabe61f4181c2c833453bf9f455bfc73ceddc105ccc9426ad980b674a95a",
-    "bin/native_nvn_presentation_policy_test.exe": "a4faae2ab3a0e1b3455213b918e7f6403c21f02ff87e50c9b5c1b3f026a02483",
-    "bin/native_nvn_resource_test.exe": "1ca4f532e94e46ee1dfa94c29af92a2d82003ed7301f9a34842c61320bb9216d",
-    "bin/native_nvn_state_test.exe": "67b2776f6bd06d6f77f5fdfaa0003745cef635744e9685d8e558904f764ac973",
-    "bin/native_ownership_accounting_test.exe": "6b31e2eec715e276176d7dcd64e71c72151b7dd924d3b523bc12265ee82eeb13",
-    "bin/native_ownership_memory_integration.exe": "c1bdc8353fd612f7ed56d13d2805ce21e56119297d1b4289599c2b68e64a47dc",
-    "bin/native_ownership_memory_test.exe": "903ee05c0803d48cbe2b854a1aa48edc6ec466733b5c8de1ea0ddf20550d855b",
-    "bin/native_pending_host_test.exe": "1bfae9ea87a388d5b0fc944c00faa34ea9448afeff2071be69bf6e2f9c0a0b4c",
-    "bin/native_platform_test.exe": "1c6c7a28790f11051baa605cb41f16f5d1edd4db42eb366f359db4cf0e6a6835",
-    "bin/native_primitive_test.exe": "cf572f25c449fba3a5c8bd1fb785cefd0724bc6d1210416a095a8f0141234043",
-    "bin/native_services_event_test.exe": "dfb4eb8df0a18111996c392a7da4627a6814b3bda378dbdb48b37438a4897dda",
-    "bin/native_services_lifecycle_test.exe": "3037c88e80c2281cd00e12ccaf11a5a2025c3ee826b98b63d4c65c03d8ef6a01",
-    "bin/native_services_test.exe": "a6fb44f2078c1099ff75a1c3602e3c116d70c552f9615a7d93f347f426fdb69e",
-    "bin/native_texture_probe.exe": "fb824a83cbc3f3b4586971045dc6b1c5cbe57377d2367764c6b5c1ab7c834d9f",
-    "bin/native_texture_test.exe": "2848facfd2bd9621c8e3eb5f1a4e54de0016688a7055c2d76135defcbc23f939",
-    "bin/native_wait_test.exe": "e4e4db9cc5915d9ba24c4636df4cc505a3d55cd5fe5e4b06aba07c50478347a0",
-    "bin/pending_test.exe": "bed0e3820d9be342237ab61a8b36b593271f12e5a90f39b4398e5e9930cf541e",
-    "bin/window_test.exe": "a4d354d55e79008039bc3f5a9dc78d94b3cd071b86befc4c320525036645d23c",
-    "dependencies/fmt/LICENSE": "07580f2a3b35709ce703d523f447b242f6dfec7582a8c0df102c7fa2849375f8",
     "dependencies/fmt/include/fmt/args.h": "6e0bf8ffbd904e6ef525cdce8e6e00312ce5d14f616cea5d88132606ca0384c4",
     "dependencies/fmt/include/fmt/base.h": "73ba80ca15c02d6826a611d1651ca6f1495ec127815e257a5d6552d6f6ad313e",
     "dependencies/fmt/include/fmt/chrono.h": "f8e2a69bd97bc5b90c9af7fb87e010775b695d487a77e8d8cbe624e57bd2f9bf",
@@ -1046,11 +1222,12 @@
     "dependencies/fmt/include/fmt/ranges.h": "ccaf61c9b5937e0fa97737fb047121c5fca9db34de516b8edfc1d913583e3c8e",
     "dependencies/fmt/include/fmt/std.h": "3f06cdf32774b9e6915e9762411f5f4de8b8ba5660adccbdea514be7f0b23826",
     "dependencies/fmt/include/fmt/xchar.h": "f0903d522c64faaee2c374a0b2063ac3e43d0b5006dfd3411f0e5dccd8ff6062",
+    "dependencies/fmt/LICENSE": "07580f2a3b35709ce703d523f447b242f6dfec7582a8c0df102c7fa2849375f8",
     "dependencies/sirit/include/sirit/sirit.h": "8d7f717c19a96906a6b6768001a8aac6348a34a244c576fd1b850f21540132ee",
-    "dependencies/sirit/include/spirv/1.0/GLSL.std.450.h": "b65b7b02fca634dd4d7a9f2c475a29ca7eea8c6cfd31360720cff6f73f29d728",
-    "dependencies/sirit/include/spirv/1.0/OpenCL.std.h": "556d37ad0fd80c4edf495b38aa3fe91913f54746c4ac809e8d0fb5b2edf9a549",
     "dependencies/sirit/include/spirv/1.0/extinst.glsl.std.450.grammar.json": "1194af693a740d972a8d0675f3277f596caae6d61ed0eb0415e5fd35619726dc",
     "dependencies/sirit/include/spirv/1.0/extinst.opencl.std.100.grammar.json": "7819c6bf8f4f87b5fe7b862f871b6e545e9b85d466c846c79cfef917c6bbe8ec",
+    "dependencies/sirit/include/spirv/1.0/GLSL.std.450.h": "b65b7b02fca634dd4d7a9f2c475a29ca7eea8c6cfd31360720cff6f73f29d728",
+    "dependencies/sirit/include/spirv/1.0/OpenCL.std.h": "556d37ad0fd80c4edf495b38aa3fe91913f54746c4ac809e8d0fb5b2edf9a549",
     "dependencies/sirit/include/spirv/1.0/spirv.core.grammar.json": "b7ce621871ef9baeb12405db397297131138643e0962656e57e7bd8874e29074",
     "dependencies/sirit/include/spirv/1.0/spirv.cs": "cf44b15146a46e0ae6e31a6517796eef62054dbed39cd6cd4b2e6173602d5c11",
     "dependencies/sirit/include/spirv/1.0/spirv.h": "730ec0f621e29cf894ba8b7b88af126c6e5d66283e3107bd9790d3faada778cf",
@@ -1059,10 +1236,10 @@
     "dependencies/sirit/include/spirv/1.0/spirv.json": "1730f3bb442a96de1bb8fae9bb4457d1f81d88004b0bd54e99d4c54890764fcd",
     "dependencies/sirit/include/spirv/1.0/spirv.lua": "707947233e55cfdb8f4ab9370015543225ae8de811c3c502d815142365cd544f",
     "dependencies/sirit/include/spirv/1.0/spirv.py": "895c9091257b34b9fe0fb4f665c943b1ca01f63ef775e12beda55c586a9d48d9",
-    "dependencies/sirit/include/spirv/1.1/GLSL.std.450.h": "b65b7b02fca634dd4d7a9f2c475a29ca7eea8c6cfd31360720cff6f73f29d728",
-    "dependencies/sirit/include/spirv/1.1/OpenCL.std.h": "556d37ad0fd80c4edf495b38aa3fe91913f54746c4ac809e8d0fb5b2edf9a549",
     "dependencies/sirit/include/spirv/1.1/extinst.glsl.std.450.grammar.json": "572dc653861c877f51279789afea48d8697d7e8b1da383ec97c45f8245a35563",
     "dependencies/sirit/include/spirv/1.1/extinst.opencl.std.100.grammar.json": "ed77555aa0756fb08cc284cbcf81f008975b2c0cc614e541f3439576121ad241",
+    "dependencies/sirit/include/spirv/1.1/GLSL.std.450.h": "b65b7b02fca634dd4d7a9f2c475a29ca7eea8c6cfd31360720cff6f73f29d728",
+    "dependencies/sirit/include/spirv/1.1/OpenCL.std.h": "556d37ad0fd80c4edf495b38aa3fe91913f54746c4ac809e8d0fb5b2edf9a549",
     "dependencies/sirit/include/spirv/1.1/spirv.core.grammar.json": "93524d95cefad67a1cec876b511a138965fbddeeb01669b41ec354379d70bbc1",
     "dependencies/sirit/include/spirv/1.1/spirv.cs": "e2e944e1f383a8014af1e1de60db74991772f4235f0b822a2621bdd6fd949db7",
     "dependencies/sirit/include/spirv/1.1/spirv.h": "4f60a101538e87f1c6f54fdb69e25ab29e2dbda08e77f1bb3af5870574a0ded2",
@@ -1071,10 +1248,10 @@
     "dependencies/sirit/include/spirv/1.1/spirv.json": "5fa2a0708a03e686aa4437de1cdf99dfea96a2208e4a2ec7f40d42befdd23688",
     "dependencies/sirit/include/spirv/1.1/spirv.lua": "e06968437ad26e753921a5132fd50243e79f18280f4b26549ee022ad2f836301",
     "dependencies/sirit/include/spirv/1.1/spirv.py": "0a0a4cabd14ff146547c69eea488d5becaaf4677b7ab846e5eb16057880b6b09",
-    "dependencies/sirit/include/spirv/1.2/GLSL.std.450.h": "b65b7b02fca634dd4d7a9f2c475a29ca7eea8c6cfd31360720cff6f73f29d728",
-    "dependencies/sirit/include/spirv/1.2/OpenCL.std.h": "556d37ad0fd80c4edf495b38aa3fe91913f54746c4ac809e8d0fb5b2edf9a549",
     "dependencies/sirit/include/spirv/1.2/extinst.glsl.std.450.grammar.json": "572dc653861c877f51279789afea48d8697d7e8b1da383ec97c45f8245a35563",
     "dependencies/sirit/include/spirv/1.2/extinst.opencl.std.100.grammar.json": "7819c6bf8f4f87b5fe7b862f871b6e545e9b85d466c846c79cfef917c6bbe8ec",
+    "dependencies/sirit/include/spirv/1.2/GLSL.std.450.h": "b65b7b02fca634dd4d7a9f2c475a29ca7eea8c6cfd31360720cff6f73f29d728",
+    "dependencies/sirit/include/spirv/1.2/OpenCL.std.h": "556d37ad0fd80c4edf495b38aa3fe91913f54746c4ac809e8d0fb5b2edf9a549",
     "dependencies/sirit/include/spirv/1.2/spirv.core.grammar.json": "972ec6171c2ec2aacc183199c801f04eebdab7eaf2b701bcd4b4b40cc29f3be6",
     "dependencies/sirit/include/spirv/1.2/spirv.cs": "8ed062c2ce7704c6e3e4a4fa0369c2dcf21971eae4f5138b8cf779459a62616d",
     "dependencies/sirit/include/spirv/1.2/spirv.h": "a4f01708fec0b65bfe80ca47d84c98d20def101b1e58743036bcc14ee5fdbe82",
@@ -1090,15 +1267,6 @@
     "dependencies/sirit/include/spirv/unified1/AMD_shader_trinary_minmax.h": "d94d4935f8b5aaaf5f0295b1d68bf4fab704b3cc9b73b077f1f2b1c61124aba2",
     "dependencies/sirit/include/spirv/unified1/ArmMotionEngine.100.h": "9f9cec74c09cabeee2d8ff642094b131992edd7c074524ae96edc72982ec4dce",
     "dependencies/sirit/include/spirv/unified1/DebugInfo.h": "2147833f9c20041e48caa8fa5ea6c7a136f9f47900b8dbe69897235412f32ef8",
-    "dependencies/sirit/include/spirv/unified1/GLSL.std.450.h": "057b8f4286a9ba6f208b47ee381dbf2775bae0d5208caba7166dfc5e7438c60e",
-    "dependencies/sirit/include/spirv/unified1/NonSemanticClspvReflection.h": "4527f1b0903ef2b134ffe9b11ff7ae9d3d2ac7af1e223fa6abbd066a6682b089",
-    "dependencies/sirit/include/spirv/unified1/NonSemanticDebugBreak.h": "35cdd05326fb7f9f8d6e6083a732a25cc315d3afac7ea91e3c8ce79c98fa3be5",
-    "dependencies/sirit/include/spirv/unified1/NonSemanticDebugPrintf.h": "906052d005ace731b8c0735d991bcc7ea3d62bb100f79e0ef8584d940d63829a",
-    "dependencies/sirit/include/spirv/unified1/NonSemanticShaderDebugInfo100.h": "789501b6d742449c46c90af9e349487be2c53f5dd9529d1d98868790411c8e3e",
-    "dependencies/sirit/include/spirv/unified1/NonSemanticVkspReflection.h": "0086748adbd88cef4a65aa88c04777f7ce2d3ee584ff446cf9204b988be84cb6",
-    "dependencies/sirit/include/spirv/unified1/OpenCL.std.h": "5769608e50bb04ea01eaa0e02e7e12086554885ac566690365d0000547789943",
-    "dependencies/sirit/include/spirv/unified1/OpenCLDebugInfo100.h": "f574356a145ede4dbed593a8fad58fc84105a2f3da3acb5067fe8ccdb5503bd3",
-    "dependencies/sirit/include/spirv/unified1/TOSA.001000.1.h": "9fc7036bfe32003c6d9036e38dbfe3ee74e262964e5dd3f004ef48431be40e8a",
     "dependencies/sirit/include/spirv/unified1/extinst.arm.motion-engine.100.grammar.json": "4f16a0967fd8d143eba7687fc89604611f4baa4939a4ce5a8140c27702a8257f",
     "dependencies/sirit/include/spirv/unified1/extinst.debuginfo.grammar.json": "16e575039b5b2ef650197fe4b1d14af577baab46cd2b1420a2cdab864628006a",
     "dependencies/sirit/include/spirv/unified1/extinst.glsl.std.450.grammar.json": "cac419d11e1e8997d91d7a2e746ebac4c48ccdc88f173c97c9c759a1134d8aec",
@@ -1114,6 +1282,14 @@
     "dependencies/sirit/include/spirv/unified1/extinst.spv-amd-shader-explicit-vertex-parameter.grammar.json": "9343c4acfc86d39f47ad8f3dac61b8b6248d8583fc05c6f19b541b335171b512",
     "dependencies/sirit/include/spirv/unified1/extinst.spv-amd-shader-trinary-minmax.grammar.json": "6ef34572b108e457b25f86f74b3b718230026ab2ed88f3be895201af32027172",
     "dependencies/sirit/include/spirv/unified1/extinst.tosa.001000.1.grammar.json": "db91ba789a84bb8cdb3417f7ad26e2361c9cbb2668d74c2926fcb1dc8f159c96",
+    "dependencies/sirit/include/spirv/unified1/GLSL.std.450.h": "057b8f4286a9ba6f208b47ee381dbf2775bae0d5208caba7166dfc5e7438c60e",
+    "dependencies/sirit/include/spirv/unified1/NonSemanticClspvReflection.h": "4527f1b0903ef2b134ffe9b11ff7ae9d3d2ac7af1e223fa6abbd066a6682b089",
+    "dependencies/sirit/include/spirv/unified1/NonSemanticDebugBreak.h": "35cdd05326fb7f9f8d6e6083a732a25cc315d3afac7ea91e3c8ce79c98fa3be5",
+    "dependencies/sirit/include/spirv/unified1/NonSemanticDebugPrintf.h": "906052d005ace731b8c0735d991bcc7ea3d62bb100f79e0ef8584d940d63829a",
+    "dependencies/sirit/include/spirv/unified1/NonSemanticShaderDebugInfo100.h": "789501b6d742449c46c90af9e349487be2c53f5dd9529d1d98868790411c8e3e",
+    "dependencies/sirit/include/spirv/unified1/NonSemanticVkspReflection.h": "0086748adbd88cef4a65aa88c04777f7ce2d3ee584ff446cf9204b988be84cb6",
+    "dependencies/sirit/include/spirv/unified1/OpenCL.std.h": "5769608e50bb04ea01eaa0e02e7e12086554885ac566690365d0000547789943",
+    "dependencies/sirit/include/spirv/unified1/OpenCLDebugInfo100.h": "f574356a145ede4dbed593a8fad58fc84105a2f3da3acb5067fe8ccdb5503bd3",
     "dependencies/sirit/include/spirv/unified1/spirv.bf": "3bfc2cabac36fdaf42a8a5f52ce3cde97bb0b3a7b8606d163bafe090fbfc073a",
     "dependencies/sirit/include/spirv/unified1/spirv.core.grammar.json": "33775fb22970c408a7c17accc1f4506147d4d7c9ac194524a180bdceef75d96b",
     "dependencies/sirit/include/spirv/unified1/spirv.cs": "6d4f0fe159cca74509f29bd117d4a33c5e5e52e4b922375d94522548fc5242be",
@@ -1124,8 +1300,8 @@
     "dependencies/sirit/include/spirv/unified1/spirv.lua": "26e7774bb4253e8ec0679cdcedf17acf3849b4d09c41da7f1d2a3e280c8f969d",
     "dependencies/sirit/include/spirv/unified1/spirv.py": "1cc55f6a1ef95360a5f3eebd5b2d8763176b85e85c7ba5ebd782fa1cb14d8b79",
     "dependencies/sirit/include/spirv/unified1/spv.d": "ddcc51b3bc25e3248197f2819dd0132b7dc4e45748dc32ac9b0f6d08bbb75855",
-    "dependencies/vulkan/LICENSES/Apache-2.0.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
-    "dependencies/vulkan/LICENSES/MIT.txt": "1ca3502222d967f3be5751c55f6b7ee735b5383909c3b501495f54b216dbf227",
+    "dependencies/sirit/include/spirv/unified1/TOSA.001000.1.h": "9fc7036bfe32003c6d9036e38dbfe3ee74e262964e5dd3f004ef48431be40e8a",
+    "dependencies/vulkan/include/vk_video/vulkan_video_codecs_common.h": "be6d2495d19e96aca6aa5c11e5c418d1cd72beac23fe19eb9169c06e2843f0af",
     "dependencies/vulkan/include/vk_video/vulkan_video_codec_av1std.h": "9b4ebcef0d6844b226803fa91b4c4c8bf9eb941aa31b19cea48ded0886a8f9e2",
     "dependencies/vulkan/include/vk_video/vulkan_video_codec_av1std_decode.h": "f03abf49fcaf2bd179d48d768164f9494264b58401b98899e8860ba297a1e7aa",
     "dependencies/vulkan/include/vk_video/vulkan_video_codec_av1std_encode.h": "40f84c98d0341246ead3e864e1378df47d861505c5c139da5ed85c352d5e2300",
@@ -1137,7 +1313,6 @@
     "dependencies/vulkan/include/vk_video/vulkan_video_codec_h265std_encode.h": "8a56e0c78496affa84eca39ec0f5636df681c04623dd0291aeeadd012df324be",
     "dependencies/vulkan/include/vk_video/vulkan_video_codec_vp9std.h": "e18e20b197945929d5871836bfde923e38b350b09e1cbe430f1bd802d9eda34e",
     "dependencies/vulkan/include/vk_video/vulkan_video_codec_vp9std_decode.h": "c3929bbdd0ab79128c7f9bfb9641c9a017b3983529315b771caaafc74fdbb89a",
-    "dependencies/vulkan/include/vk_video/vulkan_video_codecs_common.h": "be6d2495d19e96aca6aa5c11e5c418d1cd72beac23fe19eb9169c06e2843f0af",
     "dependencies/vulkan/include/vulkan/vk_icd.h": "15d092840ca6d45fca3ccdc50cf021943e6c88aefe2a730c391f26d60bba9018",
     "dependencies/vulkan/include/vulkan/vk_layer.h": "bfe6804d3f527138fcfebb0845c1c0077c5718725bf338be09b0f9be3e8dede5",
     "dependencies/vulkan/include/vulkan/vk_platform.h": "949d517bb83e1d88fd4f1cef02bd3cb9ab50d44e8354cc68227cf2dccfdd3307",
@@ -1175,33 +1350,109 @@
     "dependencies/vulkan/include/vulkan/vulkan_xcb.h": "1e1525fc64826ab3ea9e8a6ee6a618ef14db3e27397fcf8fb070bb1ddaf00c0b",
     "dependencies/vulkan/include/vulkan/vulkan_xlib.h": "82346aaa80a5c984b6a26f55c7c363c65be43029da539ba0fbdfea9840051cca",
     "dependencies/vulkan/include/vulkan/vulkan_xlib_xrandr.h": "da5d5311bcffa49c614e9f397784e44668466890aeaf4e54c2e0064c20259089",
+    "dependencies/vulkan/LICENSES/Apache-2.0.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "dependencies/vulkan/LICENSES/MIT.txt": "1ca3502222d967f3be5751c55f6b7ee735b5383909c3b501495f54b216dbf227",
     "fixtures/platform/main": "5cbb2b442b5e5116c59a4274221444199bb537a4b968884eaf9d6527d17432da",
     "fixtures/platform/main.npdm": "0f833fc0e999e8933ac292a45f806b52737d5ea1b9b4fc8490d892b01609ac53",
     "fixtures/platform/romfs.bin": "48b227fbfb8e5ced64a36806bf40bd7d376872c698b606a153cb1f86a292bf2a",
-    "native-runtime.patch": "ea8ced576e201082ff0498ddab68b1088960ef05230e7b3831103baeb8f5279a",
-    "package-native-checkpoint.py": "2795c6014a5c64d29152dab938e48159b28a24599b12d6a96e8ba9dc3a4dd582",
+    "native-runtime.patch": "9259dedf7a76d57deb606a4cc17ebba49d2dc0931c8c86ca754800cc741c7eca",
+    "package-native-checkpoint.py": "956fa2da1ec281b492906d12659d6336f18306d4e8edbce0abd470744c9d9711",
     "prepare-native-source.py": "c4dd8229fcbda745c7203cc450b0676810b3308b07dc9f97ded6ef1ed66ed21a",
-    "suyu-base-source.tar.gz": "b464dfb631b7045fba6ed7da95bb7b892b25c8acf2c376f6b3409da02c6db7a7"
+    "README.md": "96eaeb4521033c80b5361b98125f83bbf9c5ffbc42fc086a4bc49d1fe6e26bc0",
+    "Sirit-LICENSE.txt": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+    "Sirit-v1.0.5-source.tar.gz": "c8c13167b13371d68c6080e2e1e131119b3de44784e56226a72b711fddf0dc0a",
+    "SOURCE.json": "e7478774cd708ad1f530552cee3d55b4e20a35adc720e95d7cb008af815aaaac",
+    "suyu-base-source.tar.gz": "4706d15e8274d7c9e0fe51c5f7898a4bca9c57e8b41b93f8deb8200c9667582a"
+  },
+  "feature_format_gpu": {
+    "step": "nvn-feature-format-gpu",
+    "command": [
+      "<build>\\nvn\\Release\\native_nvn_feature_format_test.exe",
+      "--gpu"
+    ],
+    "exit_code": 0,
+    "log_sha256": "54ca2d01eb25bbff281b5469f505f2677abc6807702458349f1df5ff83b36692",
+    "result": {
+      "mode": "gpu",
+      "status": "PASS",
+      "draws": 16,
+      "compared_pixels": 549,
+      "checks": 196,
+      "strict_full_ubo": true,
+      "authored_only": true,
+      "GPU_executed": true,
+      "device": "AMD Radeon RX 9070 XT",
+      "api_version": 4202496,
+      "queue_family": 0,
+      "extended_support_queried": true,
+      "max_custom_border_samplers": 4096,
+      "requested": {
+        "robust_buffer_access": true,
+        "texture_compression_bc": true,
+        "custom_border_colors": true,
+        "custom_border_without_format": true,
+        "depth_clip_control": true,
+        "provoking_vertex_last": true,
+        "shader_image_gather_extended": true
+      },
+      "supported": {
+        "robust_buffer_access": true,
+        "texture_compression_bc": true,
+        "custom_border_colors": true,
+        "custom_border_without_format": true,
+        "depth_clip_control": true,
+        "provoking_vertex_last": true,
+        "shader_image_gather_extended": true
+      },
+      "enabled": {
+        "robust_buffer_access": true,
+        "texture_compression_bc": true,
+        "custom_border_colors": true,
+        "custom_border_without_format": true,
+        "depth_clip_control": true,
+        "provoking_vertex_last": true,
+        "shader_image_gather_extended": true
+      }
+    },
+    "executable_sha256": "c7f2d8b9a16a1d47dc939410f3f9cc597c2d1a7cea67ee13a5cca38fc9222e0e"
   },
   "synthetic_presentation": {
+    "passed": true,
+    "synthetic_only": true,
+    "pid": 85272,
+    "window_source_id": 1,
     "present_queued": 45,
     "retired": 45,
     "recreated": 3,
     "source_readbacks": 0,
     "rgba8_and_packed10": true,
+    "format": 1,
+    "visible_witness_required": true,
     "validation_layers": false,
     "actual_game": false
   },
   "root_independently_viewed_owned_client_witnesses": true,
-  "visible_presentation_log_sha256": "085551f1ce1491479a14181573510154703f129bfb63cf62c4184a8c3165344d",
+  "visible_presentation_log_sha256": "0e41d545cf92215a94acfe40373c70bd580f9d055505b1bd82ca3356b4bc52a9",
+  "source_archive_repack": {
+    "reason": "Disable global Git line-ending conversion when archiving the pinned base",
+    "compiler_and_test_records_preserved": 40,
+    "binary_files_unchanged": 34,
+    "checkpoint_source_files_unchanged": 168,
+    "original_build_manifest_sha256": "1dc8ebb45b40aec9ac08032bb7ffebd1a095e8d15aaaa45295a96de132457e33",
+    "original_build_archive_sha256": "59bfe5c10ea033a16662bd0c33be772e09ca19f066510d4973d04c15e2e78c5d",
+    "source_archiving_does_not_recompile_or_retest_binaries": true
+  },
+  "artifact_audit_sha256": "bce59b85c529caa165fd7693f34e10bdbc1ada4bebe5bd7c254a88b3fbdc735a",
+  "independent_artifact_review_sha256": "51fc455da97f33bfe621aa7008ac16ade5ee094ba18266356eedb14417d2f879",
   "game_code_or_assets_included": false,
   "full_native_gameplay": false,
   "limits": [
-    "Synthetic tools only; no actual native game draw or presentation",
-    "Development-host verification; clean-machine portability unverified",
-    "Single owner execution and disabled raw fast-memory paths required for strict ownership",
-    "Callback pointer arguments remain bounded to64KiB; actual allocator/Device integration is pending",
-    "Combined fenced pending-provider work accounting remains unverified",
-    "Offline shader libraries and all game-linked diagnostics are excluded"
+    "Synthetic component fixtures; no playable native game or actual guest Device integration",
+    "Feature/format GPU fixture is separate from the default-feature Presenter regression",
+    "BC4/computed colors use documented UNORM8 tolerances; no floating-point sRGB breakpoint proof",
+    "Custom-border creation, metadata and capacity checks do not prove ClampToBorder sampling",
+    "Full declared uniform-block bounds remain mandatory, including with robust buffer access",
+    "Validation layers disabled; no device-loss/scanout-accuracy claim; driver retirement may block",
+    "Clean-machine setup, other compilers, operating systems and GPU drivers unverified"
   ]
 }

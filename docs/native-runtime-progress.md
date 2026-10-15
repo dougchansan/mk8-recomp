@@ -16,6 +16,7 @@ audio, controls, save/restart and full standalone gameplay follow those gates.
 | Evidence | Verified result | Limit |
 |---|---|---|
 | Native NVN builders in the actual-game reference replay | 90,320 native calls; 6,001-frame replay reached EOF; CPU JIT 0, imports 0; observed racing | Still uses reference graphics. This is not standalone native gameplay. |
+| Public v6 feature/format fixture | 148 CPU checks and a separate 16-draw / 549-pixel / 196-check GPU run pass. Covers BC4 partial blocks/filtering, packed sRGB/swizzles, independent depth/provoking state, full uniform blocks, blending and exact untouched/masked bytes | Authored inputs only. Computed colors use UNORM8 tolerances; custom-border creation/metadata does not prove border sampling. Full declared uniform bounds remain required. |
 | Native Vulkan triangle fixture | 1,152 red pixels and 2,944 black pixels | Synthetic rendering; no actual-game draw/present. |
 | Textured native fixtures | Five draws, 20,480 pixels checked and ten rejection cases | Synthetic resource/draw coverage only. |
 | Native-owned pool copy | 64-byte copy and 29 error cases | Bounded memory ownership/validation test. |
@@ -28,7 +29,7 @@ audio, controls, save/restart and full standalone gameplay follow those gates.
 | Native window observations | Real owned Win32 window, bounded pump/wait, overflow/close handling and owner lifetime pass strict compiler analysis and tests; actual inactive guest lifecycle exchange verified | No positive foreground activation, native input or rendering proof. |
 | Owned shader-input construction | Explicit source/metadata factory shares the offline translator; synthetic ownership/rejection and authored-cache equivalence checks pass | Source-only in this package. Structural acceptance does not attest complete actual shader provenance or raster state. |
 | Real shader translation and pipeline acceptance | Actual shader translation and pipeline acceptance verified separately | No actual-game native draw or presentation established. |
-| Native Win32 presentation | Fresh public build passes seven native graphics suites and an owned-window fixture: 45 queued/retired presents, three swapchain recreations, RGBA8 and packed10 sources, zero source readbacks; both cropped client images inspected | Synthetic presentation. Requires enabled maintenance1 support; validation layers disabled. Driver retirement can block teardown. Actual-game dispatch remains pending. |
+| Native Win32 presentation | Fresh v6 build passes eight NVN suites and an owned-window fixture: 45 queued/retired presents, three swapchain recreations, RGBA8 and packed10 sources, zero source readbacks; both cropped client images inspected | Synthetic default-feature presentation, separate from the new feature-profile fixture. Requires enabled maintenance1 support; validation layers disabled. Driver retirement can block teardown. Actual-game dispatch remains pending. |
 | Guest callbacks and execution fence | Independently reviewed owner callback transport, per-image original/native approval, all-entry checks and unchanged default output; FM0 and FM1/GG1/FPX1 ordinary/chain tests pass | Serialized single-owner scope. Actual Device allocator routing and native Device creation remain closed. |
 | Opaque-object memory and accounting | Independently reviewed 106-case preflight; 15,524 emitted integration checks and 4,102 accounting checks per chain mode. Full CPU/callback/pending regressions and seven production/three test analysis units pass | Protects native storage from guest accesses, including aliases and split instructions. It does not implement the native Device or a general concurrent scheduler. |
 | Real SDK allocator initialization | Independently reviewed constructor: 408 checks across fresh and negative cases. Genuine 64 KiB supplied-heap initialization: 470 checks, with 105 callback blocks and 266 checked memory operations per successful run; parent context and heap boundary canaries preserved; zero SVCs/provider commits/GPU work | Earlier private static CPU diagnostic through an authored callback driver; Device callback integration is outside this fixture. |
@@ -40,6 +41,7 @@ audio, controls, save/restart and full standalone gameplay follow those gates.
 | Native captured game draw | Independently reviewed native Vulkan submission completes one indexed draw with three image uploads and two readbacks. All 2,073,600 packed pixels / 8,294,400 bytes exactly match the reference, including alpha; every channel error is zero. Native binary uses fixed offline shaders and links no reference renderer or runtime shader compiler | One captured striped background layer on the verified device. Inputs originate from the reference capture; this is not a complete native frame, live game rendering or standalone gameplay. |
 | Captured producer to native presentation | The same native image reaches 45 successful presentations, 45 raw successful queue results and 45 separately retired maintenance fences. Zero CPU pixel copies connect producer and presenter. The source remains exact at all 2,073,600 pixels; an owned 1920x1080 window witness was inspected | The selected background layer only. SDR display conversion is separate from exact source bytes; no complete game frame, live Device, scanout accuracy or performance claim. |
 | Combined fenced pending-work accounting | Independently reviewed synthetic integration passes 1,094 checks and 98 observations in each ordinary/chain mode. Actual accepted calls, guest blocks, copied-input worker units and commits remain distinct through cancellation, revocation and stale completion | After-v5 private fixture with one admitting image/provider and one operation per binding. It does not establish general multi-provider attribution or Device/game integration. |
+| Device-coordinator CPU lifecycle | Independently reviewed 22,824 checks across 76 fresh cases, with 408 closed raw/audited observation pairs. Callback returns, cancellation after effects, stale identity, chain-budget thresholds and teardown retain distinct approvals, accepted calls and completions | Private synthetic CPU model. Actual registry objects retain reservation/null-backend state and retire during teardown; this does not create a live native Device or supply an actual game request. |
 
 Synthetic fixtures are deliberate tests of implemented behavior. Their success cannot substitute for game rendering, service coverage, audio, input or persistence.
 
@@ -98,11 +100,11 @@ policy, with no scanout accuracy or performance conclusion.
 
 This closes captured-input native drawing and presentation for that layer.
 Complete actual-game producer/consumer history, live native Device/resource
-routing, complete game frames and standalone gameplay remain open. Public v5
-assets remain unchanged; game-derived shaders, captures and diagnostic binaries
-stay private and are indexed locally.
+routing, complete game frames and standalone gameplay remain open. The public
+foundations release uses authored fixtures; game-derived shaders, captures and
+diagnostic binaries stay private and are indexed locally.
 
-The next private CPU fixture now starts with genuine SDK OS initialization.
+A private CPU fixture starts with genuine SDK OS initialization.
 The native kernel supplies its registered main-thread handle, actual OS thread
 identity and BCrypt entropy; original SDK code writes the thread, TLS, lock,
 once and heap structures. The bootstrap argument is a scalar thread handle.
@@ -148,8 +150,8 @@ runnable bundle passes a fresh 1,162-check three-live sequence.
 This covers the reviewed fresh instance and sizes. Full startup, general
 workloads, realloc, general ELF/dynamic TLS, contention, post-effect recovery and
 native Device allocation policy/live routing remain open. These game-linked CPU
-diagnostics and inputs stay private and are indexed locally, outside the
-immutable public v5 binaries and verification manifest.
+diagnostics and inputs stay private and are indexed locally, outside the public
+foundation tools and verification manifest.
 
 Decoded draw state establishes source-alpha blending, a destination-multiplication pass, float2/float3 vertices, linear repeat/clamp sampling and a negative-Y viewport transform. There is no Clear in the submitted graph, and full destination-independent overwrite is unproved. A faithful native replay requires the earlier attachment contents or a complete overwrite proof; an invented black target is not a valid substitute.
 
@@ -163,9 +165,9 @@ The checkpoint targets suyu source revision:
 347fcf91d95cd39cb5c3db50f1b6d827ad699311
 ```
 
-Source changes are represented by `src/patches/native-runtime.patch` against that exact base. The 167-file checkpoint includes the reviewed ownership/callback source and preserves the 17 v4 presentation files. Synthetic CPU, service, entry/API v2/v3, estimate, callback, fence, memory and accounting checks are recorded alongside graphics/window validation. [Verification](../native-checkpoint/verification.json) records the public binaries and source correspondence. These notes do not claim a verified setup on a fresh machine.
+Source changes are represented by `src/patches/native-runtime.patch` against that exact base. The 168-file v6 checkpoint updates 14 generic graphics/NVN/shader files and adds one authored fixture; 153 subjects retain their v5 bytes. Window and Presenter implementations retain their v5 bytes. Synthetic CPU, service, entry/API v2/v3, estimate, callback, fence, memory and accounting checks are recorded alongside graphics/window validation. [Verification](../native-checkpoint/verification.json) records the public binaries and source correspondence. These notes do not claim a verified setup on a fresh machine.
 
-The [prerelease `native-foundations-v5-20261015`](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v5-20261015) contains 33 Windows x64 verification tools, synthetic fixtures and corresponding source. It is **not a playable MK8D build**. It adds the reviewed callback and ownership layers to native presentation, scheduled API transport, event waits, typed persistent images and texture conversion. The shader-input factory is source-only; matching offline compiler libraries, real allocator AOT and game-linked diagnostics are excluded from release binaries. Earlier [27-tool v4](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v4-20261014), [24-tool v3](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v3-20261014) and [13-tool v2](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-20261014) checkpoints remain immutable.
+The [prerelease `native-foundations-v6-20261015`](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v6-20261015) contains 34 Windows x64 verification tools, synthetic fixtures and corresponding source. It is **not a playable MK8D build**. The new explicit GPU fixture passes 16 authored draws and 549 pixel comparisons; a separate rebuilt Presenter completes 45 queued/retired presentations. The source archive disables global Git line-ending conversion and matches 5,389 exported base files to the pinned pristine checkout. The final archive retains all 34 fresh-built binaries and the original 40 build/test records while repacking the base source and packaging helper. The shader-input factory is source-only; matching offline compiler libraries, real allocator AOT and game-linked diagnostics are excluded from release binaries. Earlier [33-tool v5](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v5-20261015), [27-tool v4](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v4-20261014), [24-tool v3](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v3-20261014) and [13-tool v2](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-20261014) checkpoints remain immutable.
 
 The development checkout also keeps a gitignored `local/native-builds/latest.json` index with exact public-package and private diagnostic executable hashes. Game-linked CPU/reference builds remain local; only tools with synthetic inputs and publishable corresponding source become release assets. See [build instructions](native-builds.md) for the current public package.
 

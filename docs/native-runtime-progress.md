@@ -1,6 +1,12 @@
 # Native runtime progress
 
-Updated 2026-10-14, 10:20 UTC. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
+Updated 2026-10-15. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
+
+The campaign is in component bring-up, before the first end-to-end native game
+draw. Static CPU execution and synthetic native rendering/presentation work.
+The immediate title-integration gates are genuine allocator callbacks, native
+Device creation and authoritative resources for an actual game draw. Native
+audio, controls, save/restart and full standalone gameplay follow those gates.
 
 ## Verified foundations and their limits
 
@@ -20,7 +26,8 @@ Updated 2026-10-14, 10:20 UTC. Repository: `dougchansan/mk8-recomp`. Goal: a sta
 | Owned shader-input construction | Explicit source/metadata factory shares the offline translator; synthetic ownership/rejection and authored-cache equivalence checks pass | Source-only in this package. Structural acceptance does not attest complete actual shader provenance or raster state. |
 | Real shader translation and pipeline acceptance | Actual shader translation and pipeline acceptance verified separately | No actual-game native draw or presentation established. |
 | Native Win32 presentation | Fresh public build passes seven native graphics suites and an owned-window fixture: 45 queued/retired presents, three swapchain recreations, RGBA8 and packed10 sources, zero source readbacks; both cropped client images inspected | Synthetic presentation. Requires enabled maintenance1 support; validation layers disabled. Driver retirement can block teardown. Actual-game dispatch remains pending. |
-| Guest callback and ownership work | Owner-scheduled callback transport passed synthetic FM0 and FM1/GG1/FPX1 tests. Execution fencing and whole-instruction memory isolation are undergoing integration and review | Outside the v4 public source/build checkpoint. Real allocator callback, native Device and game admission remain closed. |
+| Guest callbacks and execution fence | Independently reviewed owner callback transport, per-image original/native approval, all-entry checks and unchanged default output; FM0 and FM1/GG1/FPX1 ordinary/chain tests pass | Serialized single-owner scope. Real allocator invocation and native Device remain closed. |
+| Opaque-object memory and accounting | Independently reviewed 106-case preflight; 15,524 emitted integration checks and 4,102 accounting checks per chain mode. Full CPU/callback/pending regressions and seven production/three test analysis units pass | Protects native storage from guest accesses, including aliases and split instructions. It does not implement the native Device or a general concurrent scheduler. |
 
 Synthetic fixtures are deliberate tests of implemented behavior. Their success cannot substitute for game rendering, service coverage, audio, input or persistence.
 
@@ -36,6 +43,19 @@ Capture 5 r2 reached EOF but exceeded its shutdown bound. It remains a failed ca
 
 The r3 allocator witness found installed title hooks and sampled cache mode zero at both Device entry and matched return. It observed no selected TLS-cache callback. This narrows the next analysis to the cache-disabled CentralHeap route; live lock/free-span state, complete helper closure and paired allocation/cleanup semantics still require proof. These private game-linked diagnostics are excluded from release assets.
 
+The next draw-input observer is private and incomplete. It targets the exact
+consumed descriptors, views, samplers and physical allocations. A narrowly
+reviewed permanent-stream path also requires host-coherent memory and proof
+that no writer or reuse occurs before the copy drains. Ambiguous failure must
+retain resources or stop the private diagnostic process before unwinding.
+CPU metadata tests and compilation alone do not establish input authority.
+
+The next allocator fixture will call the real SDK constructor/Initialize into
+fresh owned memory. The current 64 KiB pointer-argument cap prevents claiming
+a 24 MiB heap initialization. A genuinely smaller heap is a separate first
+fixture case; the larger-span capability and any required native SVC semantics
+still need implementation and review. No initialized heap fields are fabricated.
+
 Decoded draw state establishes source-alpha blending, a destination-multiplication pass, float2/float3 vertices, linear repeat/clamp sampling and a negative-Y viewport transform. There is no Clear in the submitted graph, and full destination-independent overwrite is unproved. A faithful native replay requires the earlier attachment contents or a complete overwrite proof; an invented black target is not a valid substitute.
 
 The next graphics gate is a faithful actual-game draw/submission/presentation path with complete inherited state and resources. Native audio, input, saves and overall gameplay closure remain pending. A functioning static CPU or native Vulkan fixture alone does not close those gates.
@@ -48,9 +68,9 @@ The checkpoint targets suyu source revision:
 347fcf91d95cd39cb5c3db50f1b6d827ad699311
 ```
 
-Source changes are represented by `src/patches/native-runtime.patch` against that exact base. The 138-file checkpoint reconstructs sanitized v3 source plus exactly 17 independently reviewed presentation files. All 5,522 other baseline files remain byte-identical. A fresh build passed CPU, service, entry/API v2/v3, estimate, buffer, window, texture, seven native NVN and two graphics checks using existing dependencies on the development host. [Verification](../native-checkpoint/verification.json) records the public binaries and source correspondence. These notes do not claim a verified setup on a fresh machine.
+Source changes are represented by `src/patches/native-runtime.patch` against that exact base. The 167-file checkpoint includes the reviewed ownership/callback source and preserves the 17 v4 presentation files. Synthetic CPU, service, entry/API v2/v3, estimate, callback, fence, memory and accounting checks are recorded alongside graphics/window validation. [Verification](../native-checkpoint/verification.json) records the public binaries and source correspondence. These notes do not claim a verified setup on a fresh machine.
 
-The [prerelease `native-foundations-v4-20261014`](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v4-20261014) contains 27 Windows x64 verification tools, synthetic fixtures and corresponding source. It is **not a playable MK8D build**. It adds native presentation to scheduled v3 transport, native event waits, lifecycle/window components, typed persistent images with packed10 and texture conversion. The shader-input factory is source-only; matching offline compiler libraries, later callback/ownership work and game-linked diagnostics are excluded from release binaries. Earlier [24-tool v3](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v3-20261014) and [13-tool v2](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-20261014) checkpoints remain immutable.
+The [prerelease `native-foundations-v5-20261015`](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v5-20261015) contains 33 Windows x64 verification tools, synthetic fixtures and corresponding source. It is **not a playable MK8D build**. It adds the reviewed callback and ownership layers to native presentation, scheduled API transport, event waits, typed persistent images and texture conversion. The shader-input factory is source-only; matching offline compiler libraries, real allocator AOT and game-linked diagnostics are excluded from release binaries. Earlier [27-tool v4](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v4-20261014), [24-tool v3](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v3-20261014) and [13-tool v2](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-20261014) checkpoints remain immutable.
 
 The development checkout also keeps a gitignored `local/native-builds/latest.json` index with exact public-package and private diagnostic executable hashes. Game-linked CPU/reference builds remain local; only tools with synthetic inputs and publishable corresponding source become release assets. See [build instructions](native-builds.md) for the current public package.
 

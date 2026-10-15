@@ -1,6 +1,6 @@
 # Native foundations build checkpoint
 
-This Windows x64 v4 prerelease contains 27 native CPU/service, window, texture and
+This Windows x64 v5 prerelease contains 33 native CPU/service, window, texture and
 Vulkan verification tools. It does not boot or play Mario Kart 8 Deluxe. Actual title code and data
 are supplied locally; no game-linked executable is distributed.
 
@@ -30,6 +30,12 @@ From the extracted release directory:
 .\bin\native_services_lifecycle_test.exe
 .\bin\pending_test.exe
 .\bin\native_pending_host_test.exe
+.\bin\native_guest_callback_test.exe
+.\bin\fence_test.exe
+.\bin\memory_test.exe
+.\bin\native_ownership_memory_test.exe
+.\bin\native_ownership_memory_integration.exe
+.\bin\native_ownership_accounting_test.exe
 .\bin\native_graphics_probe.exe
 .\bin\native_graphics_resource_test.exe
 .\bin\native_nvn_resource_test.exe
@@ -107,18 +113,30 @@ other operating systems and different GPU drivers remain unverified. Shader
 capture tooling in the patch still depends on separately supplied, matching
 shader-recompiler libraries; it is not part of this binary package.
 
-This v4 checkpoint adds reviewed native presentation to the v3 scheduled API
-transport, native event waits, window observer, typed persistent images and
-texture converter. All 27 tools were rebuilt from sanitized v3 source plus exactly
-17 reviewed presentation files. Seven native graphics suites passed; the fresh
-visible fixture queued and retired 45 presents, recreated three times and performed
-zero source readbacks. Root inspection verified the two owned-client captures.
-Validation layers were disabled. Safe WSI teardown can wait for the driver.
-The emitted and CPU-owner
+This v5 checkpoint adds reviewed callback transport, per-image execution fences,
+whole-instruction memory preflight, central opaque-object permissions and strict
+Host accounting. Its 167 source files preserve the 17 reviewed v4 presentation
+files literally. The synthetic ownership tests cover 106 instruction cases,
+2,544 strict guard mutations, 15,524 real emitted integration checks and 4,102
+accounting checks in each chain mode. Guest authority is restricted to runtime
+bus callbacks; native adapters need explicit grants. Lifetime grant storage is
+bounded to 65,536 allocations per address space. Strict ownership currently uses
+one serialized context/owner lane and disabled raw fast-memory shortcuts.
+
+These opt-in fences require regenerated, attested images; old compiled code
+cannot acquire their protection by replacing the host alone. RuntimeC and
+GuestContext layouts and default emitted behavior remain unchanged. Callback
+pointer extents remain limited to 64 KiB; the actual allocator's larger heap
+argument is a separate integration gate. Combined pending-provider work
+accounting remains separate from the verified synchronous accepted-call ledger.
+
+The existing presentation fixture uses GPU-produced inputs without source
+readback. Validation layers were disabled. Safe WSI teardown can wait for the
+driver. The emitted and CPU-owner
 v3 suites run with FM1/GG1/FPX1 using synthetic inputs. Real native DeviceInitialize,
-actual-game draw/presentation and gameplay remain unproved. Later callback and
-execution/memory ownership work is outside this release. Earlier v3 and v2 releases
-remain separate immutable archives.
+actual-game draw/presentation and gameplay remain unproved. Real allocator AOT
+and the next private draw-input observer are outside this release. Earlier v4,
+v3 and v2 releases remain separate immutable archives.
 The development checkout records verified local binaries in the gitignored
 `local/native-builds/latest.json` index. That index distinguishes public tools,
 the game reference using reference graphics, and the standalone CPU diagnostic.

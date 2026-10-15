@@ -88,6 +88,22 @@ def main():
                            "--native-profile"])
     run("native_pending_host", [sys.executable, source / "tests/native_pending_host/run.py", "--build", build / "native_pending_host",
                                 "--generated", build / "native_pending/generated"])
+    run("ownership_fence", [sys.executable, source / "tests/native_ownership_fence/run.py", "--build", build / "ownership_fence"])
+    run("memory_operation", [sys.executable, source / "tests/native_ownership_fence/run_memory.py", "--build", build / "memory_operation"])
+    run("guest_callback", [sys.executable, source / "tests/native_guest_callback/run.py", "--build", build / "native_guest_callback",
+                           "--pending", build / "native_pending/generated", "--native-profile"])
+    run("pending_default", [sys.executable, source / "tests/native_pending/run.py", "--build", build / "native_pending_default"])
+    run("guest_callback_default", [sys.executable, source / "tests/native_guest_callback/run.py", "--build", build / "native_guest_callback_default",
+                                   "--pending", build / "native_pending_default/generated"])
+    for mode in ("ordinary", "chain"):
+        generated = build / ("ownership_accounting_" + mode) / "generated"
+        run("accounting-generate-" + mode, [executable(build / "ownership_fence/generator", "fence_gen"), generated,
+                                          "memory", *(["chain"] if mode == "chain" else [])])
+        command = [sys.executable, source / "tests/native_ownership_memory/run.py", "--build", build / ("ownership_memory" if mode == "ordinary" else "ownership_memory_chain"),
+                   "--runtime", build / "native_pending/generated/on", "--accounting-generated", generated]
+        if mode == "ordinary":
+            command += ["--memory-generated", build / "memory_operation/gg/generated"]
+        run("ownership-memory-" + mode, command)
     for suite in ("native_nvn", "native_nvn_builders"):
         run(f"{suite}-configure", ["cmake", "-S", source / f"tests/{suite}", "-B", build / suite])
         run(f"{suite}-build", ["cmake", "--build", build / suite, "--config", "Release", "--parallel", "2"])
@@ -115,6 +131,10 @@ def main():
         "native_pending_host/on": ("native_pending_host_test",),
         "window": ("window_test",),
         "textures": ("native_texture_probe", "native_texture_test"),
+        "ownership_fence/gg/build": ("fence_test",),
+        "memory_operation/gg/build": ("memory_test",),
+        "native_guest_callback/off": ("native_guest_callback_test",),
+        "ownership_memory": ("native_ownership_memory_test", "native_ownership_memory_integration", "native_ownership_accounting_test"),
     }
     output.mkdir(parents=True)
     binary = output / "bin"

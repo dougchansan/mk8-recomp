@@ -12,15 +12,18 @@ integration gates are native Device creation and live resource/draw routing. Nat
 audio, controls, save/restart and full standalone gameplay follow those gates.
 
 The current standalone CPU startup path has also advanced under an explicit
-SingleApplication owned-display policy. A fresh process reaches the real
-`IWindowController::AcquireForegroundRights` request; that owned-window operation
-is the next platform contract to implement. Raw OS focus remains a separate
-observation, and no controller input is delivered by this policy.
+SingleApplication owned-display policy. A fresh process now receives a successful
+`IWindowController::AcquireForegroundRights` reply and commits one concrete
+owned-window right. It continues to the next unsupported operation,
+`ISelfController::SetFocusHandlingMode` command13. The right is retired during
+teardown. Raw OS focus remains a separate observation, and no controller input
+is delivered by this policy.
 
 All four complete static CPU modules now have independently reviewed generated
 source with execution fences and whole-instruction memory guards. The shared
-runtime and `rtld` static library now pass independent compilation review.
-Compiling the remaining three module libraries and validating fresh guarded
+runtime, `rtld` static library and first large `main` body now pass independent
+compilation review. Compiling the remaining 69 objects and three module
+libraries, then validating fresh guarded
 startup are the next CPU gates. The source audit retains
 every discovered legacy code entry except 36 verified zero words, and reports
 42 explicit unsupported sites that halt. Their absence from a supported gameplay
@@ -37,9 +40,11 @@ path still needs actual execution evidence.
 | Native-owned pool copy | 64-byte copy and 29 error cases | Bounded memory ownership/validation test. |
 | Persistent native images | Three-draw producer/consumer fixture checks 4,096 pixels and 71 rejection cases; retained native image is sampled directly | Synthetic Stage A. No intermediate target readback/reupload; actual-game state and content history remain required. |
 | Standalone actual CPU execution | Native SM/LM/APM and applet/domain bootstrap reach a real CommonStateGetter event. Actual Win32 inactive observation produces message15 and focus query2; guest then parks at 12,600,537 blocks / 77 SVCs. Deadline cancellation is accepted | No genuine active-focus transition, later service coverage, graphics or gameplay claim. Parked state and cancellation are distinct from guest exit. |
-| Fresh owned-display CPU entry | Six CPU suites pass, including 123 policy/wire, 264 identity and 1,751 relocation checks. A fresh process using the existing complete static images admits all four original NSOs and reaches WindowController command10 after 12,602,165 blocks / 77 SVCs. The empty-body unsupported request leaves TLS unchanged and receives no reply; normal exit10, ownership revocation and all 6,840 pinned inputs pass independent review | Explicit SingleApplication logical display activity with raw OS focus still inactive. The owned-window right is unimplemented at this boundary. No input, native Device, GPU frame, restored game state or strict ownership-accounting claim. This does not execute the newly generated fenced images. |
+| Initial owned-display CPU entry | Six CPU suites pass, including 123 policy/wire, 264 identity and 1,751 relocation checks. A fresh process using the existing complete static images admits all four original NSOs and reaches WindowController command10 after 12,602,165 blocks / 77 SVCs. The empty-body unsupported request leaves TLS unchanged and receives no reply; normal exit10, ownership revocation and all 6,840 pinned inputs pass independent review | Historical preimplementation boundary, advanced by the following window-rights run. Explicit SingleApplication logical activity remains separate from raw OS focus. This does not execute the newly generated fenced images. |
+| Concrete owned-window right and continued startup | Seven CPU suites pass, including 4,136 rights checks and six mutation controls. Independent fresh-run review verifies one successful command10 reply, one actual window-right acquisition, guest continuation and one teardown revocation. The next unsupported request is SelfController command13 after 12,604,731 blocks / 79 SVCs; its TLS remains unchanged with no reply. Normal exit10 and all 6,860 input pins match | Existing static CPU images and one real owned Win32 window; raw OS focus stays inactive. No input, native Device, GPU frame, saved-state initialization, strict ownership-accounting or general lifecycle support claim. |
 | Complete fenced static CPU source | Independent review covers all four modules: 1,076,832 blocks, 4,832,474 instruction entries and 65 body units. Whole-instruction memory checks cover 1,703,742 entries; 72 exact no-data prefetch hints and 42 explicit halting unsupported sites remain accounted for | Source coverage does not establish workload equivalence or native gameplay. The remaining module libraries and fresh guarded startup still require validation. |
 | First guarded CPU compilation stage | Four fresh target objects form one shared-runtime library and the three-member `rtld` library. Independent COFF/archive checks verify x64, static CRT and required bindings. Clang/MSVC compile-only controls agree on 109 size, alignment and offset measurements, plus the fixed marker and interface hash arrays. Actual dependency records cover 290 canonical input paths | Compilation and data inspection only; controls are not executed. `main`, `subsdk0` and `sdk` module libraries remain uncompiled. No guarded Host integration, guest startup or performance result. |
+| First large guarded CPU body | The largest `main` body, about 32.2 MB of generated source, compiles in about 110 seconds. Independent review verifies the 28,876,197-byte x64 object, static CRT, exact command and 168 input dependencies; prior libraries and controls remain unchanged | One body only. The remaining 69 objects and three module archives still need compilation. This build time is not a runtime-performance measurement or a forecast for the complete build. |
 | Public source/API tests | Synthetic API v2 identity/sealed-binding negotiation, full-range guards and bounded BufferInit checks pass | The miniature API fixture does not attest a complete actual title module or establish every required NVN contract. |
 | Scheduled native API v3 | Nine return kinds, cancellation/commit races, stale completion and no-fallback behavior pass synthetic tests; emitted transport and CPU owner pass ordinary/chained FM1/GG1/FPX1 suites; 144 strict guard mutations reject | Real DeviceInitialize remains gated on provider effects, registered allocator semantics and ownership isolation. |
 | Typed native renderer | Five suites pass, including 76 draws / 306,176 pixels / 66 rejection checks and 4,096 CPU packing roundtrips. Independent alpha blending, float2/3 vertices, swizzles/sRGB, filtering, inverted viewport and packed10 producer/sampling preserve declared semantics | Synthetic capabilities. Actual-game shader/state/resource/history and presentation remain separate gates. |

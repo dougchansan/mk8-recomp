@@ -11,6 +11,12 @@ registered callbacks now pass a bounded private CPU suite. The immediate
 integration gates are native Device creation and live resource/draw routing. Native
 audio, controls, save/restart and full standalone gameplay follow those gates.
 
+The current standalone CPU startup path has also advanced under an explicit
+SingleApplication owned-display policy. A fresh process reaches the real
+`IWindowController::AcquireForegroundRights` request; that owned-window operation
+is the next platform contract to implement. Raw OS focus remains a separate
+observation, and no controller input is delivered by this policy.
+
 All four complete static CPU modules now have independently reviewed generated
 source with execution fences and whole-instruction memory guards. Compilation
 and fresh startup validation are the next CPU gates. The source audit retains
@@ -29,6 +35,7 @@ path still needs actual execution evidence.
 | Native-owned pool copy | 64-byte copy and 29 error cases | Bounded memory ownership/validation test. |
 | Persistent native images | Three-draw producer/consumer fixture checks 4,096 pixels and 71 rejection cases; retained native image is sampled directly | Synthetic Stage A. No intermediate target readback/reupload; actual-game state and content history remain required. |
 | Standalone actual CPU execution | Native SM/LM/APM and applet/domain bootstrap reach a real CommonStateGetter event. Actual Win32 inactive observation produces message15 and focus query2; guest then parks at 12,600,537 blocks / 77 SVCs. Deadline cancellation is accepted | No genuine active-focus transition, later service coverage, graphics or gameplay claim. Parked state and cancellation are distinct from guest exit. |
+| Fresh owned-display CPU entry | Six CPU suites pass, including 123 policy/wire, 264 identity and 1,751 relocation checks. A fresh process using the existing complete static images admits all four original NSOs and reaches WindowController command10 after 12,602,165 blocks / 77 SVCs. The empty-body unsupported request leaves TLS unchanged and receives no reply; normal exit10, ownership revocation and all 6,840 pinned inputs pass independent review | Explicit SingleApplication logical display activity with raw OS focus still inactive. The owned-window right is unimplemented at this boundary. No input, native Device, GPU frame, restored game state or strict ownership-accounting claim. This does not execute the newly generated fenced images. |
 | Complete fenced static CPU source | Independent review covers all four modules: 1,076,832 blocks, 4,832,474 instruction entries and 65 body units. Whole-instruction memory checks cover 1,703,742 entries; 72 exact no-data prefetch hints and 42 explicit halting unsupported sites remain accounted for | Generated-source evidence only. The four new static libraries and their shared runtime still need compilation and fresh startup validation. This does not establish workload equivalence or native gameplay. |
 | Public source/API tests | Synthetic API v2 identity/sealed-binding negotiation, full-range guards and bounded BufferInit checks pass | The miniature API fixture does not attest a complete actual title module or establish every required NVN contract. |
 | Scheduled native API v3 | Nine return kinds, cancellation/commit races, stale completion and no-fallback behavior pass synthetic tests; emitted transport and CPU owner pass ordinary/chained FM1/GG1/FPX1 suites; 144 strict guard mutations reject | Real DeviceInitialize remains gated on provider effects, registered allocator semantics and ownership isolation. |
@@ -178,6 +185,12 @@ Source changes are represented by `src/patches/native-runtime.patch` against tha
 The [prerelease `native-foundations-v6-20261015`](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v6-20261015) contains 34 Windows x64 verification tools, synthetic fixtures and corresponding source. It is **not a playable MK8D build**. The new explicit GPU fixture passes 16 authored draws and 549 pixel comparisons; a separate rebuilt Presenter completes 45 queued/retired presentations. The source archive disables global Git line-ending conversion and matches 5,389 exported base files to the pinned pristine checkout. The final archive retains all 34 fresh-built binaries and the original 40 build/test records while repacking the base source and packaging helper. The shader-input factory is source-only; matching offline compiler libraries, real allocator AOT and game-linked diagnostics are excluded from release binaries. Earlier [33-tool v5](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v5-20261015), [27-tool v4](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v4-20261014), [24-tool v3](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v3-20261014) and [13-tool v2](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-20261014) checkpoints remain immutable.
 
 The development checkout also keeps a gitignored `local/native-builds/latest.json` index with exact public-package and private diagnostic executable hashes. Game-linked CPU/reference builds remain local; only tools with synthetic inputs and publishable corresponding source become release assets. See [build instructions](native-builds.md) for the current public package.
+
+The index now contains 16 entries, including a byte-identical copy of the newly
+verified owned-display CPU diagnostic and its closed run/review receipts. All 15
+earlier entries and seven allocator bundles remain available. The new executable
+requires the matching local ExeFS and fresh output paths; it stops at the
+unsupported WindowController request and is not a playable game build.
 
 The public checkpoint excludes the private exact copy32 matcher and its tests because their provenance is unsuitable for this checkpoint. That omission does not erase the preserved private experiment. No game code, generated game archives, caches, NSOs or keys are published. Keep locally supplied title data separate from public source and release packages; see [LEGAL.md](../LEGAL.md).
 

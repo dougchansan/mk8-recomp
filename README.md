@@ -14,6 +14,8 @@ A separate private Device-coordinator CPU model passes 22,824 checks across 76 f
 
 Complete static CPU source for all four title modules now passes independent execution-fence and memory-guard review: 1,076,832 blocks and 4,832,474 instruction entries. The inventory explicitly retains 42 unsupported sites that halt. Compiling the four new static libraries with one coherent runtime and validating fresh startup are the next CPU gates; source coverage alone does not prove a supported gameplay path.
 
+A fresh standalone probe using the existing static CPU images now reaches `IWindowController::AcquireForegroundRights` (command 10), after 12,602,165 blocks and 77 SVC calls. Its explicit owned-display policy preserves the separate inactive OS-focus observation. The unsupported request stops before reply mutation; implementing the actual owned-window right is next. Six CPU suites pass, and the new private diagnostic joins the gitignored local build index. Native Device creation, full game frames, audio, controls and saves remain open.
+
 ## Historical static-recompiler release (September 2026)
 
 The following v0.0.11 release and performance information describes the earlier suyu-hosted static CPU work. It does not establish completion of the native graphics/platform migration.

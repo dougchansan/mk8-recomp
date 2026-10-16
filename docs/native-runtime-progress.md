@@ -12,12 +12,13 @@ integration gates are native Device creation and live resource/draw routing. Nat
 audio, controls, save/restart and full standalone gameplay follow those gates.
 
 The current standalone CPU startup path has also advanced under an explicit
-SingleApplication owned-display policy. A fresh process now receives a successful
-`IWindowController::AcquireForegroundRights` reply and commits one concrete
-owned-window right. It continues to the next unsupported operation,
-`ISelfController::SetFocusHandlingMode` command13. The right is retired during
-teardown. Raw OS focus remains a separate observation, and no controller input
-is delivered by this policy.
+SingleApplication owned-display policy. A fresh process now receives successful
+owned-window rights and `ISelfController` focus-policy replies for commands 13
+and 16. It continues to the add-on-content service request `aoc:u`, the next
+unsupported startup boundary, after 12,608,290 blocks and 83 SVC calls. Eight
+CPU suites pass. All 6,970 input pins and the OS foreground observation remain
+unchanged. Both the window right and focus authority retire before destruction;
+no controller input is delivered by this policy.
 
 All four complete static CPU modules now have independently reviewed generated
 source with execution fences and whole-instruction memory guards. Their complete
@@ -41,6 +42,7 @@ path still needs actual execution evidence.
 | Standalone actual CPU execution | Native SM/LM/APM and applet/domain bootstrap reach a real CommonStateGetter event. Actual Win32 inactive observation produces message15 and focus query2; guest then parks at 12,600,537 blocks / 77 SVCs. Deadline cancellation is accepted | No genuine active-focus transition, later service coverage, graphics or gameplay claim. Parked state and cancellation are distinct from guest exit. |
 | Initial owned-display CPU entry | Six CPU suites pass, including 123 policy/wire, 264 identity and 1,751 relocation checks. A fresh process using the existing complete static images admits all four original NSOs and reaches WindowController command10 after 12,602,165 blocks / 77 SVCs. The empty-body unsupported request leaves TLS unchanged and receives no reply; normal exit10, ownership revocation and all 6,840 pinned inputs pass independent review | Historical preimplementation boundary, advanced by the following window-rights run. Explicit SingleApplication logical activity remains separate from raw OS focus. This does not execute the newly generated fenced images. |
 | Concrete owned-window right and continued startup | Seven CPU suites pass, including 4,136 rights checks and six mutation controls. Independent fresh-run review verifies one successful command10 reply, one actual window-right acquisition, guest continuation and one teardown revocation. The next unsupported request is SelfController command13 after 12,604,731 blocks / 79 SVCs; its TLS remains unchanged with no reply. Normal exit10 and all 6,860 input pins match | Existing static CPU images and one real owned Win32 window; raw OS focus stays inactive. No input, native Device, GPU frame, saved-state initialization, strict ownership-accounting or general lifecycle support claim. |
+| Owned-window focus policy and continued startup | Eight CPU suites pass. A fresh native process commits one real `SetFocusHandlingMode` command13 and one `SetOutOfFocusSuspendingEnabled` command16 reply, then reaches the `aoc:u` service request after 12,608,290 blocks / 83 SVCs. Its unsupported request leaves TLS unchanged and receives no reply. Normal exit10, all 6,970 input pins, unchanged OS foreground, right revocation and focus-authority retirement are recorded | Existing static CPU images and the explicit SingleApplication visible-run/hidden-or-minimized-park policy. Raw OS focus remains inactive; native Device, complete frames, input/audio/save and full guarded-image startup remain open. |
 | Complete fenced static CPU source | Independent review covers all four modules: 1,076,832 blocks, 4,832,474 instruction entries and 65 body units. Whole-instruction memory checks cover 1,703,742 entries; 72 exact no-data prefetch hints and 42 explicit halting unsupported sites remain accounted for | Source coverage does not establish workload equivalence or native gameplay. Fresh guarded Host startup still requires validation. |
 | Complete guarded static CPU build | Independent review verifies all 74 current objects and five archives against 8,214 inputs and 95 canonical source files. Module metadata, x64 COFF, static CRT, required exports, actual member bytes and all 213 remaining build commands match. Actual module entry offsets are confirmed from compiled return bytes. All 72 hints remain separately classified | Compilation and static inspection only. The new guarded Host still needs linking, actual metadata/binding controls and fresh original-entry execution. No live Device, game frame or performance result. |
 | First guarded CPU compilation stage | Four fresh target objects form one shared-runtime library and the three-member `rtld` library. Independent COFF/archive checks verify x64, static CRT and required bindings. Clang/MSVC compile-only controls agree on 109 size, alignment and offset measurements, plus the fixed marker and interface hash arrays. Actual dependency records cover 290 canonical input paths | Historical first stage, now included in the complete build. ABI controls are inspected compiled data; they are not executed programs. |

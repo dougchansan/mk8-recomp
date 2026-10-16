@@ -12,6 +12,8 @@ Private CPU bring-up passes 12,017 checks across 16 fresh processes for genuine 
 
 A separate private Device-coordinator CPU model passes 22,824 checks across 76 fresh cases for callback returns, cancellation, stale identities and teardown. Actual native Device creation remains a live-game integration gate.
 
+Complete static CPU source for all four title modules now passes independent execution-fence and memory-guard review: 1,076,832 blocks and 4,832,474 instruction entries. The inventory explicitly retains 42 unsupported sites that halt. Compiling the four new static libraries with one coherent runtime and validating fresh startup are the next CPU gates; source coverage alone does not prove a supported gameplay path.
+
 ## Historical static-recompiler release (September 2026)
 
 The following v0.0.11 release and performance information describes the earlier suyu-hosted static CPU work. It does not establish completion of the native graphics/platform migration.

@@ -11,6 +11,13 @@ registered callbacks now pass a bounded private CPU suite. The immediate
 integration gates are native Device creation and live resource/draw routing. Native
 audio, controls, save/restart and full standalone gameplay follow those gates.
 
+All four complete static CPU modules now have independently reviewed generated
+source with execution fences and whole-instruction memory guards. Compilation
+and fresh startup validation are the next CPU gates. The source audit retains
+every discovered legacy code entry except 36 verified zero words, and reports
+42 explicit unsupported sites that halt. Their absence from a supported gameplay
+path still needs actual execution evidence.
+
 ## Verified foundations and their limits
 
 | Evidence | Verified result | Limit |
@@ -22,6 +29,7 @@ audio, controls, save/restart and full standalone gameplay follow those gates.
 | Native-owned pool copy | 64-byte copy and 29 error cases | Bounded memory ownership/validation test. |
 | Persistent native images | Three-draw producer/consumer fixture checks 4,096 pixels and 71 rejection cases; retained native image is sampled directly | Synthetic Stage A. No intermediate target readback/reupload; actual-game state and content history remain required. |
 | Standalone actual CPU execution | Native SM/LM/APM and applet/domain bootstrap reach a real CommonStateGetter event. Actual Win32 inactive observation produces message15 and focus query2; guest then parks at 12,600,537 blocks / 77 SVCs. Deadline cancellation is accepted | No genuine active-focus transition, later service coverage, graphics or gameplay claim. Parked state and cancellation are distinct from guest exit. |
+| Complete fenced static CPU source | Independent review covers all four modules: 1,076,832 blocks, 4,832,474 instruction entries and 65 body units. Whole-instruction memory checks cover 1,703,742 entries; 72 exact no-data prefetch hints and 42 explicit halting unsupported sites remain accounted for | Generated-source evidence only. The four new static libraries and their shared runtime still need compilation and fresh startup validation. This does not establish workload equivalence or native gameplay. |
 | Public source/API tests | Synthetic API v2 identity/sealed-binding negotiation, full-range guards and bounded BufferInit checks pass | The miniature API fixture does not attest a complete actual title module or establish every required NVN contract. |
 | Scheduled native API v3 | Nine return kinds, cancellation/commit races, stale completion and no-fallback behavior pass synthetic tests; emitted transport and CPU owner pass ordinary/chained FM1/GG1/FPX1 suites; 144 strict guard mutations reject | Real DeviceInitialize remains gated on provider effects, registered allocator semantics and ownership isolation. |
 | Typed native renderer | Five suites pass, including 76 draws / 306,176 pixels / 66 rejection checks and 4,096 CPU packing roundtrips. Independent alpha blending, float2/3 vertices, swizzles/sRGB, filtering, inverted viewport and packed10 producer/sampling preserve declared semantics | Synthetic capabilities. Actual-game shader/state/resource/history and presentation remain separate gates. |
@@ -177,6 +185,7 @@ The public checkpoint excludes the private exact copy32 matcher and its tests be
 
 | Area | Remaining proof |
 |---|---|
+| Static CPU integration | Compile the four complete fenced images with one coherent runtime, then verify fresh startup and the supported path without reaching an unsupported site |
 | Native graphics | Actual-game resource/state/shader/draw/submit/present coverage without Maxwell processing |
 | Native platform | Required service, memory, scheduling and synchronization behavior without the general emulator runtime |
 | Audio/input/storage | Audible output, usable controls and save/reload persistence through native adapters |

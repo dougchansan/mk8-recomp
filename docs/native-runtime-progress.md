@@ -27,17 +27,19 @@ coverage. The latest independently verified boot also completes SVC13
 (`SetThreadPriority`) for its owned main-thread handle, requesting priority 44.
 The actual stored priority was already 44: this proves idempotent delivery,
 without claiming a priority change or Windows scheduler mutation. All x1–x31
-registers are preserved. Execution continues to SVC41 (`GetInfo` type 0), the
-process core-mask query, at 12,775,334 blocks, 8,985 slices and 175 SVC calls.
-All 10,078 inputs remain unchanged, the process exits normally at the explicit
+registers are preserved. SVC41 (`GetInfo` type 0) now returns success and the
+title's declared core mask, 7, preserving x2–x31 and the owned policy state.
+Execution continues to SVC15 (`SetThreadCoreMask`) at 12,776,198 blocks, 8,991
+slices and 176 SVC calls. All 10,439 inputs remain unchanged, the process exits normally at the explicit
 unsupported boundary, and teardown reconciles. The finite outer slice cap is
 65,536; the 30-second internal and 45-second Root deadlines and per-dispatch
 limits remain in force. The earlier failed 4,096-slice attempt remains preserved.
-Native process core-mask and priority-mask queries are being integrated from
-the title's declared permissions; they have no runtime credit yet.
+The priority-mask query, GetInfo1, passes CPU tests but was not called by this
+game run. Owned-thread core policy is being integrated; no OS-affinity change is
+credited.
 
-All twelve CPU suites pass, including 3,999 thread-priority checks. The latest
-native heap suite completes 2,215 checks and two
+All thirteen CPU suites pass, including 2,035 process-policy and 3,999
+thread-priority checks. The latest native heap suite completes 2,221 checks and two
 separate real 3,100 MiB allocations, independently checking the whole Windows
 allocation, growth, shrink, zeroed regrowth, SVC register behavior and ownership
 failures. The check count includes memory-map inventory and can vary between
@@ -93,8 +95,9 @@ path still needs actual execution evidence.
 | Owned-window focus policy and continued startup | Eight CPU suites pass. A fresh native process commits one real `SetFocusHandlingMode` command13 and one `SetOutOfFocusSuspendingEnabled` command16 reply, then reaches the `aoc:u` service request after 12,608,290 blocks / 83 SVCs. Its unsupported request leaves TLS unchanged and receives no reply. Normal exit10, all 6,970 input pins, unchanged OS foreground, right revocation and focus-authority retirement are recorded | Existing static CPU images and the explicit SingleApplication visible-run/hidden-or-minimized-park policy. Raw OS focus remains inactive; native Device, complete frames, input/audio/save and full guarded-image startup remain open. |
 | Native AOC service connection | Nine CPU suites pass, including owned catalog, same-buffer NPDM identity, Count/BaseId and real event-registry transactions. Independent fresh-run review verifies `GetService("aoc:u")` returning a real session, successful response/kernel/SVC results and later `GetService("pctl")`. Normal exit10 after 12,609,347 blocks / 84 SVCs, all 7,466 pins and context retirement match | No AOC query method was called by this game run. Its explicit native mounted-base-game catalog makes no global installed-DLC claim. Next unsupported service is `pctl`; Device, complete frames, audio/input/save and guarded-image startup remain open. |
 | Native parental-control manager and restricted ports | Actual startup verifies primary `pctl` and all three restricted ports, distinct child/domain transactions, primary Initialize success and complete closes | Restricted child methods and AOC queries remain uncalled; capability-denial checks are authored CPU tests. No global parental-control or gameplay claim. |
-| Native heap SVC1 | All twelve CPU suites pass; the latest heap suite has 2,215 checks and two whole-allocation 3,100 MiB VM observations. Actual game SVC1 succeeds; all 10,078 startup inputs independently match | The verified boot continues through thread-priority setup to the process core-mask query. No native Device or game frame yet. |
+| Native heap SVC1 | All thirteen CPU suites pass; the latest heap suite has 2,221 checks and two whole-allocation 3,100 MiB VM observations. Actual game SVC1 succeeds; all 10,439 startup inputs independently match | The verified boot continues through thread-priority setup and the process core-mask query to SVC15. No native Device or game frame yet. |
 | Native owned-thread priority | 3,999 CPU checks cover NPDM permissions, signed low32 ABI, error order, state and ownership. Actual SVC13 succeeds for handle 0x100 / priority 44, preserving x1–x31 and continuing to GetInfo0 | Idempotent delivery for the owned single-thread subset. No Windows priority change, inheritance or multithread scheduler claim. |
+| Native process capability queries | 2,035 CPU checks cover declared masks, ABI, validation and ownership. Actual GetInfo0 returns mask 7 and continues to SetThreadCoreMask | GetInfo1 is CPU-tested but uncalled. No Windows CPU-mask query, affinity change or native concurrency claim. |
 | SDK Device callback archive integration | Seventeen fresh SDK/runtime objects and 57 retained title objects pass cross-header ABI, symbol and five-archive member/index review; compiled canonical callback descriptor matches | CPU archive facts only; native consumer linking, runtime callback and actual title Device admission remain pending. |
 | Guarded startup with current services | All 24 strict C++ units, current inputs, three executables and stopped controls pass independent review. Actual original entry executes 12,614,619 fenced blocks / 3,478 slices / 90 SVCs; 304 run pins and 3,570 journal rows match, and all four bindings clear | Stops at missing `pctl:s`; native Device, GPU game frames, audio/input/save and supported gameplay remain open. |
 | Native Vulkan Device bridge | Full 35-unit compiled-artifact review and all eight actual runtime fixtures pass. Includes 42 CPU rejection checks, 43 Vulkan component checks, a 64-byte GPU copy / 31 resource rejections, 76 state draws / 306,176 pixels, persistent images, presentation conversion and retirement. Every run's inputs match | Authored component inputs only; no title Device or native game frame. No validation layer, vendor/physical-device-class or broad recovery claim. The earlier failed resource test remains preserved; its corrected lifetime expectations keep production rejection checks intact. |
@@ -253,12 +256,13 @@ The [prerelease `native-foundations-v6-20261015`](https://github.com/dougchansan
 
 The development checkout also keeps a gitignored `local/native-builds/latest.json` index with exact public-package and private diagnostic executable hashes. Game-linked CPU/reference builds remain local; only tools with synthetic inputs and publishable corresponding source become release assets. See [build instructions](native-builds.md) for the current public package.
 
-The index now contains 27 entries, including the verified native heap CPU
+The index now contains 28 entries, including the verified native heap CPU
 fixture with its closed eleven-suite logs and review receipts and the latest
-standalone startup diagnostic that completes the heap and thread-priority
-requests and stops at GetInfo0. Its retained `native_boot.exe` has SHA256
-`8b03eb555c6f21d669a5892088f187a9bb52733ac458180d49d0e314eaa29bdd`.
-All 26 earlier entries and seven allocator bundles remain available. Game-linked
+standalone startup diagnostic that completes the heap, thread-priority and
+process core-mask requests and stops at SetThreadCoreMask. Its retained
+`native_boot.exe` has SHA256
+`b00e2e5a0b4b1485ec177a5477f70b6af076032bdd4532e73d8b5f203cd5d4fc`.
+All 27 earlier entries and seven allocator bundles remain available. Game-linked
 executables require matching local ExeFS inputs and fresh output paths. The
 guarded four-image Host still stops at `pctl:s`; neither startup diagnostic is a
 playable game build. The failed earlier partial boot retains its original result.

@@ -11,14 +11,29 @@ registered callbacks now pass a bounded private CPU suite. The immediate
 integration gates are native Device creation and live resource/draw routing. Native
 audio, controls, save/restart and full standalone gameplay follow those gates.
 
-The current standalone CPU startup path has also advanced under an explicit
-SingleApplication owned-display policy. A fresh process completes owned-window
-rights and both focus setters, then opens the native `aoc:u` service. It continues
-to the missing `pctl` service after 12,609,347 blocks and 84 SVC calls. Nine CPU
-suites pass. Independent execution review verifies the real service reply and
-continuation, all 7,466 input pins, unchanged OS foreground and retirement of
-the display, focus and AOC context authorities. The game has not yet called
-AOC query methods; those implementations have authored CPU test coverage.
+The latest standalone service run opens native `aoc:u` and `pctl`, converts the
+parental-control manager to a domain and creates a real child interface. It
+continues to the missing `pctl:s` service after 12,614,619 blocks and 90 SVC calls.
+All 8,146 inputs match independent execution review. The child remains
+uninitialized; this game run calls none of its methods or the AOC query methods.
+Ten CPU suites now pass, including the restricted `pctl:s` peer whose capability
+mask is fixed to zero. A fresh actual startup run through that peer is pending.
+
+The guarded four-image Host has also absorbed the current focus, AOC and primary
+parental-control services. All 24 strict C++ compilations and fresh stopped
+controls pass independent review. Its latest original-entry run reaches the same
+`pctl:s` boundary with 12,614,619 fenced blocks, 3,478 slices and 90 SVC calls.
+All 3,570 raw ownership journal rows and 304 current run-input pins reconcile;
+all four execution and memory bindings clear before storage teardown.
+
+The native Vulkan Device bridge separately passes 42 CPU rejection checks and
+43 actual Vulkan component checks, including factory creation, validated buffers,
+exact readback, one retired presentation and revocation/drain/destruction.
+A fresh 35-unit static-runtime build passes independent compiled-artifact review.
+The broader graphics regressions currently retain one failed resource test: its
+legacy expectation permits backend access after parent retirement, while the
+new lifetime rule correctly rejects that access. A fixture correction is pending;
+the complete graphics regression set is not yet a pass.
 
 All four complete static CPU modules now have independently reviewed generated
 source with execution fences and whole-instruction memory guards. Their complete
@@ -46,6 +61,9 @@ path still needs actual execution evidence.
 | Concrete owned-window right and continued startup | Seven CPU suites pass, including 4,136 rights checks and six mutation controls. Independent fresh-run review verifies one successful command10 reply, one actual window-right acquisition, guest continuation and one teardown revocation. The next unsupported request is SelfController command13 after 12,604,731 blocks / 79 SVCs; its TLS remains unchanged with no reply. Normal exit10 and all 6,860 input pins match | Existing static CPU images and one real owned Win32 window; raw OS focus stays inactive. No input, native Device, GPU frame, saved-state initialization, strict ownership-accounting or general lifecycle support claim. |
 | Owned-window focus policy and continued startup | Eight CPU suites pass. A fresh native process commits one real `SetFocusHandlingMode` command13 and one `SetOutOfFocusSuspendingEnabled` command16 reply, then reaches the `aoc:u` service request after 12,608,290 blocks / 83 SVCs. Its unsupported request leaves TLS unchanged and receives no reply. Normal exit10, all 6,970 input pins, unchanged OS foreground, right revocation and focus-authority retirement are recorded | Existing static CPU images and the explicit SingleApplication visible-run/hidden-or-minimized-park policy. Raw OS focus remains inactive; native Device, complete frames, input/audio/save and full guarded-image startup remain open. |
 | Native AOC service connection | Nine CPU suites pass, including owned catalog, same-buffer NPDM identity, Count/BaseId and real event-registry transactions. Independent fresh-run review verifies `GetService("aoc:u")` returning a real session, successful response/kernel/SVC results and later `GetService("pctl")`. Normal exit10 after 12,609,347 blocks / 84 SVCs, all 7,466 pins and context retirement match | No AOC query method was called by this game run. Its explicit native mounted-base-game catalog makes no global installed-DLC claim. Next unsupported service is `pctl`; Device, complete frames, audio/input/save and guarded-image startup remain open. |
+| Native parental-control manager and restricted peer | Independent actual startup verifies a real manager/domain and child creation, normal exit10 at missing `pctl:s`, all 8,146 input pins and retirement. Ten CPU suites pass with primary capability303 and the restricted peer fixed to capability0 | Actual startup has not yet used the peer; the real child remains uninitialized with no method calls. No general parental-control policy or gameplay claim. |
+| Guarded startup with current services | All 24 strict C++ units, current inputs, three executables and stopped controls pass independent review. Actual original entry executes 12,614,619 fenced blocks / 3,478 slices / 90 SVCs; 304 run pins and 3,570 journal rows match, and all four bindings clear | Stops at missing `pctl:s`; native Device, GPU game frames, audio/input/save and supported gameplay remain open. |
+| Native Vulkan Device bridge | Independently reviewed 42 CPU rejection checks and 43 actual Vulkan component checks verify one real factory/commit/destruction, buffer identity, exact readback, one retired presentation and submission-time revocation/drain; all 8,225 diagnostic inputs match | Authored component inputs only; no title Device or native game frame. No validation layer, vendor/physical-device-class or broad recovery claim. Full 35-unit compilation passes; the broader regression set retains one failed resource lifetime expectation pending fixture repair. |
 | Complete fenced static CPU source | Independent review covers all four modules: 1,076,832 blocks, 4,832,474 instruction entries and 65 body units. Whole-instruction memory checks cover 1,703,742 entries; 72 exact no-data prefetch hints and 42 explicit halting unsupported sites remain accounted for | Source coverage does not establish workload equivalence or native gameplay. Fresh guarded Host startup still requires validation. |
 | Complete guarded static CPU build | Independent review verifies all 74 current objects and five archives against 8,214 inputs and 95 canonical source files. Module metadata, x64 COFF, static CRT, required exports, actual member bytes and all 213 remaining build commands match. Actual module entry offsets are confirmed from compiled return bytes. All 72 hints remain separately classified | Compilation and static inspection. The following Host link is now verified; fresh guarded original-entry execution is verified below. No live Device, game frame or performance result. |
 | Guarded standalone Host link | Independent review verifies all 29 build steps, 6,892 current inputs, 22 strict C++ compilations with empty analysis reports, exact five-library linkage and distinct entry/metadata/layout executables. Both maps contain every required A2 member and suffixed API exactly once. Current-header layout data matches all 109 values and 36 OF / 39 MO inputs | The following actual stopped controls and guarded guest startup close the separate CPU execution gate. This link does not establish supported gameplay or live graphics. |
@@ -201,11 +219,12 @@ The [prerelease `native-foundations-v6-20261015`](https://github.com/dougchansan
 
 The development checkout also keeps a gitignored `local/native-builds/latest.json` index with exact public-package and private diagnostic executable hashes. Game-linked CPU/reference builds remain local; only tools with synthetic inputs and publishable corresponding source become release assets. See [build instructions](native-builds.md) for the current public package.
 
-The index now contains 16 entries, including a byte-identical copy of the newly
-verified owned-display CPU diagnostic and its closed run/review receipts. All 15
-earlier entries and seven allocator bundles remain available. The new executable
-requires the matching local ExeFS and fresh output paths; it stops at the
-unsupported WindowController request and is not a playable game build.
+The index now contains 22 entries, including byte-identical copies of the
+independently verified parental-control startup diagnostic and guarded four-image
+Host, with their closed run/review receipts. All earlier entries and seven
+allocator bundles remain available. These executables require matching local
+ExeFS inputs and fresh output paths; the latest runs stop at the unsupported
+`pctl:s` service and are not playable game builds.
 
 The public checkpoint excludes the private exact copy32 matcher and its tests because their provenance is unsuitable for this checkpoint. That omission does not erase the preserved private experiment. No game code, generated game archives, caches, NSOs or keys are published. Keep locally supplied title data separate from public source and release packages; see [LEGAL.md](../LEGAL.md).
 
@@ -213,7 +232,7 @@ The public checkpoint excludes the private exact copy32 matcher and its tests be
 
 | Area | Remaining proof |
 |---|---|
-| Static CPU integration | Compile the four complete fenced images with one coherent runtime, then verify fresh startup and the supported path without reaching an unsupported site |
+| Static CPU integration | Complete guarded compilation and bounded original-entry startup pass; extend the supported gameplay path without reaching an unsupported site |
 | Native graphics | Actual-game resource/state/shader/draw/submit/present coverage without Maxwell processing |
 | Native platform | Required service, memory, scheduling and synchronization behavior without the general emulator runtime |
 | Audio/input/storage | Audible output, usable controls and save/reload persistence through native adapters |

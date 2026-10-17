@@ -166,3 +166,20 @@ The public checkpoint excludes the private exact-copy-loop experiment and all
 title-specific descriptors, generated game code, shader caches, captures and
 game-linked libraries. See [progress](native-runtime-progress.md) for the wider
 native campaign and its remaining completion gates.
+
+## Verified local native heap fixture
+
+The ignored `local/native-builds/latest.json` index now includes
+`verified-native-heap-cpu-diagnostic`. Its `path` points to the retained Windows
+x64 `native_heap_test.exe`; run it without arguments from its recorded working
+directory. The indexed copy has SHA256
+`b6799a20db73460f310c04258fa4eecd96241508695943dd8ab6934d869f45b2`.
+
+The reviewed run completes two separate actual 3,100 MiB allocations with full
+Windows committed-prefix/reserved-tail checks, plus SVC, budget, growth,
+shrink/regrow and ownership cases. It belongs to the eleven-suite CPU result;
+its observed 2,221 checks include memory-map inventory checks whose count can
+vary between processes. It creates no Window, executes no game/NSO code and
+performs no GPU work. Closed logs and review receipts are retained beside the
+binary. It is a private local verification tool and is excluded from public
+release assets and playable-game claims.

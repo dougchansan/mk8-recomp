@@ -244,10 +244,10 @@ The [prerelease `native-foundations-v6-20261015`](https://github.com/dougchansan
 
 The development checkout also keeps a gitignored `local/native-builds/latest.json` index with exact public-package and private diagnostic executable hashes. Game-linked CPU/reference builds remain local; only tools with synthetic inputs and publishable corresponding source become release assets. See [build instructions](native-builds.md) for the current public package.
 
-The index now contains 24 entries, including byte-identical copies of the
-independently verified three-restricted-port startup diagnostic and guarded
-four-image Host, with their closed run/review receipts. All earlier entries and
-seven allocator bundles remain available. These executables require matching
+The index now contains 25 entries, including the verified native heap CPU
+fixture with its closed eleven-suite logs and review receipts, plus byte-identical
+copies of the three-restricted-port startup diagnostic and guarded four-image
+Host. All 24 earlier entries and seven allocator bundles remain available. These executables require matching
 local ExeFS inputs and fresh output paths; the last fully verified standalone
 diagnostic stops at the 3,100 MiB heap request and the guarded Host at `pctl:s`.
 Neither is a playable game build. The new heap CPU fixture is verified separately;

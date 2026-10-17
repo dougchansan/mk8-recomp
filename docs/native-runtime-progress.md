@@ -14,18 +14,33 @@ audio, controls, save/restart and full standalone gameplay follow those gates.
 The latest standalone service run opens native `aoc:u`, `pctl` and all three
 restricted `pctl:s`, `pctl:a` and `pctl:r` ports. Each restricted context has its
 own child, domain and close chronology, with its capability mask fixed to zero.
-The primary child completes Initialize once; the restricted children return the
-typed capability denial and remain uninitialized. All child, manager and session
-closes reconcile before the owned Window is destroyed. Startup continues through
-12,623,343 blocks, 3,589 slices and 129 SVC calls to an unsupported SVC1 request
-for exactly 3,250,585,600 bytes (3,100 MiB). All 8,741 pins match independent
-execution review. Ten CPU suites pass; no child query or AOC query is credited.
+The primary child completes Initialize once. The restricted children are created
+and retired without child-method calls; capability denial is tested CPU behavior,
+not an observed reply from these game runs. Child, manager and session closes
+reconcile before the owned Window is destroyed. No child query or AOC query is
+credited.
 
-The next source candidate implements a native Windows heap with an 8 GiB address
-reservation, committed growth, guarded shrink and zeroed regrowth under the
-4 GiB budget. Its eleventh CPU suite requires the actual 3,100 MiB request and
-independent checks of the whole Windows allocation. This candidate is source
-only until compilation, actual CPU tests and a fresh original-entry run pass.
+The game now completes its actual SVC1 request for 3,250,585,600 bytes (3,100 MiB).
+The paired raw requests and replies show kernel success, the guest heap base,
+preserved other registers, and full native Windows committed-prefix/reserved-tail
+coverage. It continues through 31 more SVCs, reaching 12,659,691 blocks and 160
+SVC calls before the existing 4,096-slice cap stops it after 2.703 seconds. The
+original result remains FAILED/NONE with exit3; this is a proven heap transaction
+inside a failed partial run. Independent review matches all 9,386 current pins.
+A successor raises the finite outer slice cap to 65,536 while keeping the
+30-second internal and 45-second Root deadlines and the dispatch limit.
+
+All eleven CPU suites pass. The native heap suite completes 2,209 checks and two
+separate real 3,100 MiB allocations, independently checking the whole Windows
+allocation, growth, shrink, zeroed regrowth, SVC register behavior and ownership
+failures. The authored aggregate charge is 3,290,288,128 bytes under the 4 GiB
+budget; it is distinct from the actual game-boot observation above.
+
+Fresh SDK and shared-runtime archives pass compiled review alongside 57 retained
+title objects: all 74 objects and five archive member sets reconcile, with the
+canonical Device callback descriptor present in compiled data. The native game
+consumer still needs that path linked and exercised; these archive results grant
+no Device, rendering or gameplay success.
 
 The guarded four-image Host has also absorbed the current focus, AOC and primary
 parental-control services. All 24 strict C++ compilations and fresh stopped
@@ -69,7 +84,9 @@ path still needs actual execution evidence.
 | Concrete owned-window right and continued startup | Seven CPU suites pass, including 4,136 rights checks and six mutation controls. Independent fresh-run review verifies one successful command10 reply, one actual window-right acquisition, guest continuation and one teardown revocation. The next unsupported request is SelfController command13 after 12,604,731 blocks / 79 SVCs; its TLS remains unchanged with no reply. Normal exit10 and all 6,860 input pins match | Existing static CPU images and one real owned Win32 window; raw OS focus stays inactive. No input, native Device, GPU frame, saved-state initialization, strict ownership-accounting or general lifecycle support claim. |
 | Owned-window focus policy and continued startup | Eight CPU suites pass. A fresh native process commits one real `SetFocusHandlingMode` command13 and one `SetOutOfFocusSuspendingEnabled` command16 reply, then reaches the `aoc:u` service request after 12,608,290 blocks / 83 SVCs. Its unsupported request leaves TLS unchanged and receives no reply. Normal exit10, all 6,970 input pins, unchanged OS foreground, right revocation and focus-authority retirement are recorded | Existing static CPU images and the explicit SingleApplication visible-run/hidden-or-minimized-park policy. Raw OS focus remains inactive; native Device, complete frames, input/audio/save and full guarded-image startup remain open. |
 | Native AOC service connection | Nine CPU suites pass, including owned catalog, same-buffer NPDM identity, Count/BaseId and real event-registry transactions. Independent fresh-run review verifies `GetService("aoc:u")` returning a real session, successful response/kernel/SVC results and later `GetService("pctl")`. Normal exit10 after 12,609,347 blocks / 84 SVCs, all 7,466 pins and context retirement match | No AOC query method was called by this game run. Its explicit native mounted-base-game catalog makes no global installed-DLC claim. Next unsupported service is `pctl`; Device, complete frames, audio/input/save and guarded-image startup remain open. |
-| Native parental-control manager and restricted ports | Independent actual startup verifies primary `pctl` and all three restricted ports, distinct child/domain transactions, primary Initialize success, restricted typed denial and complete closes. Normal exit10 at unsupported SVC1 requesting 3,100 MiB after 12,623,343 blocks / 129 SVCs. All 8,741 pins match; ten CPU suites pass | Heap success, child/AOC queries, global parental-control policy and gameplay remain unproven. The native heap successor is source only. |
+| Native parental-control manager and restricted ports | Actual startup verifies primary `pctl` and all three restricted ports, distinct child/domain transactions, primary Initialize success and complete closes | Restricted child methods and AOC queries remain uncalled; capability-denial checks are authored CPU tests. No global parental-control or gameplay claim. |
+| Native heap SVC1 | All eleven CPU suites pass; the heap suite has 2,209 checks and two whole-allocation 3,100 MiB VM observations. Actual game SVC1 succeeds and continues through 31 more SVCs; all 9,386 pins independently match | The game attempt ends FAILED/NONE at the exact 4,096-slice cap, after 12,659,691 blocks / 160 SVCs. A larger finite-budget successor still needs its own build and run. |
+| SDK Device callback archive integration | Seventeen fresh SDK/runtime objects and 57 retained title objects pass cross-header ABI, symbol and five-archive member/index review; compiled canonical callback descriptor matches | CPU archive facts only; native consumer linking, runtime callback and actual title Device admission remain pending. |
 | Guarded startup with current services | All 24 strict C++ units, current inputs, three executables and stopped controls pass independent review. Actual original entry executes 12,614,619 fenced blocks / 3,478 slices / 90 SVCs; 304 run pins and 3,570 journal rows match, and all four bindings clear | Stops at missing `pctl:s`; native Device, GPU game frames, audio/input/save and supported gameplay remain open. |
 | Native Vulkan Device bridge | Full 35-unit compiled-artifact review and all eight actual runtime fixtures pass. Includes 42 CPU rejection checks, 43 Vulkan component checks, a 64-byte GPU copy / 31 resource rejections, 76 state draws / 306,176 pixels, persistent images, presentation conversion and retirement. Every run's inputs match | Authored component inputs only; no title Device or native game frame. No validation layer, vendor/physical-device-class or broad recovery claim. The earlier failed resource test remains preserved; its corrected lifetime expectations keep production rejection checks intact. |
 | Complete fenced static CPU source | Independent review covers all four modules: 1,076,832 blocks, 4,832,474 instruction entries and 65 body units. Whole-instruction memory checks cover 1,703,742 entries; 72 exact no-data prefetch hints and 42 explicit halting unsupported sites remain accounted for | Source coverage does not establish workload equivalence or native gameplay. Fresh guarded Host startup still requires validation. |
@@ -231,9 +248,10 @@ The index now contains 24 entries, including byte-identical copies of the
 independently verified three-restricted-port startup diagnostic and guarded
 four-image Host, with their closed run/review receipts. All earlier entries and
 seven allocator bundles remain available. These executables require matching
-local ExeFS inputs and fresh output paths; the latest standalone run stops at
-the 3,100 MiB heap request and the guarded Host at `pctl:s`. Neither is a playable
-game build. The uncompiled heap candidate is excluded from the build index.
+local ExeFS inputs and fresh output paths; the last fully verified standalone
+diagnostic stops at the 3,100 MiB heap request and the guarded Host at `pctl:s`.
+Neither is a playable game build. The new heap CPU fixture is verified separately;
+the failed partial game boot is not relabeled as a verified startup build.
 
 The public checkpoint excludes the private exact copy32 matcher and its tests because their provenance is unsuitable for this checkpoint. That omission does not erase the preserved private experiment. No game code, generated game archives, caches, NSOs or keys are published. Keep locally supplied title data separate from public source and release packages; see [LEGAL.md](../LEGAL.md).
 

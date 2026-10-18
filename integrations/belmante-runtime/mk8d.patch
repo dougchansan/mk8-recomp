@@ -1,9 +1,15 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -36,6 +36,64 @@
+@@ -36,6 +36,70 @@
  option(NX_TESTS "Build the standalone unit tests" OFF)
  if(NX_TESTS AND NOT ANDROID)
      enable_testing()
++    add_executable(native_texture_layers_test tests/native_texture_layers_test.cpp)
++    target_include_directories(native_texture_layers_test PRIVATE runtime/src)
++    add_test(NAME native_texture_layers COMMAND native_texture_layers_test)
++    add_executable(native_sampled_profile_test tests/native_sampled_profile_test.cpp)
++    target_include_directories(native_sampled_profile_test PRIVATE runtime/src)
++    add_test(NAME native_sampled_profile COMMAND native_sampled_profile_test)
 +    add_executable(sdk53_packaged_texture_test tests/sdk53_packaged_texture_test.cpp)
 +    target_include_directories(sdk53_packaged_texture_test PRIVATE runtime/src)
 +    add_test(NAME sdk53_packaged_texture COMMAND sdk53_packaged_texture_test)
@@ -65,7 +71,7 @@
      add_executable(gpu_pick_test tests/gpu_pick_test.cpp runtime/src/nvn/nvn_gpu_pick.cpp)
      target_compile_definitions(gpu_pick_test PRIVATE NX_GPU_PICK_STANDALONE)
      target_include_directories(gpu_pick_test PRIVATE runtime/src/nvn)
-@@ -67,7 +125,14 @@
+@@ -67,7 +131,14 @@
      return()
  endif()
  
@@ -81,7 +87,7 @@
      file(GLOB src CONFIGURE_DEPENDS "${NX_GEN_DIR}/${mod}/*.cpp")
      add_library(game_${mod} STATIC ${src})
      target_include_directories(game_${mod} PRIVATE runtime/include "${NX_GEN_DIR}/${mod}")
-@@ -84,8 +149,10 @@
+@@ -84,8 +155,10 @@
          target_compile_options(game_${mod} PRIVATE -O2 -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
      endif()
  endforeach()
@@ -92,7 +98,7 @@
      runtime/src/main.cpp
      runtime/src/sampler.cpp
      runtime/src/loader.cpp
-@@ -93,6 +160,12 @@
+@@ -93,6 +166,12 @@
      runtime/src/kernel.cpp
      runtime/src/kernel_watch.cpp
      runtime/src/ipc.cpp
@@ -105,7 +111,7 @@
      runtime/src/svc_am.cpp
      runtime/src/svc_set.cpp
      runtime/src/svc_misc.cpp
-@@ -101,6 +174,7 @@
+@@ -101,6 +180,7 @@
      runtime/src/hle_fs.cpp
      runtime/src/svc_account.cpp
      runtime/src/hle_ro.cpp
@@ -113,7 +119,7 @@
      runtime/src/hle_vi.cpp
      runtime/src/hle_hid.cpp
      runtime/src/hle_net.cpp
-@@ -185,7 +259,7 @@
+@@ -185,7 +265,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -122,7 +128,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +270,7 @@
+@@ -196,7 +276,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -131,7 +137,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,16 +282,35 @@
+@@ -208,16 +288,35 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -365,7 +371,7 @@
 +        if(mode!=1){c.x[0]=0x292202;return;}
 +        auto file=std::make_shared<File>(romfs_image(),*entry,guest);
 +        auto h=g_next++;g_files.emplace(h,std::move(file));st<uint64_t>(c.x[0],h);
-+        note_open("OpenFile",guest,"RomFS image");c.x[0]=kOk;return;
++        note_open("OpenFile",guest,"RomFS image");if(trace_fs())log("fs: OpenFile(%s) -> RomFS image offset=%llu bytes=%llu",guest.c_str(),static_cast<unsigned long long>(entry->offset),static_cast<unsigned long long>(entry->size));c.x[0]=kOk;return;
 +    }
      if (const std::string* v = find_virtual(p)) {  // served from memory, through a temporary file
          FILE* f = std::tmpfile();
@@ -1206,6 +1212,39 @@
 +#include <cstdint>
 +namespace nx::nvn {void set_native_origin(uint64_t,uint32_t);uint32_t native_window_origin();}
 --- /dev/null
++++ b/runtime/src/nvn/native_sampled_profile.h
+@@ -0,0 +1,30 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++namespace nx::nvn {
++struct ShaderInfo;
++bool native_shader_uses_sampled_float_profile(const ShaderInfo*);
++inline bool native_float_color_format(uint32_t format) {
++    if((format>=0x41&&format<=0x50)||(format>=0x79&&format<=0x9c))return true;
++    switch(format) {
++    case 1:case 2:case 5:case 6:case 7:case 0xa:case 0xd:case 0xe:
++    case 0x11:case 0x12:case 0x13:case 0x16:case 0x19:case 0x1a:
++    case 0x1d:case 0x1e:case 0x1f:case 0x22:case 0x25:case 0x26:
++    case 0x29:case 0x2a:case 0x2b:case 0x2e:case 0x37:case 0x38:
++    case 0x39:case 0x3a:case 0x3b:case 0x3c:case 0x3d:case 0x3f:case 0x40:return true;
++    default:return false;
++    }
++}
++inline bool native_sampled_2d_float_compatible(uint32_t target,uint32_t depth,uint32_t samples,uint32_t format) {
++    return target==1&&depth==1&&samples<=1&&native_float_color_format(format);
++}
++inline bool native_sampled_shadow_compatible(bool arrayed,uint32_t target,uint32_t layers,uint32_t samples,uint32_t format,uint32_t depth_mode,uint32_t compare_mode,uint32_t compare_func) {
++    return target==(arrayed?4u:1u)&&(arrayed?layers>0:layers==1)&&samples<=1&&format>=0x32&&format<=0x36&&depth_mode==0&&compare_mode==1&&compare_func>=1&&compare_func<=8;
++}
++inline bool native_sampled_array_shadow_compatible(uint32_t target,uint32_t layers,uint32_t samples,uint32_t format,uint32_t depth_mode,uint32_t compare_mode,uint32_t compare_func) {
++    return native_sampled_shadow_compatible(true,target,layers,samples,format,depth_mode,compare_mode,compare_func);
++}
++inline bool native_sampled_cube_float_compatible(uint32_t target,uint32_t width,uint32_t height,uint32_t samples,uint32_t format) {
++    return target==8&&width>0&&width==height&&samples<=1&&native_float_color_format(format);
++}
++}
+--- /dev/null
 +++ b/runtime/src/nvn/native_texture_format.h
 @@ -0,0 +1,32 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -1239,6 +1278,16 @@
 + else throw std::invalid_argument("unsupported NVN texture storage format");
 + return f;
 +}
++}
+--- /dev/null
++++ b/runtime/src/nvn/native_texture_layers.h
+@@ -0,0 +1,7 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++namespace nx::nvn {
++// SDK53 surface construction forces six faces for target8, independently of builder depth.
++inline uint32_t native_texture_storage_layers(uint32_t target,uint32_t depth) {return target==8?6:depth;}
 +}
 --- a/runtime/src/nvn/nvn.h
 +++ b/runtime/src/nvn/nvn.h
@@ -1695,7 +1744,7 @@
 +    try { t.block_height_gobs=sdk53_packaged_block_height({reinterpret_cast<const uint8_t*>(builder),0x5a}); }
 +    catch(const std::invalid_argument& error){fatal("native packaged texture: %s",error.what());}
 +    if(t.block_height_gobs) {
-+        if(t.depth!=1||t.samples>1||t.stride)fatal("packaged texture requires supported 2D non-MSAA layout");
++        if((t.target!=1&&t.target!=4&&t.target!=8)||(t.target==1&&t.depth!=1)||t.samples>1||t.stride)fatal("packaged texture requires supported 2D/cube non-MSAA layout");
 +        log("nvn: packaged texture %llx %ux%u format=%u block-height=%u",static_cast<unsigned long long>(guest),t.width,t.height,t.format,t.block_height_gobs);
      }
  
@@ -1930,6 +1979,88 @@
  NX_HLE("nvnSamplerPoolRegisterSampler", RegisterSampler);
  NX_HLE("nvnSamplerPoolRegisterSamplerBuilder", RegisterSamplerBuilder);
  NX_HLE("nvnSamplerGetMinMagFilter", GetMinMagFilter);
+--- a/runtime/src/nvn/nvn_sets.cpp
++++ b/runtime/src/nvn/nvn_sets.cpp
+@@ -9,6 +9,7 @@
+ #include <string>
+ 
+ #include "nvn_draw_state.h"
++#include "native_sampled_profile.h"
+ #include "nvn_ultrawide.h"
+ 
+ namespace nx::nvn::replay {
+@@ -657,6 +658,15 @@
+             else
+                 texture = 0;
+         }
++        if(native_shader_uses_sampled_float_profile(s)) {
++            const auto* actual=texture?get<Texture>(texture):nullptr;
++            const uint32_t format=actual?(r.view.format?r.view.format:actual->format):0;
++            const bool compatible=actual&&(b->image.depth?
++                native_sampled_shadow_compatible(b->image.arrayed,actual->target,actual->depth,actual->samples,format,actual->depth_stencil_mode,r.sampler.compare_mode,r.sampler.compare_func):
++                (b->image.dim==3?native_sampled_cube_float_compatible(actual->target,actual->width,actual->height,actual->samples,format):
++                 native_sampled_2d_float_compatible(actual->target,actual->depth,actual->samples,format)));
++            if(!compatible)fatal("bound texture does not match offline sampled float shader profile shader=%s slot=%d target=%u depth=%u format=%u compare=%u/%u",s->hash.c_str(),b->nvn.index,actual?actual->target:0,actual?actual->depth:0,format,r.sampler.compare_mode,r.sampler.compare_func);
++        }
+         r.texture = texture;
+         if (texture ? !sampled_ready(texture) : !dummy_ready(b->image)) out |= kNeedBreak;
+         if (!texture) continue;
+--- a/runtime/src/nvn/nvn_shaders.cpp
++++ b/runtime/src/nvn/nvn_shaders.cpp
+@@ -11,6 +11,8 @@
+ #include <algorithm>
+ #include <cstdio>
+ #include <cstring>
++#include <unordered_set>
++#include "native_sampled_profile.h"
+ 
+ #ifndef NX_SHADERS_STANDALONE
+ #include <memory>
+@@ -224,6 +226,7 @@
+     std::unordered_map<std::string, std::unique_ptr<ShaderInfo>> by_hash;  // null: no usable .spv (logged once)
+     std::unordered_map<std::string, std::string> resources;                // results.tsv, hash -> resources
+     bool resources_loaded = false;
++    std::unordered_set<std::string> sampled_float;
+ };
+ 
+ Cache& cache() {
+@@ -232,6 +235,11 @@
+ }
+ 
+ }  // namespace
++
++bool native_shader_uses_sampled_float_profile(const ShaderInfo* shader) {
++    auto& k=cache();std::lock_guard guard(k.lock);
++    return shader&&k.sampled_float.contains(shader->hash);
++}
+ 
+ const ShaderInfo* shader_by_hash(const std::string& hash) {
+     Cache& k = cache();
+@@ -293,6 +301,24 @@
+         log("nvn: shader %s: %s", hash.c_str(), error.c_str());
+         return nullptr;
+     }
++    std::string profile;
++    if(read_whole(dir+hash+".profile",profile)) {
++        const std::string legacy="NVN_NATIVE_PROFILE_V1 normalized2d-float viewport1 triangles float-attributes";
++        const std::string expected="NVN_NATIVE_PROFILE_V2 normalized-sampled-float viewport1 triangles float-attributes";
++        const std::string shadow="NVN_NATIVE_PROFILE_V3 normalized-sampled-float-shadow viewport1 triangles float-attributes";
++        const bool shadow_allowed=profile==shadow+"\n"||profile==shadow+"\r\n";
++        const bool cube_allowed=shadow_allowed||profile==expected+"\n"||profile==expected+"\r\n";
++        if(!cube_allowed&&profile!=legacy+"\n"&&profile!=legacy+"\r\n")fatal("unrecognized native offline shader profile");
++        for(const auto& binding:info->refl.bindings) {
++            if(binding.type==DescriptorType::UniformBuffer)continue;
++            const bool shape_allowed=(!binding.image.arrayed&&!binding.image.depth&&(binding.image.dim==1||(cube_allowed&&binding.image.dim==3)))||
++                (shadow_allowed&&binding.image.dim==1&&binding.image.depth);
++            if(binding.set!=2||binding.type!=DescriptorType::CombinedImageSampler||binding.count!=1||!shape_allowed||binding.image.ms||
++               binding.image.component!=ScalarType::Float||binding.nvn.source!=NvnSource::SamplerBinding||
++               binding.nvn.index<0||binding.nvn.index>=32)fatal("offline sampled profile does not match reflected shader");
++        }
++        k.sampled_float.insert(hash);
++    }
+     if (g_trace)
+         log("nvn: shader %s %s: %zu bindings, %zu inputs, %zu outputs, c[1] %u bytes", hash.c_str(),
+             stage_name(info->stage), info->refl.bindings.size(), info->refl.inputs.size(), info->refl.outputs.size(),
 --- a/runtime/src/nvn/nvn_texture_layout.cpp
 +++ b/runtime/src/nvn/nvn_texture_layout.cpp
 @@ -2,8 +2,7 @@
@@ -1942,11 +2073,12 @@
  // Block linear: the image is cut into GOBs of 64 bytes x 8 rows; GOBs stack vertically into blocks of
  // 1..16 GOBs (the block height, picked per mip level from the level's height); a level's rows of blocks are
  // 64-byte aligned in width and block-aligned in height. Pre-tiled data (BNTX) is laid out the same way, so the
-@@ -11,31 +10,15 @@
+@@ -11,31 +10,16 @@
  #include <algorithm>
  
  #include "nvn.h"
 +#include "native_texture_format.h"
++#include "native_texture_layers.h"
 +#include "sdk53_packaged_texture.h"
  
  namespace nx::nvn {
@@ -1978,7 +2110,19 @@
  
  uint32_t div_up(uint32_t a, uint32_t b) { return (a + b - 1) / b; }
  
-@@ -66,11 +49,17 @@
+@@ -52,9 +36,11 @@
+ 
+ Layout compute(CPU& c, uint64_t builder) {
+     uint32_t format = uint32_t(driver(c, "nvnTextureBuilderGetFormat", {builder}));
++    uint32_t target = uint32_t(driver(c, "nvnTextureBuilderGetTarget", {builder}));
+     uint32_t width = std::max<uint32_t>(1, uint32_t(driver(c, "nvnTextureBuilderGetWidth", {builder})));
+     uint32_t height = std::max<uint32_t>(1, uint32_t(driver(c, "nvnTextureBuilderGetHeight", {builder})));
+     uint32_t depth = std::max<uint32_t>(1, uint32_t(driver(c, "nvnTextureBuilderGetDepth", {builder})));
++    depth=native_texture_storage_layers(target,depth);
+     uint32_t levels = std::max<uint32_t>(1, uint32_t(driver(c, "nvnTextureBuilderGetLevels", {builder})));
+     uint32_t samples = std::max<uint32_t>(1, uint32_t(driver(c, "nvnTextureBuilderGetSamples", {builder})));
+     uint32_t stride = uint32_t(driver(c, "nvnTextureBuilderGetStride", {builder}));
+@@ -66,11 +52,17 @@
          return l;
      }
      uint64_t layer = 0;
@@ -1986,7 +2130,7 @@
 +    uint32_t packaged=0;
 +    try {packaged=sdk53_packaged_block_height({reinterpret_cast<const uint8_t*>(builder),0x5a});}
 +    catch(const std::invalid_argument& error){fatal("native packaged storage: %s builder=%llx packed=%04x dimensions=%ux%ux%u levels=%u format=%u stride=%u lr=%llx",error.what(),static_cast<unsigned long long>(builder),ld<uint16_t>(builder+0x58),width,height,depth,levels,format,stride,static_cast<unsigned long long>(c.x[30]));}
-+    if(packaged&&(depth!=1||samples>1))fatal("packaged storage requires supported 2D non-MSAA layout");
++    if(packaged&&((target!=1&&target!=4&&target!=8)||(target==1&&depth!=1)||samples>1))fatal("packaged storage requires supported 2D/cube non-MSAA layout");
 +    uint32_t bh0 = packaged?packaged:block_height_gobs(div_up(height, f.block_h));
      for (uint32_t level = 0; level < levels; level++) {
          uint32_t w = std::max(1u, width >> level), h = std::max(1u, height >> level);
@@ -3622,6 +3766,22 @@
 +#include <array>
 +#include <iostream>
 +int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("HID policy assertion");};nx::NativeHidPolicy p;check(p.style(0)==0);p.initialize();check(p.style(0)==1&&p.style(1)==0&&p.style(32)==0);p.styles(0);check(p.style(0)==0);p.styles(1);std::array<uint32_t,1> ids{1};p.supported_ids(ids);check(p.style(0)==0);ids[0]=0;p.supported_ids(ids);check(p.style(0)==1);p.handheld_mode(2);check(p.handheld_mode()==2);p.disconnect(0);check(p.style(0)==0);p.initialize();check(p.style(0)==1);bool bad=false;try{p.handheld_mode(3);}catch(const std::invalid_argument&){bad=true;}check(bad&&p.handheld_mode()==2);ids[0]=99;bad=false;try{p.supported_ids(ids);}catch(const std::invalid_argument&){bad=true;}check(bad&&p.style(0)==1);std::cout<<"native_hid_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/native_sampled_profile_test.cpp
+@@ -0,0 +1,5 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/native_sampled_profile.h"
++#include <iostream>
++#include <stdexcept>
++int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("sampled profile assertion");};for(unsigned format:{0x25u,0x4bu,0x79u,0x95u,0xau})check(native_sampled_2d_float_compatible(1,1,1,format));for(unsigned format:{0u,3u,4u,0x27u,0x31u,0x32u,0x33u,0x3eu,0x51u,0xffffffffu})check(!native_sampled_2d_float_compatible(1,1,1,format));for(unsigned target:{0u,2u,3u,4u,5u,6u,7u,8u,9u,0xffffffffu})check(!native_sampled_2d_float_compatible(target,1,1,0x25));check(!native_sampled_2d_float_compatible(1,2,1,0x25));check(!native_sampled_2d_float_compatible(1,1,4,0x25));check(native_sampled_2d_float_compatible(1,1,0,0x25));check(native_sampled_cube_float_compatible(8,16,16,1,0x25));check(native_sampled_cube_float_compatible(8,16,16,0,0x4b));check(!native_sampled_cube_float_compatible(1,16,16,1,0x25));check(!native_sampled_cube_float_compatible(8,16,8,1,0x25));check(!native_sampled_cube_float_compatible(8,0,0,1,0x25));check(!native_sampled_cube_float_compatible(8,16,16,4,0x25));check(!native_sampled_cube_float_compatible(8,16,16,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_array_shadow_compatible(4,4,1,format,0,1,4));check(!native_sampled_array_shadow_compatible(1,4,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,0,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,4,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x25,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,1,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,0,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,0));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,9));check(native_sampled_shadow_compatible(false,1,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,4,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,4,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x25,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x34,0,0,4));std::cout<<"sampled profile checks="<<checks<<" PASS\n";}
+--- /dev/null
++++ b/tests/native_texture_layers_test.cpp
+@@ -0,0 +1,5 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/native_texture_layers.h"
++#include <iostream>
++#include <stdexcept>
++int main(){unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("texture layer assertion");};for(unsigned depth:{0u,1u,2u,6u,0xffffffffu})check(nx::nvn::native_texture_storage_layers(8,depth)==6);check(nx::nvn::native_texture_storage_layers(1,1)==1);check(nx::nvn::native_texture_storage_layers(4,7)==7);check(nx::nvn::native_texture_storage_layers(2,9)==9);std::cout<<"texture layer checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_touch_policy_test.cpp
 @@ -0,0 +1,5 @@

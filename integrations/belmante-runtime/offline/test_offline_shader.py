@@ -24,12 +24,12 @@ with tempfile.TemporaryDirectory(prefix="offline-nvn-test-") as temporary:
     code_path = root / "authored-code.bin"
     code_path.write_bytes(code)
     checks = 0
-    def run(name, data, viewport, success):
+    def run(name, data, viewport, success, extra=()):
         global checks
         ctrl = root / (name + ".ctrl")
         output = root / (name + ".spv")
         ctrl.write_bytes(data)
-        result = subprocess.run([str(exe), str(code_path), str(ctrl), viewport, str(output)],
+        result = subprocess.run([str(exe), str(code_path), str(ctrl), viewport, str(output), *extra],
                                 capture_output=True, text=True, timeout=30, creationflags=flags)
         assert (result.returncode == 0) == success, (name, result.stdout, result.stderr)
         if success:
@@ -37,14 +37,21 @@ with tempfile.TemporaryDirectory(prefix="offline-nvn-test-") as temporary:
             report = json.loads(result.stdout)
             assert report["uniforms"] == report["storage"] == report["textures"] == 0
         else:
-            assert not output.exists(), name
+            assert not output.exists() and not output.with_suffix(".profile").exists(), name
         checks += 1
     run("viewport-enabled", control, "1", True)
     run("viewport-disabled", control, "0", True)
+    run("short-complete-control", control[:0x758], "1", True)
+    run("short-incomplete-control", control[:0x757], "1", False)
     run("truncated-control", control[:100], "1", False)
     run("bad-magic", bytes(0x880), "1", False)
     bad = bytearray(control)
     put(bad, 0x6f8, 0xffffffff)
     run("bad-program-extent", bad, "1", False)
     run("missing-viewport-profile", control, "unknown", False)
+    run("unknown-sampled-type", control, "1", False, ("2:40:unknown",))
+    run("wrong-texture-bank", control, "1", False, ("3:40",))
+    run("unaligned-texture-slot", control, "1", False, ("2:41",))
+    run("duplicate-texture-slot", control, "1", False, ("2:40","2:40"))
+    run("wrong-texture-viewport", control, "0", False, ("2:40",))
 print(f"offline shader authored cases={checks} PASS")

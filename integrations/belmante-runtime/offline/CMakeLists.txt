@@ -1,0 +1,9 @@
+# Existing matched shader-only bridge; no downloads or dependency discovery.
+if(NOT TARGET native_shader_bridge)
+    message(FATAL_ERROR "Add this directory after defining the existing native_shader_bridge target")
+endif()
+add_executable(mk8_offline_nvn_shader offline_nvn_shader.cpp)
+target_link_libraries(mk8_offline_nvn_shader PRIVATE native_shader_bridge)
+if(MSVC)
+    target_compile_options(mk8_offline_nvn_shader PRIVATE /utf-8 /GS- /Gy)
+endif()

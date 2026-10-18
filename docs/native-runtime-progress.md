@@ -9,10 +9,10 @@ The isolated Windows target uses MIT-licensed SuperMarioWonderRecomp revision
 main/subsdk0/SDK form three static libraries and a local standalone executable.
 The Vulkan dispatch table is regenerated for the already installed headers.
 
-Twenty-one CPU/component suites pass, including SDK 53 texture/sampler
+Twenty-two CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 91-check GPU fixture creates and drains a real device and queue on
+A separate 95-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. The real image's 1,122 directories,
 6,597 files and eight native sample reads match an independent parser.
@@ -22,8 +22,17 @@ window and Vulkan device, initializes its queue and three presentation textures,
 acquires a texture and configures command buffers. It mounts CommonSave/UserSave,
 finds the Ghost directories, and creates and commits its user data file. Texture
 cache setup now handles copied texture and sampler descriptors and reaches the
-first texture upload. Pool and buffer labels are stored with their native objects. Startup now stops
-at the first missing required offline SPIR-V translation. There is still no native game frame or playable result.
+first texture upload. Debug labels now share owned native object storage. The inspected 2D packaged
+texture layout carries its block height into storage sizing and upload. With three
+locally translated shader stages, startup reaches a textured fragment whose
+required binding/type metadata is still missing. There is still no native game frame or playable result.
+
+The [offline shader diagnostic](../integrations/belmante-runtime/offline/README.md)
+uses the existing shader-only compiler libraries. Six authored parser/profile
+cases pass. Three actual shaders translate; Vulkan accepts their modules without
+a pipeline or draw. The profile and uniform mapping are explicit, and required
+missing texture metadata rejects. This is not complete shader coverage or proof
+of draw-state compatibility. Packaged 3D/multisample layouts remain unsupported.
 
 The owned window does not activate or change the foreground. Fresh startup
 processes stop at explicit unsupported calls and close without a timeout. These

@@ -1,9 +1,12 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -36,6 +36,61 @@
+@@ -36,6 +36,64 @@
  option(NX_TESTS "Build the standalone unit tests" OFF)
  if(NX_TESTS AND NOT ANDROID)
      enable_testing()
++    add_executable(sdk53_packaged_texture_test tests/sdk53_packaged_texture_test.cpp)
++    target_include_directories(sdk53_packaged_texture_test PRIVATE runtime/src)
++    add_test(NAME sdk53_packaged_texture COMMAND sdk53_packaged_texture_test)
 +    add_executable(sdk53_sampler_descriptor_test tests/sdk53_sampler_descriptor_test.cpp)
 +    target_include_directories(sdk53_sampler_descriptor_test PRIVATE runtime/src)
 +    add_test(NAME sdk53_sampler_descriptor COMMAND sdk53_sampler_descriptor_test)
@@ -62,7 +65,7 @@
      add_executable(gpu_pick_test tests/gpu_pick_test.cpp runtime/src/nvn/nvn_gpu_pick.cpp)
      target_compile_definitions(gpu_pick_test PRIVATE NX_GPU_PICK_STANDALONE)
      target_include_directories(gpu_pick_test PRIVATE runtime/src/nvn)
-@@ -67,7 +122,14 @@
+@@ -67,7 +125,14 @@
      return()
  endif()
  
@@ -78,7 +81,7 @@
      file(GLOB src CONFIGURE_DEPENDS "${NX_GEN_DIR}/${mod}/*.cpp")
      add_library(game_${mod} STATIC ${src})
      target_include_directories(game_${mod} PRIVATE runtime/include "${NX_GEN_DIR}/${mod}")
-@@ -84,8 +146,10 @@
+@@ -84,8 +149,10 @@
          target_compile_options(game_${mod} PRIVATE -O2 -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
      endif()
  endforeach()
@@ -89,7 +92,7 @@
      runtime/src/main.cpp
      runtime/src/sampler.cpp
      runtime/src/loader.cpp
-@@ -93,6 +157,12 @@
+@@ -93,6 +160,12 @@
      runtime/src/kernel.cpp
      runtime/src/kernel_watch.cpp
      runtime/src/ipc.cpp
@@ -102,7 +105,7 @@
      runtime/src/svc_am.cpp
      runtime/src/svc_set.cpp
      runtime/src/svc_misc.cpp
-@@ -101,6 +171,7 @@
+@@ -101,6 +174,7 @@
      runtime/src/hle_fs.cpp
      runtime/src/svc_account.cpp
      runtime/src/hle_ro.cpp
@@ -110,7 +113,7 @@
      runtime/src/hle_vi.cpp
      runtime/src/hle_hid.cpp
      runtime/src/hle_net.cpp
-@@ -185,7 +256,7 @@
+@@ -185,7 +259,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -119,7 +122,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +267,7 @@
+@@ -196,7 +270,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -128,7 +131,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,16 +279,35 @@
+@@ -208,16 +282,35 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -1237,6 +1240,16 @@
 + return f;
 +}
 +}
+--- a/runtime/src/nvn/nvn.h
++++ b/runtime/src/nvn/nvn.h
+@@ -45,6 +45,7 @@
+ // ---- host objects ---------------------------------------------------------------------------------------------
+ 
+ struct Object {
++    std::string debug_label;
+     virtual ~Object() = default;
+ };
+ 
 --- a/runtime/src/nvn/nvn_cmd.cpp
 +++ b/runtime/src/nvn/nvn_cmd.cpp
 @@ -16,6 +16,11 @@
@@ -1612,31 +1625,18 @@
  #include <atomic>
  #include <cstdlib>
  #include <cstring>
-@@ -9,6 +10,9 @@
+@@ -9,6 +10,10 @@
  #include <set>
  
  #include "nvn.h"
 +#include "sdk53_texture_builder.h"
++#include "sdk53_packaged_texture.h"
 +#include "sdk53_texture_descriptor.h"
 +#include "native_guest_span.h"
  #include "nvn_ultrawide.h"
  #include "platform.h"
  
-@@ -97,10 +101,12 @@
- 
- // ---- memory pools -----------------------------------------------------------------------------------------------
- 
-+struct LabeledMemoryPool : MemoryPool { std::string debug_label; };
-+
- // NVNboolean nvnMemoryPoolInitialize(NVNmemoryPool*, const NVNmemoryPoolBuilder*)
- void MemoryPoolInitialize(CPU& c) {
-     uint64_t guest = c.x[0], builder = c.x[1];
--    auto& p = make<MemoryPool>(guest);
-+    auto& p = make<LabeledMemoryPool>(guest);
-     p.memory = driver(c, "nvnMemoryPoolBuilderGetMemory", {builder});
-     p.size = driver(c, "nvnMemoryPoolBuilderGetSize", {builder});
-     p.flags = uint32_t(driver(c, "nvnMemoryPoolBuilderGetFlags", {builder}));
-@@ -111,6 +117,27 @@
+@@ -111,6 +116,28 @@
              (unsigned long long)p.memory, (unsigned long long)p.size, p.flags, (unsigned long long)p.gpu);
      c.x[0] = 1;
  }
@@ -1660,25 +1660,21 @@
 +    log("nvn: native object %llx label=%s", static_cast<unsigned long long>(c.x[0]), pool->debug_label.c_str());
 +}
 +
-+void MemoryPoolSetDebugLabel(CPU& c) { SetDebugLabel<LabeledMemoryPool>(c); }
++void MemoryPoolSetDebugLabel(CPU& c) { SetDebugLabel<MemoryPool>(c); }
++void ObjectSetDebugLabel(CPU& c) { SetDebugLabel<Object>(c); }
  
  void MemoryPoolFinalize(CPU& c) {
      wait_submits_so_far(kWaitInvalidate);  // a submit replayed on another thread may still read it
-@@ -201,10 +228,13 @@
- // ---- buffers ----------------------------------------------------------------------------------------------------
- 
- struct Buffer : Object {
-+    std::string debug_label;
-     uint64_t pool = 0;  // guest NVNmemoryPool*
-     uint64_t offset = 0, size = 0;
+@@ -206,6 +233,8 @@
      uint64_t memory = 0, gpu = 0;
  };
-+
-+void BufferSetDebugLabel(CPU& c) { SetDebugLabel<Buffer>(c); }
  
++void BufferSetDebugLabel(CPU& c) { SetDebugLabel<Buffer>(c); }
++
  void BufferInitialize(CPU& c) {  // NVNboolean (NVNbuffer*, const NVNbufferBuilder*)
      uint64_t guest = c.x[0], builder = c.x[1];
-@@ -305,19 +335,10 @@
+     auto& b = make<Buffer>(guest);
+@@ -305,18 +334,13 @@
          std::lock_guard lk(objects_lock());
          pool_textures()[t.pool].insert(guest);
      }
@@ -1694,15 +1690,17 @@
 -        uint32_t rows = (t.height + bh - 1) / bh, h = 1;
 -        while (h * 32 < rows * 3 && h < 16) h <<= 1;
 -        t.block_height_gobs = h;
--    }
 +    // SDK53 has no GetPackagedTextureLayout procedure. Its actual setter
 +    // encodes presence at +0x58; do not call a nonexistent newer-SDK getter.
-+    if(sdk53_texture_is_packaged({reinterpret_cast<const uint8_t*>(builder),0x5a}))
-+        fatal("SDK53 packaged texture layout requires native integration");
++    try { t.block_height_gobs=sdk53_packaged_block_height({reinterpret_cast<const uint8_t*>(builder),0x5a}); }
++    catch(const std::invalid_argument& error){fatal("native packaged texture: %s",error.what());}
++    if(t.block_height_gobs) {
++        if(t.depth!=1||t.samples>1||t.stride)fatal("packaged texture requires supported 2D non-MSAA layout");
++        log("nvn: packaged texture %llx %ux%u format=%u block-height=%u",static_cast<unsigned long long>(guest),t.width,t.height,t.format,t.block_height_gobs);
+     }
  
      // Swizzle: single-channel textures are often read through it (a font atlas in R8 read as alpha = R); without
-     // it Vulkan returns alpha 1 and the text shaders covered the screen.
-@@ -336,6 +357,10 @@
+@@ -336,6 +360,10 @@
              "swizzle %u%u%u%u", (unsigned long long)guest, (unsigned long long)t.memory, t.target, t.format, t.width, t.height, t.depth, t.levels,
              t.samples, t.flags, (unsigned long long)t.storage_size, t.block_height_gobs, t.swizzle[0], t.swizzle[1],
              t.swizzle[2], t.swizzle[3]);
@@ -1713,7 +1711,7 @@
      if (!old) {
          std::lock_guard lk(objects_lock());
          note_replaced(guest);
-@@ -415,6 +440,11 @@
+@@ -415,6 +443,11 @@
      }
  }
  
@@ -1725,15 +1723,27 @@
  void TextureFinalize(CPU& c) {
      auto guard = reinit_guard();
      uint64_t guest = c.x[0];
-@@ -652,6 +682,7 @@
+@@ -652,6 +685,19 @@
  
  NX_HLE("nvnMemoryPoolInitialize", MemoryPoolInitialize);
  NX_HLE("nvnMemoryPoolFinalize", MemoryPoolFinalize);
 +NX_HLE("nvnMemoryPoolSetDebugLabel", MemoryPoolSetDebugLabel);
++NX_HLE("nvnSamplerSetDebugLabel", ObjectSetDebugLabel);
++NX_HLE("nvnTextureSetDebugLabel", ObjectSetDebugLabel);
++NX_HLE("nvnProgramSetDebugLabel", ObjectSetDebugLabel);
++NX_HLE("nvnCommandBufferSetDebugLabel", ObjectSetDebugLabel);
++NX_HLE("nvnQueueSetDebugLabel", ObjectSetDebugLabel);
++NX_HLE("nvnWindowSetDebugLabel", ObjectSetDebugLabel);
++NX_HLE("nvnDeviceSetDebugLabel", ObjectSetDebugLabel);
++NX_HLE("nvnSyncSetDebugLabel", ObjectSetDebugLabel);
++NX_HLE("nvnEventSetDebugLabel", ObjectSetDebugLabel);
++NX_HLE("nvnTexturePoolSetDebugLabel", ObjectSetDebugLabel);
++NX_HLE("nvnSamplerPoolSetDebugLabel", ObjectSetDebugLabel);
++
  NX_HLE("nvnMemoryPoolMap", MemoryPoolMap);
  NX_HLE("nvnMemoryPoolMapVirtual", MemoryPoolMapVirtual);
  NX_HLE("nvnTextureWriteTexels", TextureWriteTexels);
-@@ -663,6 +694,7 @@
+@@ -663,6 +709,7 @@
  NX_HLE("nvnMemoryPoolFlushMappedRange", MemoryPoolFlushMappedRange);
  NX_HLE("nvnMemoryPoolInvalidateMappedRange", MemoryPoolInvalidateMappedRange);
  NX_HLE("nvnBufferInitialize", BufferInitialize);
@@ -1741,7 +1751,7 @@
  NX_HLE("nvnBufferFinalize", BufferFinalize);
  NX_HLE("nvnBufferMap", BufferMap);
  NX_HLE("nvnBufferGetAddress", BufferGetAddress);
-@@ -703,3 +735,5 @@
+@@ -703,3 +750,5 @@
  NX_HLE("nvnDeviceGetImageHandle", DeviceGetImageHandle);
  
  }  // namespace nx::nvn
@@ -1932,11 +1942,12 @@
  // Block linear: the image is cut into GOBs of 64 bytes x 8 rows; GOBs stack vertically into blocks of
  // 1..16 GOBs (the block height, picked per mip level from the level's height); a level's rows of blocks are
  // 64-byte aligned in width and block-aligned in height. Pre-tiled data (BNTX) is laid out the same way, so the
-@@ -11,31 +10,14 @@
+@@ -11,31 +10,15 @@
  #include <algorithm>
  
  #include "nvn.h"
 +#include "native_texture_format.h"
++#include "sdk53_packaged_texture.h"
  
  namespace nx::nvn {
  
@@ -1967,6 +1978,26 @@
  
  uint32_t div_up(uint32_t a, uint32_t b) { return (a + b - 1) / b; }
  
+@@ -66,11 +49,17 @@
+         return l;
+     }
+     uint64_t layer = 0;
+-    uint32_t bh0 = block_height_gobs(div_up(height, f.block_h));
++    uint32_t packaged=0;
++    try {packaged=sdk53_packaged_block_height({reinterpret_cast<const uint8_t*>(builder),0x5a});}
++    catch(const std::invalid_argument& error){fatal("native packaged storage: %s builder=%llx packed=%04x dimensions=%ux%ux%u levels=%u format=%u stride=%u lr=%llx",error.what(),static_cast<unsigned long long>(builder),ld<uint16_t>(builder+0x58),width,height,depth,levels,format,stride,static_cast<unsigned long long>(c.x[30]));}
++    if(packaged&&(depth!=1||samples>1))fatal("packaged storage requires supported 2D non-MSAA layout");
++    uint32_t bh0 = packaged?packaged:block_height_gobs(div_up(height, f.block_h));
+     for (uint32_t level = 0; level < levels; level++) {
+         uint32_t w = std::max(1u, width >> level), h = std::max(1u, height >> level);
+         uint32_t cols = div_up(w, f.block_w), rows = div_up(h, f.block_h);
+-        uint32_t bh = std::min(bh0, block_height_gobs(rows));
++        uint32_t mip_height=1;
++        while(mip_height<div_up(rows,8)&&mip_height<32)mip_height<<=1;
++        uint32_t bh = std::min(bh0,mip_height);
+         uint64_t pitch = (uint64_t(cols) * f.bytes + 63) & ~63ull;
+         uint64_t tall = (uint64_t(rows) + 8 * bh - 1) / (8 * bh) * (8 * bh);
+         layer += pitch * tall;
 --- a/runtime/src/nvn/nvn_trace.cpp
 +++ b/runtime/src/nvn/nvn_trace.cpp
 @@ -18,6 +18,7 @@
@@ -2031,6 +2062,25 @@
  VkDevice vk_device();
  bool vk_depth_clip_control();
  // The core features the device was created with (all the GPU has): depthClamp, depthBiasClamp, depthBounds, ...
+--- /dev/null
++++ b/runtime/src/nvn/sdk53_packaged_texture.h
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++#include <span>
++#include <stdexcept>
++namespace nx::nvn {
++// SDK53 layout helper maps +0x58 bits4..7 to Y,8..11 to Z,12..15 to X.
++inline uint32_t sdk53_packaged_block_height(std::span<const uint8_t> builder) {
++    if(builder.size()<0x5a)throw std::invalid_argument("truncated SDK53 packaged layout");
++    const uint16_t value=uint16_t(builder[0x58])|(uint16_t(builder[0x59])<<8);
++    if(!(value&1))return 0;
++    const auto y=(value>>4)&15,z=(value>>8)&15,x=(value>>12)&15;
++    if(x||z||y>5)throw std::invalid_argument("unsupported packaged GOB dimensions");
++    return 1u<<y;
++}
++}
 --- /dev/null
 +++ b/runtime/src/nvn/sdk53_sampler_descriptor.h
 @@ -0,0 +1,22 @@
@@ -3552,7 +3602,7 @@
 + commands.x[0]=cb;api("nvnCommandBufferEndRecording");check(commands.x[0]!=0);commands.x[0]=cb;api("nvnCommandBufferGetCommandMemoryUsed");check(commands.x[0]==32);
 + commands.x[0]=cb;api("nvnCommandBufferFinalize");commands.x[0]=pool_key;api("nvnMemoryPoolFinalize");
 + const auto texture_a=nx::kernel_alloc(256,16),texture_b=nx::kernel_alloc(256,16);auto& ta=nx::nvn::make<nx::nvn::Texture>(texture_a);auto& tb=nx::nvn::make<nx::nvn::Texture>(texture_b);ta.pool=tb.pool=0x1234;ta.offset=tb.offset=64;ta.format=tb.format=0x25;ta.width=tb.width=16;ta.height=tb.height=16;ta.depth=tb.depth=1;ta.levels=tb.levels=1;ta.samples=tb.samples=1;
-+ nx::CPU compare{};auto cmp=nx::hle_lookup("nvnTextureCompare");check(cmp!=nullptr);compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==1);tb.width=32;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);tb.width=16;tb.swizzle[3]=0;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);compare.x[0]=texture_a;compare.x[1]=texture_a;cmp(compare);check(compare.x[0]==1);nx::nvn::destroy(texture_a);nx::nvn::destroy(texture_b);
++ nx::CPU compare{};auto cmp=nx::hle_lookup("nvnTextureCompare");check(cmp!=nullptr);compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==1);tb.width=32;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);tb.width=16;tb.swizzle[3]=0;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);compare.x[0]=texture_a;compare.x[1]=texture_a;cmp(compare);check(compare.x[0]==1);text(text_area+512,"owned texture label");auto label=nx::hle_lookup("nvnTextureSetDebugLabel");check(label!=nullptr);compare.x[0]=texture_a;compare.x[1]=text_area+512;label(compare);check(ta.debug_label=="owned texture label");text(text_area+512,"changed input");check(ta.debug_label=="owned texture label");compare.x[0]=texture_a;compare.x[1]=0;label(compare);check(ta.debug_label.empty());nx::nvn::destroy(texture_a);nx::nvn::destroy(texture_b);
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
@@ -3621,6 +3671,14 @@
 +#endif
 + std::cout<<"romfs_image checks="<<checks<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/sdk53_packaged_texture_test.cpp
+@@ -0,0 +1,5 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/sdk53_packaged_texture.h"
++#include <array>
++#include <iostream>
++int main(){unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("packaged layout assertion");};std::array<uint8_t,0x60>b{};check(nx::nvn::sdk53_packaged_block_height(b)==0);for(unsigned y=0;y<=5;++y){b[0x58]=1|(y<<4);b[0x59]=0;check(nx::nvn::sdk53_packaged_block_height(b)==(1u<<y));}for(unsigned value:{0x101u,0x1001u,0x61u}){b[0x58]=value;b[0x59]=value>>8;bool bad=false;try{nx::nvn::sdk53_packaged_block_height(b);}catch(const std::invalid_argument&){bad=true;}check(bad);}bool bad=false;try{nx::nvn::sdk53_packaged_block_height(std::span<const uint8_t>(b).first(0x59));}catch(const std::invalid_argument&){bad=true;}check(bad);std::cout<<"packaged layout checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/sdk53_sampler_descriptor_test.cpp
 @@ -0,0 +1,26 @@

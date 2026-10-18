@@ -6,12 +6,13 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 21 CPU/component suites and a 91-check native
+Windows integration now passes 22 CPU/component suites and a 95-check native
 GPU fixture on an RX 9070 XT. Actual MK8D startup reaches its owned window,
 Vulkan device/queue, three presentation textures, command-buffer setup, native
 save mounts and first texture upload. Copied texture/sampler descriptors now
-compare using the inspected SDK 53 layout. The next startup stop is the first missing required offline SPIR-V
-translation. No native game frame is established.
+compare using the inspected SDK 53 layout. The inspected 2D packaged texture layout and shared debug-label storage are
+integrated. With three local offline shader translations, startup next stops at a
+textured fragment needing binding/type metadata. No native game frame is established.
 
 The adaptation adds an MK8D target, loads and initializes main/subsdk0/sdk,
 uses an existing checked LZ4 implementation without installing a package, and
@@ -33,6 +34,9 @@ Basic native save-file persistence is tested; gameplay save/restart is unproved.
 reports do not prove complete instruction coverage or correct execution. This
 experimental runtime has a different memory/dispatch model from the existing
 guarded runtime; it does not inherit that runtime's ownership verification.
+
+See the [offline shader diagnostic](offline/README.md) for the existing compiler
+bridge and its current specialization limits.
 
 ## Prepare locally
 

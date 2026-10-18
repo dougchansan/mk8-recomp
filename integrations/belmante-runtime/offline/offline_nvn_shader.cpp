@@ -58,13 +58,14 @@ int main(int argc,char** argv) {try {
         const bool shadow=array_shadow||(suffix!=std::string::npos&&text.substr(suffix)==":2d-shadow");
         const bool array_color=suffix!=std::string::npos&&text.substr(suffix)==":array2d";
         const bool cube_array=suffix!=std::string::npos&&text.substr(suffix)==":cube-array";
-        if(suffix!=std::string::npos&&!cube&&!shadow&&!array_color&&!cube_array)throw std::runtime_error("unsupported sampled profile type");
+        const bool volume=suffix!=std::string::npos&&text.substr(suffix)==":3d";
+        if(suffix!=std::string::npos&&!cube&&!shadow&&!array_color&&!cube_array&&!volume)throw std::runtime_error("unsupported sampled profile type");
         unsigned offset=0;auto [end,error]=std::from_chars(text.data()+2,text.data()+numeric_end,offset);
         if(error!=std::errc{}||end!=text.data()+numeric_end||offset<0x20||offset>0x118||(offset-0x20)%8||!slots.insert(offset).second)
             throw std::runtime_error("invalid or duplicate normalized2D float profile slot");
         const uint32_t symbol=1+(offset-0x20)/8;
         constants.push_back({2,offset,symbol});
-        const auto type=cube_array?Shader::TextureType::ColorArrayCube:((array_shadow||array_color)?Shader::TextureType::ColorArray2D:(cube?Shader::TextureType::ColorCube:Shader::TextureType::Color2D));
+        const auto type=volume?Shader::TextureType::Color3D:cube_array?Shader::TextureType::ColorArrayCube:((array_shadow||array_color)?Shader::TextureType::ColorArray2D:(cube?Shader::TextureType::ColorCube:Shader::TextureType::Color2D));
         slot_types.emplace(offset,type);slot_shadow.emplace(offset,shadow);
         textures.push_back({symbol,type,native_shaders::NativePixelFormat::RGBA8Unorm});
     }
@@ -154,15 +155,17 @@ int main(int argc,char** argv) {try {
         } else named.insert(named.end(),spv.begin()+at,spv.begin()+at+count);
     }
     spv=std::move(named);
+    const bool has_volume=std::any_of(program.info.texture_descriptors.begin(),program.info.texture_descriptors.end(),[](const auto& d){return d.type==Shader::TextureType::Color3D;});
+    if(has_volume&&!storage_ids.empty())throw std::runtime_error("combined graphics storage/volume profile is not integrated");
     if(!sampled_ids.empty()||!storage_ids.empty()) {
         auto path=std::filesystem::path(argv[4]);path.replace_extension(".profile");
-        std::ofstream metadata(path,std::ios::binary);metadata<<(storage_ids.empty()?"NVN_NATIVE_PROFILE_V7 normalized-sampled-float-arrays viewport1 triangles float-attributes\n":"NVN_NATIVE_PROFILE_V9 readonly-graphics-buffers-arrays viewport1 triangles float-attributes\n");
+        std::ofstream metadata(path,std::ios::binary);metadata<<(has_volume?"NVN_NATIVE_PROFILE_V10 normalized-sampled-float-volumes viewport1 triangles float-attributes\n":storage_ids.empty()?"NVN_NATIVE_PROFILE_V7 normalized-sampled-float-arrays viewport1 triangles float-attributes\n":"NVN_NATIVE_PROFILE_V9 readonly-graphics-buffers-arrays viewport1 triangles float-attributes\n");
         if(!metadata)throw std::runtime_error("profile output write failed");
     }
     auto resource_path=std::filesystem::path(argv[4]);resource_path.replace_extension(".resources");std::ofstream resource_file(resource_path);
     for(const auto& [id,bank]:uniform_ids)resource_file<<"cb"<<bank<<"=s0b"<<(tag==5?18:0)+1+bank<<' ';
     for(const auto& [id,index]:storage_ids){const auto& descriptor=program.info.storage_buffers_descriptors.at(index);resource_file<<"sb[c0+0x"<<std::hex<<descriptor.cbuf_offset/4<<std::dec<<"]=s1b"<<(tag==5?16:0)+index<<' ';}
-    for(const auto& [id,index]:sampled_ids){const auto& descriptor=program.info.texture_descriptors.at(index);resource_file<<"texTexture2D[c2:"<<descriptor.cbuf_offset/4<<"]=s2b"<<(tag==5?128:0)+index<<' ';}
+    for(const auto& [id,index]:sampled_ids){const auto& descriptor=program.info.texture_descriptors.at(index);resource_file<<(descriptor.type==Shader::TextureType::Color3D?"texTexture3D[c2:":"texTexture2D[c2:")<<descriptor.cbuf_offset/4<<"]=s2b"<<(tag==5?128:0)+index<<' ';}
     if(!resource_file)throw std::runtime_error("graphics resource output failed");
     std::ofstream f(argv[4],std::ios::binary);f.write(reinterpret_cast<const char*>(spv.data()),spv.size()*4);
     if(!f)throw std::runtime_error("output write failed");

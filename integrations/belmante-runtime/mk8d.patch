@@ -790,7 +790,7 @@
 +NX_HLE("_ZN2nn3hid20GetTouchScreenStatesILm16EEEiPNS0_16TouchScreenStateIXT_EEEi",nx::GetNativeTouchStates);
 --- a/runtime/src/hle_vi.cpp
 +++ b/runtime/src/hle_vi.cpp
-@@ -2,7 +2,12 @@
+@@ -2,7 +2,13 @@
  // (Win32 window / Android surface); its handle is the "native window" the game hands to vkCreateViSurfaceNN, which
  // the Vulkan bridge turns into the platform's surface.
  #include <cstdlib>
@@ -799,11 +799,12 @@
 +#include <string>
  #include <memory>
 +#include <vector>
++#include <array>
 +#include <algorithm>
  #include <mutex>
  #include <thread>
  
-@@ -10,6 +15,11 @@
+@@ -10,6 +16,11 @@
  
  #include "kernel.h"
  #include "platform.h"
@@ -815,7 +816,7 @@
  
  namespace nx {
  
-@@ -28,30 +38,139 @@
+@@ -28,30 +39,152 @@
  
  namespace {
  
@@ -970,10 +971,23 @@
 +    call(c,target);
 +    if(trace)log("movie: stage return %s result=%016llx",stage.c_str(),(unsigned long long)c.x[0]);
 +}
++
++// Bounded diagnostics around the original SDK's movie-client event calls.
++std::mutex movie_event_mutex;std::vector<uint64_t> movie_events;unsigned movie_event_traces=0;
++void native_movie_register_events(CPU& c){
++ const auto target=find_symbol("_ZN5movie7Decoder20RegisterClientEventsEPNS_13DecoderEventsE");if(!compiled_callback_target(target)||target>=kThunkBase)throw std::invalid_argument("compiled movie event registration unavailable");
++ if(std::getenv("NX_TRACE_CODEC")&&c.x[1]){if(!nvn::native_guest_span(c.x[1],24,1))throw std::invalid_argument("movie client event table storage");std::array<uint64_t,3> events{};for(unsigned n=0;n<3;++n)events[n]=ld<uint64_t>(c.x[1]+8*n);{std::lock_guard lock(movie_event_mutex);for(auto event:events)if(event&&std::find(movie_events.begin(),movie_events.end(),event)==movie_events.end())movie_events.push_back(event);}log("movie: registered client events input=%llx output=%llx other=%llx",(unsigned long long)events[0],(unsigned long long)events[1],(unsigned long long)events[2]);}
++ call(c,target);
++}
++void native_movie_event_observe(CPU& c){
++ const char* current=hle_current_name();if(!current)throw std::invalid_argument("SDK event observer entry");const std::string name=current;const auto target=find_symbol(current);if(!compiled_callback_target(target)||target>=kThunkBase)throw std::invalid_argument("compiled SDK event method unavailable");const auto event=c.x[0];bool trace=false;
++ if(std::getenv("NX_TRACE_CODEC")){std::lock_guard lock(movie_event_mutex);trace=movie_event_traces<96&&std::find(movie_events.begin(),movie_events.end(),event)!=movie_events.end();if(trace)++movie_event_traces;}
++ if(trace)log("movie: client event enter %s event=%llx caller=%s",name.c_str(),(unsigned long long)event,describe(c.x[30]).c_str());call(c,target);if(trace)log("movie: client event return %s event=%llx result=%llx",name.c_str(),(unsigned long long)event,(unsigned long long)c.x[0]);
++}
  
  // The display's vsync: a kernel event a host thread signals every 1/60 s. The game gets it as an nn::os
  // SystemEvent (AttachSystemEvent with our read/write handles, auto clear: each wait consumes one vsync).
-@@ -70,6 +189,7 @@
+@@ -70,6 +203,7 @@
  }
  
  void GetDisplayVsyncEvent(CPU& c) {  // (os::SystemEventType*, Display*)
@@ -981,7 +995,7 @@
      auto r = std::make_shared<KEvent>(), w = std::make_shared<KEvent>();
      r->state = w->state = g_vsync;
      uint32_t hr = handle_add(r), hw = handle_add(w);
-@@ -86,13 +206,44 @@
+@@ -86,13 +220,51 @@
  
  }  // namespace
  
@@ -1030,6 +1044,13 @@
 +NX_HLE("_ZN7android28SoftVideoDecoderOMXComponent20internalGetParameterE13OMX_INDEXTYPEPv",nx::native_codec_stage_observe);
 +NX_HLE("_ZN7android28SoftVideoDecoderOMXComponent20internalSetParameterE13OMX_INDEXTYPEPv",nx::native_codec_stage_observe);
 +NX_HLE("_ZN7android7SoftAVC13onQueueFilledEj",nx::native_codec_stage_observe);
++
++NX_HLE("_ZN5movie7Decoder20RegisterClientEventsEPNS_13DecoderEventsE",nx::native_movie_register_events);
++NX_HLE("_ZN2nn2os9WaitEventEPNS0_9EventTypeE",nx::native_movie_event_observe);
++NX_HLE("_ZN2nn2os11SignalEventEPNS0_9EventTypeE",nx::native_movie_event_observe);
++NX_HLE("_ZN2nn2os10ClearEventEPNS0_9EventTypeE",nx::native_movie_event_observe);
++NX_HLE("_ZN2nn2os12TryWaitEventEPNS0_9EventTypeE",nx::native_movie_event_observe);
++NX_HLE("_ZN2nn2os14TimedWaitEventEPNS0_9EventTypeENS_8TimeSpanE",nx::native_movie_event_observe);
 --- a/runtime/src/ipc.cpp
 +++ b/runtime/src/ipc.cpp
 @@ -36,15 +36,13 @@
@@ -1187,7 +1208,41 @@
      auto it = g_handles.find(h);
      return it == g_handles.end() ? nullptr : it->second;
  }
-@@ -616,9 +623,13 @@
+@@ -337,7 +344,8 @@
+     };
+     auto until = std::chrono::steady_clock::now() + std::chrono::nanoseconds(timeout < 0 ? 0 : timeout);
+     KThread* self = t_self;
+-    self->cancel = false;
++    // Cancellation is sticky until a blocking wait consumes it. Clearing it here
++    // loses SDK MultiWait notifications delivered just before this SVC begins.
+     g_sync_waiters.push_back(self);
+     struct Leave {
+         KThread* t;
+@@ -350,11 +358,12 @@
+             objs[i]->consume();
+             return 0;
+         }
++        // Ready objects and zero-timeout polls do not consume a pending cancel.
++        if (timeout == 0) return 0xEA01;
+         if (self->cancel) {
+             self->cancel = false;
+             return 0xEC01;
+         }
+-        if (timeout == 0) return 0xEA01;
+         if (timeout < 0)
+             self->cv.wait(lk);
+         else if (self->cv.wait_until(lk, until) == std::cv_status::timeout && ready() < 0)
+@@ -587,7 +596,8 @@
+         case 0x19: {  // CancelSynchronization(thread handle)
+             auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[0])));
+             std::lock_guard lk(g_k);
+-            if (t) t->cancel = true;
++            if (!t) { rc = 0xE401; break; }
++            t->cancel = true;
+             notify_all();
+             break;
+         }
+@@ -616,9 +626,13 @@
          case 0x22:  // SendSyncRequestWithUserBuffer(buf, size, handle)
              rc = ipc_request(c, uint32_t(c.x[2]), c.x[0], c.x[1]);
              break;
@@ -1204,7 +1259,7 @@
          case 0x25: {  // GetThreadId(handle) -> id
              auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[1])));
              c.x[1] = t ? t->id : 0;
-@@ -678,7 +689,7 @@
+@@ -678,7 +692,7 @@
              rc = unmap_transfer_memory(uint32_t(c.x[0]), c.x[1], c.x[2]);
              break;
          default:
@@ -1213,7 +1268,7 @@
                  (unsigned long long)c.x[0], (unsigned long long)c.x[1], (unsigned long long)c.x[2]);
              rc = 0;
      }
-@@ -720,6 +731,7 @@
+@@ -720,6 +734,7 @@
  }
  
  void svc(CPU& c, uint32_t imm, uint64_t pc) {
@@ -5290,6 +5345,25 @@
 +};
 +}
 --- /dev/null
++++ b/runtime/src/nvn/native_buffer_texture_copy.h
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "native_texture_format.h"
++#include <array>
++#include <algorithm>
++#include <cstdint>
++#include <stdexcept>
++namespace nx::nvn {
++inline uint64_t native_buffer_texture_bytes(uint32_t width,uint32_t height,uint32_t levels,uint32_t format,uint32_t samples,const ViewInfo& view,const std::array<int32_t,6>& r,uint32_t flags){
++ const auto block=native_texture_block(format);
++ if(flags||!width||!height||!levels||levels>32||view.base_level>=levels||view.base_level>=32||view.levels>1||view.min_layer||view.layers>1||view.swizzle||(view.format&&view.format!=format)||samples>1||block.block_w!=1||block.block_h!=1||(block.bytes!=1&&block.bytes!=2&&block.bytes!=4&&block.bytes!=8&&block.bytes!=16))throw std::invalid_argument("native buffer-to-texture view/format/flags profile");
++ const auto w=std::max(1u,width>>view.base_level),h=std::max(1u,height>>view.base_level);
++ if(r[0]<0||r[1]<0||r[2]!=0||r[3]<=0||r[4]<=0||r[5]!=1||uint32_t(r[0])>=w||uint32_t(r[1])>=h||uint32_t(r[3])>w-uint32_t(r[0])||uint32_t(r[4])>h-uint32_t(r[1]))throw std::invalid_argument("native buffer-to-texture region");
++ const uint64_t bytes=uint64_t(uint32_t(r[3]))*uint32_t(r[4])*block.bytes;if(!bytes||bytes>256ull*1024*1024)throw std::invalid_argument("native buffer-to-texture byte extent");return bytes;
++}
++}
+--- /dev/null
 +++ b/runtime/src/nvn/native_compute_profile.h
 @@ -0,0 +1,14 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -5482,15 +5556,22 @@
 +}
 --- /dev/null
 +++ b/runtime/src/nvn/native_volume_profile.h
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,22 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include <cstdint>
 +namespace nx::nvn {
 +struct Texture;
 +bool native_volume_ready_for_sample(const Texture&);
++inline bool native_volume_sampler_shape(uint32_t dim,bool arrayed,bool depth,bool multisampled){return dim==2&&!arrayed&&!depth&&!multisampled;}
 +struct NativeVolumeExtent {uint32_t width,height,depth,levels,format,samples;};
 +struct NativeVolumeWrite {uint32_t level,x,y,z,width,height,depth;uint64_t bytes;};
++// 8x8 packed RGB11F occupies one XY GOB per slice. Its z offset is
++// z*512 for every legal block depth, so no unrecorded depth-layout choice is needed.
++inline bool native_small_r11_volume(const NativeVolumeExtent& image,uint32_t flags,uint32_t stride,uint32_t block_height,uint64_t storage){
++ return image.width==8&&image.height==8&&image.depth==8&&image.levels==1&&image.format==0x3f&&image.samples<=1&&!(flags&8)&&stride==0&&(block_height==0||block_height==1)&&storage>=4096;
++}
++
 +inline bool native_volume_full_write(const NativeVolumeExtent& image,const NativeVolumeWrite& write) {
 +    if(!image.width||!image.height||!image.depth||image.levels!=1||image.format!=0x25||image.samples>1)return false;
 +    const uint64_t plane=uint64_t(image.width)*image.height;
@@ -5524,24 +5605,25 @@
      // The CPU wrote the texture's memory (nvnMemoryPoolFlushMappedRange over it, e.g. a glyph cache): upload again.
      std::atomic<bool> dirty{false};
      // What of the memory the CPU wrote, as bytes from `memory` ([lo, hi); UINT64_MAX / 0: nothing known yet). Merged by
-@@ -305,6 +308,8 @@
+@@ -305,6 +308,9 @@
  // objects (blend, depth/stencil, vertex layouts, ...) are decoded when recorded, through the SDK driver's getters,
  // and kept in the list's blobs: the game may reuse its structs right after the call.
  
 +struct TextureClearInfo {ViewInfo view;std::array<int32_t,6> region{};};
++struct BufferTextureCopyInfo {ViewInfo view;std::array<int32_t,6> region{};};
 +
  struct Cmd {
      enum Op : uint8_t {
          SetRenderTargets, ClearColor, ClearDepthStencil, SetViewport, SetScissor, CallList,
-@@ -315,6 +320,7 @@
+@@ -315,6 +321,7 @@
          BindImage, DispatchCompute,
          SetStencilRef, SetStencilMask, SetStencilValueMask, SetPolygonOffsetClamp, SetDepthBounds, SetDepthClamp,
          BindDeferred,  // mask: 0 textures, 1 images, 2 uniform buffers, 3 storage buffers; a[0] the guest array
-+        SetLineWidth, SetPointSize, ClearTexture, FenceSync,
++        SetLineWidth, SetPointSize, ClearTexture, FenceSync, CopyBufferToTexture,
          BindMultisampleState,  // n: alpha to coverage enabled (nvn_state.cpp)
      } op;
      uint32_t n = 0, mask = 0;
-@@ -375,6 +381,7 @@
+@@ -375,6 +382,7 @@
      uint16_t format[9] = {};  // the views' NVN formats (0: the texture's own)
  };
  
@@ -5786,16 +5868,44 @@
 +NX_HLE("nvnCommandBufferSetShaderScratchMemory",nx::nvn::SetShaderScratchMemory);
 --- a/runtime/src/nvn/nvn_copy.cpp
 +++ b/runtime/src/nvn/nvn_copy.cpp
-@@ -13,6 +13,8 @@
+@@ -13,10 +13,16 @@
  
  #include "nvn_pipeline.h"
  #include "nvn_vk.h"
 +#include "native_texture_clear.h"
 +#include "native_texture_clear_view.h"
++#include "native_buffer_texture_copy.h"
++#include "native_guest_span.h"
++#include "nvn_draw_state.h"
  
  namespace nx::nvn {
  
-@@ -64,6 +66,14 @@
+ using namespace vk;
++uint64_t native_texture_identity_locked(uint64_t);
+ 
+ namespace {
+ 
+@@ -38,6 +44,19 @@
+     Cmd cmd{Cmd::CopyTextureToTexture};
+     cmd.a[0] = c.x[1], cmd.a[1] = c.x[4];
+     record(c.x[0], cmd, &info, sizeof info);
++}
++
++void CopyBufferToTexture(CPU& c){
++ const auto command_buffer=c.x[0],source=c.x[1],destination=c.x[2],view=c.x[3],region=c.x[4];const auto flags=uint32_t(c.x[5]);
++ if(!command_buffer_recording_thread(command_buffer)||!native_guest_span(region,24,1))throw std::invalid_argument("native buffer-to-texture recording/input storage");
++ BufferTextureCopyInfo info;std::memcpy(info.region.data(),reinterpret_cast<void*>(region),24);info.view=read_view(c,view);Cmd command{Cmd::CopyBufferToTexture};command.a[0]=source;command.mask=flags;
++ {std::shared_lock lock(objects_lock());command.a[1]=native_texture_identity_locked(destination);const auto* texture=static_cast<const Texture*>(objects().at(command.a[1]).get()); // Identity is already typed; get() would reacquire this lock.
++  if(!texture||texture->target!=1||texture->depth!=1||format_aspect(texture->format))throw std::invalid_argument("native buffer-to-texture requires 2D color destination");
++  const auto bytes=native_buffer_texture_bytes(texture->width,texture->height,texture->levels,texture->format,texture->samples,info.view,info.region,flags);uint64_t offset=0;const auto* pool=pool_at_gpu(source,&offset);
++  if(!pool||!pool->memory||offset>pool->size||bytes>pool->size-offset||pool->memory>UINT64_MAX-offset||!native_guest_span(pool->memory+offset,bytes,1))throw std::invalid_argument("native buffer-to-texture source pool span");
++  static std::atomic<unsigned> count{0};if(++count<=12)log("nvn: buffer-to-texture record format=%u size=%dx%d offset=%d,%d bytes=%llu",texture->format,info.region[3],info.region[4],info.region[0],info.region[1],(unsigned long long)bytes);
++ }
++ record(command_buffer,command,&info,sizeof info);
+ }
+ 
+ bool compressed(VkFormat f) {
+@@ -64,6 +83,28 @@
  uint64_t g_same_image = 0, g_same_overlap = 0;
  
  }  // namespace
@@ -5807,9 +5917,30 @@
 + const auto range=native_texture_clear_range(image->width,image->height,image->levels,image->layers,info.view.base_level,info.view.levels,info.view.min_layer,info.view.layers,info.region,c.mask);
 + transition(cb,*image,VK_IMAGE_LAYOUT_GENERAL);general_barrier(cb,*image);VkClearColorValue color{};std::memcpy(color.float32,c.f,sizeof c.f);VkImageSubresourceRange sub{VK_IMAGE_ASPECT_COLOR_BIT,range.level,1,range.base_layer,range.layers};p_vkCmdClearColorImage(cb,image->image,VK_IMAGE_LAYOUT_GENERAL,&color,1,&sub);image->rendered=true;image->uploaded=true;
 +}
++
++void replay_buffer_texture_copy(VkCommandBuffer cb,const Cmd& c,const CmdList& list){
++ if(c.blob>=list.blobs.size()||list.blobs[c.blob].size()!=sizeof(BufferTextureCopyInfo))throw std::invalid_argument("native buffer-to-texture payload");BufferTextureCopyInfo info;std::memcpy(&info,list.blobs[c.blob].data(),sizeof info);
++ auto* image=ensure_contents(cb,c.a[1]);if(!image||image->aspect!=VK_IMAGE_ASPECT_COLOR_BIT||image->view_type!=VK_IMAGE_VIEW_TYPE_2D||image->layers!=1)throw std::invalid_argument("native buffer-to-texture image profile");
++ const auto bytes=native_buffer_texture_bytes(image->width,image->height,image->levels,image->nvn_format,1,info.view,info.region,c.mask);const auto block=native_texture_block(image->nvn_format);if(vk_block_bytes(image->format)!=block.bytes)throw std::invalid_argument("native buffer-to-texture host storage conversion is not admitted");
++ Upload data;
++ {std::shared_lock lock(objects_lock());uint64_t offset=0;const auto* pool=pool_at_gpu(c.a[0],&offset);if(!pool||!pool->memory||offset>pool->size||bytes>pool->size-offset||pool->memory>UINT64_MAX-offset||!native_guest_span(pool->memory+offset,bytes,1))throw std::invalid_argument("native buffer-to-texture source retired or unmapped");
++  // The enclosing replay case has already ended rendering and flushed clears.
++  // Keep pool retirement excluded until CPU staging / written-range resolution completes.
++  data=replay::read_upload(cb,reinterpret_cast<const uint8_t*>(pool->memory+offset),bytes,bytes,std::max(4u,block.bytes));
++ }
++ transition(cb,*image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);VkMemoryBarrier memory{VK_STRUCTURE_TYPE_MEMORY_BARRIER};memory.srcAccessMask=VK_ACCESS_MEMORY_WRITE_BIT;memory.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT;vk::p_vkCmdPipelineBarrier(cb,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&memory,0,nullptr,0,nullptr);
++ VkBufferImageCopy copy{};copy.bufferOffset=data.offset;copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,info.view.base_level,0,1};copy.imageOffset={info.region[0],info.region[1],0};copy.imageExtent={uint32_t(info.region[3]),uint32_t(info.region[4]),1};vk::p_vkCmdCopyBufferToImage(cb,data.buffer,image->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);image->rendered=true;image->uploaded=true;
++}
  
  void replay_copy(VkCommandBuffer cb, const Cmd& c, const CmdList& list) {
      static const bool off = std::getenv("NX_NO_COPY") != nullptr;  // debug: skip texture copies
+@@ -149,5 +190,6 @@
+ }
+ 
+ NX_HLE("nvnCommandBufferCopyTextureToTexture", CopyTextureToTexture);
++NX_HLE("nvnCommandBufferCopyBufferToTexture",CopyBufferToTexture);
+ 
+ }  // namespace nx::nvn
 --- a/runtime/src/nvn/nvn_device.cpp
 +++ b/runtime/src/nvn/nvn_device.cpp
 @@ -1,129 +1,80 @@
@@ -6490,15 +6621,16 @@
 +NX_HLE("nvnTextureCompare",nx::nvn::TextureCompare);
 --- a/runtime/src/nvn/nvn_pipeline.cpp
 +++ b/runtime/src/nvn/nvn_pipeline.cpp
-@@ -15,6 +15,7 @@
+@@ -15,6 +15,8 @@
  #include <tuple>
  #include <unordered_map>
  
 +#include "native_volume_profile.h"
++#include "native_guest_span.h"
  #include "nvn_pipeline.h"
  #include "nvn_ultrawide.h"
  #include "platform.h"
-@@ -169,7 +170,7 @@
+@@ -169,7 +171,7 @@
      bool img1d = img.view_type == VK_IMAGE_VIEW_TYPE_1D || img.view_type == VK_IMAGE_VIEW_TYPE_1D_ARRAY;
      switch (type) {
          case VK_IMAGE_VIEW_TYPE_CUBE:
@@ -6507,7 +6639,7 @@
          case VK_IMAGE_VIEW_TYPE_3D: return img3d;
          case VK_IMAGE_VIEW_TYPE_1D:
          case VK_IMAGE_VIEW_TYPE_1D_ARRAY: return img1d;
-@@ -217,7 +218,7 @@
+@@ -217,7 +219,7 @@
                                     ? VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT)
                                     : img.aspect,
                                 base, levels, min_layer, layers};
@@ -6516,7 +6648,7 @@
      }
      if (v) hit = {key, v};  // never a null one: those are tried again
      return v;
-@@ -289,6 +290,7 @@
+@@ -289,6 +291,7 @@
  // ---- graphics pipelines ---------------------------------------------------------------------------------------------
  
  VkPipeline graphics_pipeline(const PipelineKey& key, const ProgramLayout& layout) {
@@ -6524,7 +6656,7 @@
      // By the key's bytes, as before, but hashed (nvn_pipeline.h) instead of a ~700-byte std::string built and
      // compared down a tree per draw; and the last entry first: consecutive draws mostly share their state.
      using Key = ByteKey<sizeof(PipelineKey)>;
-@@ -568,15 +570,26 @@
+@@ -568,15 +571,28 @@
          ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
          ci.format = format;
          ci.subresourceRange = {img.aspect, level, 1, layer, 1};
@@ -6536,7 +6668,9 @@
 +
 +bool native_volume_ready_for_sample(const Texture& texture) {
 +    std::shared_lock guard(objects_lock());
-+    if(texture.target!=2||!texture.volume_texels_complete.load(std::memory_order_acquire))return false;
++    if(texture.target!=2)return false;
++    if(native_small_r11_volume({texture.width,texture.height,texture.depth,texture.levels,texture.format,texture.samples},texture.flags,texture.stride,texture.block_height_gobs,texture.storage_size)&&texture.memory&&native_guest_span(texture.memory,4096,1))return true;
++    if(!texture.volume_texels_complete.load(std::memory_order_acquire))return false;
 +    if(texture.image&&texture.image->texels&&texture.image->uploaded&&!texture.dirty.load(std::memory_order_acquire))return true;
 +    for(const auto& write:texture.writes)if(native_volume_full_write(
 +        {texture.width,texture.height,texture.depth,texture.levels,texture.format,texture.samples},
@@ -6548,22 +6682,26 @@
      Texture* t = get<Texture>(texture);
      GpuImage* img = t ? image_of(texture) : nullptr;
      if (!img) return nullptr;
-+    if(t->target==2&&!native_volume_ready_for_sample(*t))fatal("native volume upload requires complete single-level RGBA8 texel data");
++    if(t->target==2&&!native_volume_ready_for_sample(*t)){log("nvn: unsupported volume storage size=%ux%ux%u format=%u levels=%u flags=%x stride=%u block-height=%u bytes=%llu memory=%llx",t->width,t->height,t->depth,t->format,t->levels,t->flags,t->stride,t->block_height_gobs,(unsigned long long)t->storage_size,(unsigned long long)t->memory);fatal("native volume storage profile is not admitted");}
      bool dirty = t->dirty.exchange(false);
      uint64_t dirty_lo = t->dirty_lo.exchange(UINT64_MAX), dirty_hi = t->dirty_hi.exchange(0);
      if (dirty_hi <= dirty_lo) dirty_lo = 0, dirty_hi = UINT64_MAX;  // marked without a range: all of it
-@@ -595,8 +608,10 @@
+@@ -595,8 +611,14 @@
          }
      }
      // A texture already on the GPU that the CPU wrote part of: only those bytes go again (the glyph cache).
-+    if(t->target==2)upload=false; // complete API texels bypass unsupported raw 3D tiling
++    if(t->target==2){
++        const bool raw=native_small_r11_volume({t->width,t->height,t->depth,t->levels,t->format,t->samples},t->flags,t->stride,t->block_height_gobs,t->storage_size);
++        if(raw&&upload)upload_small_r11_volume(cb,*t,*img);
++        upload=false; // Other admitted volumes are complete API RGBA8 texels.
++    }
      if (upload) upload_texture(cb, *t, *img, img->uploaded && dirty ? dirty_lo : 0, img->uploaded && dirty ? dirty_hi : UINT64_MAX);
      apply_texel_writes(cb, *t, *img);
 +    if(t->target==2&&img->texels)img->uploaded=true;
      if (img->layout == VK_IMAGE_LAYOUT_UNDEFINED) {  // never written: black, not garbage
          transition(cb, *img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
          VkImageSubresourceRange r{img->aspect, 0, img->levels, 0, img->layers};
-@@ -609,11 +624,12 @@
+@@ -609,11 +631,12 @@
  }
  
  VkImageView sampled_view(VkCommandBuffer cb, uint64_t texture, const ImageShape& shape, const ViewInfo* view,
@@ -6577,7 +6715,7 @@
          if (++no_image % 100000 == 1) log("nvn/vk: dummy sampled: %llu with no image, %llu with an incompatible view",
                                            (unsigned long long)no_image, (unsigned long long)incompatible);
          return dummy_view(cb, shape);
-@@ -643,6 +659,7 @@
+@@ -643,6 +666,7 @@
      }
      VkImageView v = view_of(*img, view_type(shape), vi);
      if (!v) {
@@ -6587,7 +6725,7 @@
              log("nvn/vk: texture %llx (%ux%u x%u, view type %d) sampled as view type %d: dummy", (unsigned long long)texture,
 --- a/runtime/src/nvn/nvn_pipeline.h
 +++ b/runtime/src/nvn/nvn_pipeline.h
-@@ -114,7 +114,7 @@
+@@ -114,13 +114,14 @@
  // `view`: the texture pool entry's view (levels, layers, swizzle), if any. `layout` gets the layout to sample in:
  // images the GPU renders stay GENERAL (a bloom chain samples one level while rendering another).
  VkImageView sampled_view(VkCommandBuffer cb, uint64_t texture, const ImageShape& shape, const ViewInfo* view,
@@ -6596,6 +6734,13 @@
  // The image behind a texture with its contents in place (uploaded, CPU writes applied, never-written ones cleared);
  // null for an unknown texture. Records transfers: outside render passes.
  GpuImage* ensure_contents(VkCommandBuffer cb, uint64_t texture);
+ // nvn_upload.cpp: the texture's pool memory untiled (or taken row by row, pitch-linear) into the image, every level
+ // and layer; cleared instead when the copies would read past what was staged. Marks it uploaded.
+ // [lo, hi): the bytes of a texture already uploaded that changed (pitch-linear ones send only their rows).
++void upload_small_r11_volume(VkCommandBuffer cb,const Texture& t,GpuImage& img);
+ void upload_texture(VkCommandBuffer cb, const Texture& t, GpuImage& img, uint64_t lo = 0, uint64_t hi = UINT64_MAX);
+ // Every level and layer to zero (colour; magenta with `magenta`), depth and stencil to 0. Leaves TRANSFER_DST.
+ void clear_image(VkCommandBuffer cb, GpuImage& img, bool magenta = false);
 --- a/runtime/src/nvn/nvn_program.cpp
 +++ b/runtime/src/nvn/nvn_program.cpp
 @@ -36,9 +36,10 @@
@@ -6850,13 +6995,15 @@
      }
 --- a/runtime/src/nvn/nvn_replay.cpp
 +++ b/runtime/src/nvn/nvn_replay.cpp
-@@ -75,6 +75,9 @@
+@@ -75,6 +75,11 @@
                      }
                  }
                  break;
 +            case Cmd::FenceSync: break; // The enclosing submit publishes an ordered native VkFence.
 +            case Cmd::ClearTexture:
 +                draw_end_rendering(cb,5);clears_flush(cb);replay_clear_texture(cb,c,list);break;
++            case Cmd::CopyBufferToTexture:
++                draw_end_rendering(cb,5);replay_buffer_texture_copy(cb,c,list);break;
              case Cmd::CopyTextureToTexture:
                  draw_end_rendering(cb, 5);
                  if (gpu_profile_on()) gpu_profile_mark(cb, "texture copies");
@@ -7023,19 +7170,20 @@
          if (!texture) continue;
 --- a/runtime/src/nvn/nvn_shaders.cpp
 +++ b/runtime/src/nvn/nvn_shaders.cpp
-@@ -11,6 +11,11 @@
+@@ -11,6 +11,12 @@
  #include <algorithm>
  #include <cstdio>
  #include <cstring>
 +#include <unordered_set>
 +#include "native_sampled_profile.h"
++#include "native_volume_profile.h"
 +#include "native_compute_profile.h"
 +#include "native_graphics_buffer_profile.h"
 +#include "native_volume_profile.h"
  
  #ifndef NX_SHADERS_STANDALONE
  #include <memory>
-@@ -224,6 +229,9 @@
+@@ -224,6 +230,9 @@
      std::unordered_map<std::string, std::unique_ptr<ShaderInfo>> by_hash;  // null: no usable .spv (logged once)
      std::unordered_map<std::string, std::string> resources;                // results.tsv, hash -> resources
      bool resources_loaded = false;
@@ -7045,7 +7193,7 @@
  };
  
  Cache& cache() {
-@@ -232,6 +240,17 @@
+@@ -232,6 +241,17 @@
  }
  
  }  // namespace
@@ -7063,7 +7211,7 @@
  
  const ShaderInfo* shader_by_hash(const std::string& hash) {
      Cache& k = cache();
-@@ -293,6 +312,58 @@
+@@ -293,6 +313,60 @@
          log("nvn: shader %s: %s", hash.c_str(), error.c_str());
          return nullptr;
      }
@@ -7097,8 +7245,10 @@
 +        const std::string readonly="NVN_NATIVE_PROFILE_V8 readonly-graphics-buffers viewport1 triangles float-attributes";
 +        const std::string arrays="NVN_NATIVE_PROFILE_V7 normalized-sampled-float-arrays viewport1 triangles float-attributes";
 +        const std::string buffer_arrays="NVN_NATIVE_PROFILE_V9 readonly-graphics-buffers-arrays viewport1 triangles float-attributes";
++        const std::string volumes="NVN_NATIVE_PROFILE_V10 normalized-sampled-float-volumes viewport1 triangles float-attributes";
++        const bool volume_graphics=profile==volumes+"\n"||profile==volumes+"\r\n";
 +        const bool readonly_arrays=profile==buffer_arrays+"\n"||profile==buffer_arrays+"\r\n";
-+        const bool arrays_allowed=readonly_arrays||profile==arrays+"\n"||profile==arrays+"\r\n";
++        const bool arrays_allowed=volume_graphics||readonly_arrays||profile==arrays+"\n"||profile==arrays+"\r\n";
 +        const bool readonly_buffers=readonly_arrays||profile==readonly+"\n"||profile==readonly+"\r\n";
 +        const bool shadow_allowed=arrays_allowed||readonly_buffers||profile==shadow+"\n"||profile==shadow+"\r\n";
 +        const bool cube_allowed=shadow_allowed||profile==expected+"\n"||profile==expected+"\r\n";
@@ -7109,7 +7259,7 @@
 +                if(info->stage==ShaderStage::Compute||binding.type!=DescriptorType::StorageBuffer||binding.count!=1||binding.nvn.source!=NvnSource::StorageBuffer||binding.nvn.index<0||binding.nvn.index>=16||binding.binding>=64||((written_storage_bindings(info.get())>>binding.binding)&1))fatal("readonly graphics storage profile mismatch");
 +                continue;
 +            }
-+            const bool shape_allowed=(!binding.image.arrayed&&!binding.image.depth&&(binding.image.dim==1||(cube_allowed&&binding.image.dim==3)))||
++            const bool shape_allowed=(volume_graphics&&native_volume_sampler_shape(binding.image.dim,binding.image.arrayed,binding.image.depth,binding.image.ms))||(!binding.image.arrayed&&!binding.image.depth&&(binding.image.dim==1||(cube_allowed&&binding.image.dim==3)))||
 +                (shadow_allowed&&binding.image.dim==1&&binding.image.depth)||(arrays_allowed&&binding.image.arrayed&&!binding.image.depth&&(binding.image.dim==1||binding.image.dim==3));
 +            if(binding.set!=2||binding.type!=DescriptorType::CombinedImageSampler||binding.count!=1||!shape_allowed||binding.image.ms||
 +               binding.image.component!=ScalarType::Float||binding.nvn.source!=NvnSource::SamplerBinding||
@@ -7230,6 +7380,34 @@
      std::string name = guest_str(c.x[1]);
      if (g_trace) log("nvnDeviceGetProcAddress(%llx, %s)", (unsigned long long)c.x[0], name.c_str());
      c.x[0] = proc_address(c, name);
+--- a/runtime/src/nvn/nvn_upload.cpp
++++ b/runtime/src/nvn/nvn_upload.cpp
+@@ -9,6 +9,8 @@
+ #include "nvn_astc.h"
+ #include "nvn_pipeline.h"
+ #include "nvn_tiling.h"
++#include "native_volume_profile.h"
++#include "native_guest_span.h"
+ #include "platform.h"
+ 
+ namespace nx::nvn {
+@@ -127,6 +129,16 @@
+         VkClearDepthStencilValue v{1.0f, 0};  // far: the course passes test LESS
+         p_vkCmdClearDepthStencilImage(cb, img.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &v, 1, &r);
+     }
++}
++
++void upload_small_r11_volume(VkCommandBuffer cb,const Texture& t,GpuImage& img){
++ if(!native_small_r11_volume({t.width,t.height,t.depth,t.levels,t.format,t.samples},t.flags,t.stride,t.block_height_gobs,t.storage_size)||!native_guest_span(t.memory,4096,1)||img.view_type!=VK_IMAGE_VIEW_TYPE_3D)throw std::invalid_argument("native packed LUT volume storage");
++ std::vector<uint8_t> linear(8*8*8*4);deswizzle_block_linear(reinterpret_cast<const uint8_t*>(t.memory),linear.data(),8,8,8,4,1,1);
++ const bool widen=img.format==VK_FORMAT_R16G16B16A16_SFLOAT;if(!widen&&img.format!=VK_FORMAT_B10G11R11_UFLOAT_PACK32)throw std::invalid_argument("native packed LUT host format");
++ auto data=upload_alloc(8*8*8*(widen?8:4),16);if(widen)widen_r11g11b10(linear.data(),data.ptr,8*8*8);else std::memcpy(data.ptr,linear.data(),linear.size());
++ transition(cb,img,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);VkMemoryBarrier memory{VK_STRUCTURE_TYPE_MEMORY_BARRIER};memory.srcAccessMask=VK_ACCESS_MEMORY_WRITE_BIT;memory.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT; p_vkCmdPipelineBarrier(cb,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&memory,0,nullptr,0,nullptr);
++ VkBufferImageCopy copy{};copy.bufferOffset=data.offset;copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent={8,8,8};p_vkCmdCopyBufferToImage(cb,data.buffer,img.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);img.uploaded=true;
++ static std::atomic<unsigned> count{0};if(++count<=4)log("nvn: native packed RGB11F volume uploaded8x8x8 bytes=%u",8*8*8*(widen?8:4));
+ }
+ 
+ void upload_texture(VkCommandBuffer cb, const Texture& t, GpuImage& img, uint64_t lo, uint64_t hi) {
 --- a/runtime/src/nvn/nvn_vk.cpp
 +++ b/runtime/src/nvn/nvn_vk.cpp
 @@ -21,6 +21,7 @@
@@ -7267,11 +7445,12 @@
  VkDevice vk_device();
  bool vk_depth_clip_control();
  // The core features the device was created with (all the GPU has): depthClamp, depthBiasClamp, depthBounds, ...
-@@ -225,6 +227,7 @@
+@@ -225,6 +227,8 @@
  std::shared_ptr<CmdList> submit_command_list(uint64_t handle);  // command_list(), once per handle per submit
  void submit_lists_reset();  // at each submit's start (draw_begin_submit)
  
 +void replay_clear_texture(VkCommandBuffer cb, const Cmd& c, const CmdList& list);
++void replay_buffer_texture_copy(VkCommandBuffer cb,const Cmd& c,const CmdList& list);
  void replay_copy(VkCommandBuffer cb, const Cmd& c, const CmdList& list);  // nvn_copy.cpp: texture copies
  void forget_image_views(const GpuImage& img);
  // nvn_debug.cpp: NX_SNAP_DRAWS mid-frame snapshots of colour target 0.
@@ -9180,6 +9359,41 @@
 + for(auto bad:{sps(100,32,38),sps(77,257,1)}){bool rejected=false;try{native_video::avc_info(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
 + auto wrong=main;wrong[0]=0x68;bool rejected=false;try{native_video::avc_info(wrong);}catch(const std::invalid_argument&){rejected=true;}check(rejected);std::vector<uint8_t> annex{0,0,0,1};annex.insert(annex.end(),main.begin(),main.end());annex.insert(annex.end(),{0,0,1,0x68,0xaa});auto nals=native_video::avc_nals(annex);check(nals.size()==2&&nals[0].size()==main.size()&&nals[1][0]==0x68);check(native_video::avc_nals(std::span<const uint8_t>{}).empty());std::printf("AVC SPS metadata checks=%u PASS\n",checks);}
 --- /dev/null
++++ b/tests/native_buffer_texture_probe.h
+@@ -0,0 +1,32 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/nvn_draw_state.h"
++#include "nvn/native_guest_span.h"
++#include "nvn/sdk53_texture_wire.h"
++template<class Check> void native_buffer_texture_probe(uint64_t device,Check check){
++ using namespace nx;using namespace nx::nvn;
++ auto alloc=[](uint64_t size){const auto address=kernel_alloc(size,4096);vm_set(address,size,kMemHeap,3);return address;};
++ for(unsigned variant=0;variant<4;++variant){const uint32_t format=variant==1?0xdu:variant==2?0x25u:1u,bytes=variant==1?2u:variant==2?4u:1u;const bool partial=variant==3,gpu_source=variant==2;
++  const auto texture_key=alloc(256),pool_key=alloc(256),data=alloc(4096),control=alloc(4096),command_key=alloc(256),region=alloc(24),zero=alloc(64),descriptor=alloc(0xb0);
++  auto& texture=make<Texture>(texture_key);texture.target=1;texture.width=texture.height=4;texture.depth=texture.levels=1;texture.format=format;
++  auto& pool=make<MemoryPool>(pool_key);pool.memory=data;pool.size=4096;pool.gpu=gpu_alloc(4096);pool_register(&pool);texture.pool=pool_key;texture.offset=2048;texture.gpu=pool.gpu+2048;
++  Sdk53TextureWire wire;wire.device=device;wire.gpu=texture.gpu;wire.pool=texture.pool;wire.offset=texture.offset;wire.aspect=format_aspect(texture.format);wire.fields={texture.flags,texture.target,texture.width,texture.height,texture.depth,texture.levels,texture.format,texture.samples,texture.swizzle[0],texture.swizzle[1],texture.swizzle[2],texture.swizzle[3],texture.depth_stencil_mode};const auto wire_bytes=sdk53_texture_wire(wire);std::memcpy(reinterpret_cast<void*>(descriptor),wire_bytes.data(),wire_bytes.size());
++  const auto source=pool.gpu+256;const auto width=partial?2u:4u,height=partial?2u:4u,source_bytes=width*height*bytes;
++  for(unsigned n=0;n<6;++n)st<int32_t>(region+4*n,n<3?0:n==5?1:4);CPU call{};auto api=[&](const char* name){auto fn=hle_lookup(name);check(fn!=nullptr);fn(call);};
++  std::memset(reinterpret_cast<void*>(zero),0,64);call.x[0]=texture_key;call.x[1]=0;call.x[2]=region;call.x[3]=zero;api("nvnTextureWriteTexels");
++  if(partial){st<int32_t>(region,1);st<int32_t>(region+4,1);st<int32_t>(region+12,2);st<int32_t>(region+16,2);}
++  call.x[0]=command_key;call.x[1]=device;api("nvnCommandBufferInitialize");check(call.x[0]==1);call.x[0]=command_key;call.x[1]=pool_key;call.x[2]=0;call.x[3]=4096;api("nvnCommandBufferAddCommandMemory");call.x[0]=command_key;call.x[1]=control;call.x[2]=4096;api("nvnCommandBufferAddControlMemory");call.x[0]=command_key;api("nvnCommandBufferBeginRecording");
++  auto copy=[&](uint64_t address,uint32_t flags){call.x[0]=command_key;call.x[1]=address;call.x[2]=descriptor;call.x[3]=0;call.x[4]=region;call.x[5]=flags;api("nvnCommandBufferCopyBufferToTexture");};
++  for(unsigned bad=0;bad<3;++bad){bool rejected=false;try{if(bad==0)copy(source,1);else if(bad==1)copy(pool.gpu+4094,0);else{st<int32_t>(region+12,5);copy(source,0);}}catch(const std::invalid_argument&){rejected=true;}check(rejected);st<int32_t>(region+12,int32_t(width));}
++  std::memset(reinterpret_cast<void*>(data+256),0x11,source_bytes);copy(source,0);call.x[0]=command_key;api("nvnCommandBufferEndRecording");auto list=command_list(call.x[0]);check(list&&list->cmds.size()==1&&list->cmds[0].op==Cmd::CopyBufferToTexture&&list->cmds[0].a[1]==texture_key);
++  // These bytes change after recording: the command must read submission-time contents.
++  std::vector<uint8_t> expected(source_bytes);for(unsigned n=0;n<source_bytes;++n)expected[n]=uint8_t(0x40+n);std::memcpy(reinterpret_cast<void*>(data+256),expected.data(),expected.size());
++  {std::lock_guard lock(gpu_lock());auto command=frame_begin(false);clears_begin_submit();nx::nvn::replay::written_reset();nx::nvn::replay::dedup_reset();
++   if(gpu_source){auto written=nx::nvn::replay::written_bind(command,reinterpret_cast<const uint8_t*>(data+256),source_bytes,source_bytes);vk::p_vkCmdFillBuffer(command,written.buffer,written.offset,source_bytes,0x5a5a5a5au);std::fill(expected.begin(),expected.end(),0x5a);}
++   Targets targets{};replay_list(command,targets,*list,0);auto* image=image_of(texture_key);check(image&&image->uploaded&&image->rendered);auto readback=upload_alloc(16*bytes,16);transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);VkBufferImageCopy read{};read.bufferOffset=readback.offset;read.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};read.imageExtent={4,4,1};vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&read);
++   VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=readback.buffer;barrier.offset=readback.offset;barrier.size=16*bytes;vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++   bool exact=true;for(unsigned y=0;y<4;++y)for(unsigned x=0;x<4;++x)for(unsigned channel=0;channel<bytes;++channel){const bool inside=!partial||(x>=1&&x<3&&y>=1&&y<3);const auto value=inside?expected[((y-(partial?1:0))*width+(x-(partial?1:0)))*bytes+channel]:0;exact&=readback.ptr[(y*4+x)*bytes+channel]==value;}check(exact);nx::nvn::replay::written_reset();nx::nvn::replay::dedup_reset();
++  }
++  call.x[0]=command_key;api("nvnCommandBufferFinalize");call.x[0]=pool_key;api("nvnMemoryPoolFinalize");destroy(texture_key);
++ }
++}
+--- /dev/null
 +++ b/tests/native_compute_profile_test.cpp
 @@ -0,0 +1,5 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -9198,7 +9412,7 @@
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,225 @@
+@@ -0,0 +1,232 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -9227,6 +9441,10 @@
 +nx::HleRegistrar authored_registration("authoredMemoryCallback",authored_memory_callback);
 +}
 +#include "native_avc_bridge_probe.h"
++#include "native_buffer_texture_probe.h"
++#include "native_volume_sample_probe.h"
++#include "native_small_r11_probe.h"
++#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
 +#ifdef _WIN32
 + if(argc==4&&std::string_view(argv[1])=="--avc-private")return codec_probe::run(argv[2],std::strtoull(argv[3],nullptr,16));
@@ -9235,7 +9453,7 @@
 + if(gpu){if(_putenv_s("NX_PIPELINED","1"))throw std::runtime_error("fixture pipeline mode setup failed");}
 + unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("native device assertion "+std::to_string(n));};
 + for(const char* name:{"_ZN2nv20SetGraphicsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_","_ZN2nv28SetGraphicsDevtoolsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_"}){auto setter=nx::hle_lookup(name);check(setter!=nullptr);nx::CPU invalid_allocator{};bool rejected=false;try{setter(invalid_allocator);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
-+ check(nx::find_symbol("nnMain")==0);nx::memory_init(); {const auto mii_output=nx::kernel_alloc(6*sizeof(nx::mii::CharInfoElement),16);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);uint32_t creator_key=0;nx::IpcCtx mii_open{};mii_open.cmd=0;mii_open.in=reinterpret_cast<uint8_t*>(&creator_key);mii_open.in_size=4;auto mii_manager=nx::make_service("mii:u");check(mii_manager&&mii_manager->handle(mii_open)==0&&mii_open.out_objects.size()==1);auto database=mii_open.out_objects[0];for(uint32_t sources:{0u,1u,2u,3u}){nx::IpcCtx query{};query.cmd=2;query.in=reinterpret_cast<const uint8_t*>(&sources);query.in_size=4;check(database->handle(query)==0);uint32_t count=99;std::memcpy(&count,query.out.data(),4);check(count==((sources&2)?6u:0u));}uint32_t defaults_source=2;nx::IpcCtx list{};list.cmd=3;list.in=reinterpret_cast<const uint8_t*>(&defaults_source);list.in_size=4;list.b.push_back({mii_output,6*sizeof(nx::mii::CharInfoElement)});std::memset(reinterpret_cast<void*>(mii_output),0xcd,6*sizeof(nx::mii::CharInfoElement));check(database->handle(list)==0);check(nx::ld<uint8_t>(mii_output)==0xcd);check(list.validate_reply&&list.validate_reply());check(bool(list.commit_reply));list.commit_reply();nx::mii::CharInfoElement first{};std::memcpy(&first,reinterpret_cast<void*>(mii_output),sizeof first);check(first.source==1&&first.info.Verify()==nx::mii::ValidationResult::NoErrors);nx::IpcCtx revoked=list;revoked.out.clear();revoked.commit_reply={};revoked.validate_reply={};check(database->handle(revoked)==0);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,1);check(!revoked.validate_reply());nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);nx::IpcCtx short_list{};short_list.cmd=3;short_list.in=reinterpret_cast<const uint8_t*>(&defaults_source);short_list.in_size=4;short_list.b.push_back({mii_output,sizeof(nx::mii::CharInfoElement)});check(database->handle(short_list)==0x47e);uint32_t invalid_source=4;nx::IpcCtx invalid_mii{};invalid_mii.cmd=2;invalid_mii.in=reinterpret_cast<const uint8_t*>(&invalid_source);invalid_mii.in_size=4;check(database->handle(invalid_mii)==0xe401);}
++ check(nx::find_symbol("nnMain")==0);nx::memory_init();native_wait_cancellation_probe(check); {const auto mii_output=nx::kernel_alloc(6*sizeof(nx::mii::CharInfoElement),16);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);uint32_t creator_key=0;nx::IpcCtx mii_open{};mii_open.cmd=0;mii_open.in=reinterpret_cast<uint8_t*>(&creator_key);mii_open.in_size=4;auto mii_manager=nx::make_service("mii:u");check(mii_manager&&mii_manager->handle(mii_open)==0&&mii_open.out_objects.size()==1);auto database=mii_open.out_objects[0];for(uint32_t sources:{0u,1u,2u,3u}){nx::IpcCtx query{};query.cmd=2;query.in=reinterpret_cast<const uint8_t*>(&sources);query.in_size=4;check(database->handle(query)==0);uint32_t count=99;std::memcpy(&count,query.out.data(),4);check(count==((sources&2)?6u:0u));}uint32_t defaults_source=2;nx::IpcCtx list{};list.cmd=3;list.in=reinterpret_cast<const uint8_t*>(&defaults_source);list.in_size=4;list.b.push_back({mii_output,6*sizeof(nx::mii::CharInfoElement)});std::memset(reinterpret_cast<void*>(mii_output),0xcd,6*sizeof(nx::mii::CharInfoElement));check(database->handle(list)==0);check(nx::ld<uint8_t>(mii_output)==0xcd);check(list.validate_reply&&list.validate_reply());check(bool(list.commit_reply));list.commit_reply();nx::mii::CharInfoElement first{};std::memcpy(&first,reinterpret_cast<void*>(mii_output),sizeof first);check(first.source==1&&first.info.Verify()==nx::mii::ValidationResult::NoErrors);nx::IpcCtx revoked=list;revoked.out.clear();revoked.commit_reply={};revoked.validate_reply={};check(database->handle(revoked)==0);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,1);check(!revoked.validate_reply());nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);nx::IpcCtx short_list{};short_list.cmd=3;short_list.in=reinterpret_cast<const uint8_t*>(&defaults_source);short_list.in_size=4;short_list.b.push_back({mii_output,sizeof(nx::mii::CharInfoElement)});check(database->handle(short_list)==0x47e);uint32_t invalid_source=4;nx::IpcCtx invalid_mii{};invalid_mii.cmd=2;invalid_mii.in=reinterpret_cast<const uint8_t*>(&invalid_source);invalid_mii.in_size=4;check(database->handle(invalid_mii)==0xe401);}
 +const auto device=nx::kernel_alloc(7008,16);
 + check(!nx::nvn::initialize_native_device(device,0));
 + nx::vm_set(device,7008,nx::kMemHeap,3); // Authored fixture explicitly admits its storage to the guest-visible bus.
@@ -9379,6 +9597,7 @@
 + for(unsigned k=0;k<6;++k)nx::st<uint32_t>(volume_region+k*4,k<3?0:4);
 + nx::CPU volume_cpu{};volume_cpu.x[0]=volume_key;volume_cpu.x[1]=0;volume_cpu.x[2]=volume_region;volume_cpu.x[3]=volume_data;auto write_volume=nx::hle_lookup("nvnTextureWriteTexels");check(write_volume!=nullptr);write_volume(volume_cpu);check(volume.volume_texels_complete.load());
 + {std::lock_guard lock(nx::nvn::gpu_lock());auto command=nx::nvn::frame_begin(false);auto* image=nx::nvn::ensure_contents(command,volume_key);check(image&&image->view_type==VK_IMAGE_VIEW_TYPE_3D&&image->uploaded&&image->texels);auto readback=nx::nvn::upload_alloc(256,16);nx::nvn::transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);VkBufferImageCopy region{};region.bufferOffset=readback.offset;region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};region.imageExtent={4,4,4};nx::vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&region);VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=readback.buffer;barrier.offset=readback.offset;barrier.size=256;nx::vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);check(std::memcmp(readback.ptr,reinterpret_cast<void*>(volume_data),256)==0);}
++ native_volume_sample_probe(volume_key,check);
 + nx::nvn::destroy(volume_key);
 + const auto cube_key=nx::kernel_alloc(256,16),cube_data=nx::kernel_alloc(384,16),cube_region=nx::kernel_alloc(32,16);nx::vm_set(cube_data,384,nx::kMemHeap,3);nx::vm_set(cube_region,32,nx::kMemHeap,3);auto& cube=nx::nvn::make<nx::nvn::Texture>(cube_key);cube.target=8;cube.width=cube.height=4;cube.depth=6;cube.levels=1;cube.format=0x25;cube.samples=0;for(unsigned i=0;i<384;++i)nx::st<uint8_t>(cube_data+i,uint8_t(i));for(unsigned i=0;i<6;++i)nx::st<uint32_t>(cube_region+i*4,i<3?0:i==5?6:4);nx::CPU cube_cpu{};cube_cpu.x[0]=cube_key;cube_cpu.x[1]=0;cube_cpu.x[2]=cube_region;cube_cpu.x[3]=cube_data;write_volume(cube_cpu);
 + {std::lock_guard lock(nx::nvn::gpu_lock());auto command=nx::nvn::frame_begin(false);auto* image=nx::nvn::ensure_contents(command,cube_key);check(image&&image->layers==6&&image->view_type==VK_IMAGE_VIEW_TYPE_CUBE);check(nx::nvn::vk_features().imageCubeArray);nx::nvn::ImageShape shape{};shape.dim=3;shape.arrayed=true;shape.component=nx::nvn::ScalarType::Float;nx::nvn::ViewInfo view{};VkImageLayout layout{};auto sampled=nx::nvn::sampled_view(command,cube_key,shape,&view,&layout,true);check(sampled!=VK_NULL_HANDLE&&sampled!=image->view);shape.dim=2;shape.arrayed=false;bool wrong_view=false;try{nx::nvn::sampled_view(command,cube_key,shape,&view,&layout,true);}catch(const std::invalid_argument&){wrong_view=true;}check(wrong_view);bool missing_image=false;try{nx::nvn::sampled_view(command,0,shape,&view,&layout,true);}catch(const std::invalid_argument&){missing_image=true;}check(missing_image);nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);}
@@ -9421,6 +9640,8 @@
 + }
 + commands.x[0]=command_key;api("nvnCommandBufferFinalize");commands.x[0]=memory_key;api("nvnMemoryPoolFinalize");nx::nvn::destroy(target);
 + }
++ native_small_r11_probe(check);
++ native_buffer_texture_probe(device,check);
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
@@ -9508,6 +9729,23 @@
 + return accepted==total&&param_accepted==total&&defaults_accepted==6&&invalid_rejected?0:1;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
++++ b/tests/native_small_r11_probe.h
+@@ -0,0 +1,14 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/native_volume_profile.h"
++#include "nvn/nvn_tiling.h"
++template<class Check> void native_small_r11_probe(Check check){
++ using namespace nx;using namespace nx::nvn;const auto key=kernel_alloc(256,4096),data=kernel_alloc(4096,4096);vm_set(data,4096,kMemHeap,3);std::memset(reinterpret_cast<void*>(data),0,4096);std::vector<uint32_t> expected(512);
++ for(unsigned z=0;z<8;++z)for(unsigned y=0;y<8;++y)for(unsigned x=0;x<8;++x){const uint32_t packed=(x>=4?0x3c0u:0)|((y>=4?0x3c0u:0)<<11)|((z>=4?0x1e0u:0)<<22);expected[(z*8+y)*8+x]=packed;const auto bx=x*4;const auto offset=z*512+(bx/32)*256+(y/2)*64+((bx/16)%2)*32+(y%2)*16+bx%16;st<uint32_t>(data+offset,packed);}
++ for(unsigned depth_block:{1u,2u,4u,8u,16u,32u}){std::vector<uint32_t> linear(512);deswizzle_block_linear(reinterpret_cast<const uint8_t*>(data),reinterpret_cast<uint8_t*>(linear.data()),8,8,8,4,1,depth_block);check(linear==expected);}
++ auto& texture=make<Texture>(key);texture.target=2;texture.width=texture.height=texture.depth=8;texture.levels=1;texture.format=0x3f;texture.memory=data;texture.storage_size=4096;check(native_volume_ready_for_sample(texture));texture.storage_size=4095;check(!native_volume_ready_for_sample(texture));texture.storage_size=4096;texture.flags=8;check(!native_volume_ready_for_sample(texture));texture.flags=0;texture.stride=32;check(!native_volume_ready_for_sample(texture));texture.stride=0;texture.block_height_gobs=2;check(!native_volume_ready_for_sample(texture));texture.block_height_gobs=0;
++ {std::lock_guard lock(gpu_lock());auto command=frame_begin(false);auto* image=ensure_contents(command,key);check(image&&image->uploaded&&image->view_type==VK_IMAGE_VIEW_TYPE_3D);const bool wide=image->format==VK_FORMAT_R16G16B16A16_SFLOAT;check(wide||image->format==VK_FORMAT_B10G11R11_UFLOAT_PACK32);const auto bytes=512*(wide?8u:4u);auto readback=upload_alloc(bytes,16);transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);VkBufferImageCopy copy{};copy.bufferOffset=readback.offset;copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent={8,8,8};vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&copy);VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=readback.buffer;barrier.offset=readback.offset;barrier.size=bytes;vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++  bool exact=true;for(unsigned z=0;z<8;++z)for(unsigned y=0;y<8;++y)for(unsigned x=0;x<8;++x){const auto index=(z*8+y)*8+x;if(wide){uint16_t rgba[4];std::memcpy(rgba,readback.ptr+index*8,8);exact&=rgba[0]==(x>=4?0x3c00:0)&&rgba[1]==(y>=4?0x3c00:0)&&rgba[2]==(z>=4?0x3c00:0)&&rgba[3]==0x3c00;}else{uint32_t packed;std::memcpy(&packed,readback.ptr+index*4,4);exact&=packed==expected[index];}}check(exact);
++ }
++ native_volume_sample_probe(key,check,8,1.0f);destroy(key);
++}
+--- /dev/null
 +++ b/tests/native_texture_clear_test.cpp
 @@ -0,0 +1,5 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -9538,7 +9776,82 @@
 +#include "nvn/native_volume_profile.h"
 +#include <iostream>
 +#include <stdexcept>
-+int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("volume coverage assertion");};NativeVolumeExtent image{4,4,4,1,0x25,0};NativeVolumeWrite write{0,0,0,0,4,4,4,256};check(native_volume_full_write(image,write));write.bytes=255;check(!native_volume_full_write(image,write));write.bytes=256;write.z=1;check(!native_volume_full_write(image,write));write.z=0;write.level=1;check(!native_volume_full_write(image,write));write.level=0;image.levels=2;check(!native_volume_full_write(image,write));image.levels=1;image.format=0x27;check(!native_volume_full_write(image,write));image.format=0x25;image.samples=4;check(!native_volume_full_write(image,write));image={0xffffffffu,0xffffffffu,0xffffffffu,1,0x25,0};check(!native_volume_full_write(image,write));std::cout<<"volume coverage checks="<<checks<<" PASS\n";}
++int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("volume coverage assertion");};NativeVolumeExtent image{4,4,4,1,0x25,0};NativeVolumeWrite write{0,0,0,0,4,4,4,256};check(native_volume_full_write(image,write));write.bytes=255;check(!native_volume_full_write(image,write));write.bytes=256;write.z=1;check(!native_volume_full_write(image,write));write.z=0;write.level=1;check(!native_volume_full_write(image,write));write.level=0;image.levels=2;check(!native_volume_full_write(image,write));image.levels=1;image.format=0x27;check(!native_volume_full_write(image,write));image.format=0x25;image.samples=4;check(!native_volume_full_write(image,write));image={0xffffffffu,0xffffffffu,0xffffffffu,1,0x25,0};check(!native_volume_full_write(image,write));check(native_volume_sampler_shape(2,false,false,false));for(unsigned dim:{0u,1u,3u,4u,0xffffffffu})check(!native_volume_sampler_shape(dim,false,false,false));check(!native_volume_sampler_shape(2,true,false,false));check(!native_volume_sampler_shape(2,false,true,false));check(!native_volume_sampler_shape(2,false,false,true));NativeVolumeExtent lut{8,8,8,1,0x3f,0};check(native_small_r11_volume(lut,0,0,0,4096));check(native_small_r11_volume(lut,0,0,1,8192));check(!native_small_r11_volume(lut,8,0,0,4096));check(!native_small_r11_volume(lut,0,32,0,4096));check(!native_small_r11_volume(lut,0,0,2,4096));check(!native_small_r11_volume(lut,0,0,0,4095));lut.depth=4;check(!native_small_r11_volume(lut,0,0,0,4096));lut.depth=8;lut.format=0x25;check(!native_small_r11_volume(lut,0,0,0,4096));std::cout<<"volume coverage checks="<<checks<<" PASS\n";}
+--- /dev/null
++++ b/tests/native_volume_sample_probe.h
+@@ -0,0 +1,43 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/nvn_draw_state.h"
++#include <cmath>
++template<class Check> void native_volume_sample_probe(uint64_t texture,Check check,uint32_t extent=4,float high_blue=141.0f/255.0f){
++ using namespace nx;using namespace nx::nvn;
++ // Authored SPIR-V: two explicit-LOD sampler3D lookups at the centers of z=0 and z=3.
++ const uint32_t code[]={ 0x07230203u,0x00010000u,0x00000000u,0x00000020u,0x00000000u,0x00020011u,0x00000001u,0x0003000eu,
++ 0x00000000u,0x00000001u,0x0005000fu,0x00000005u,0x00000019u,0x6e69616du,0x00000000u,0x00060010u,
++ 0x00000019u,0x00000011u,0x00000001u,0x00000001u,0x00000001u,0x00040047u,0x00000009u,0x00000022u,
++ 0x00000000u,0x00040047u,0x00000009u,0x00000021u,0x00000000u,0x00040047u,0x00000011u,0x00000022u,
++ 0x00000000u,0x00040047u,0x00000011u,0x00000021u,0x00000001u,0x00040047u,0x0000000du,0x00000006u,
++ 0x00000010u,0x00030047u,0x0000000fu,0x00000003u,0x00050048u,0x0000000fu,0x00000000u,0x00000023u,
++ 0x00000000u,0x00020013u,0x00000001u,0x00030021u,0x00000002u,0x00000001u,0x00030016u,0x00000003u,
++ 0x00000020u,0x00040017u,0x00000004u,0x00000003u,0x00000004u,0x00040017u,0x00000005u,0x00000003u,
++ 0x00000003u,0x00090019u,0x00000006u,0x00000003u,0x00000002u,0x00000000u,0x00000000u,0x00000000u,
++ 0x00000001u,0x00000000u,0x0003001bu,0x00000007u,0x00000006u,0x00040020u,0x00000008u,0x00000000u,
++ 0x00000007u,0x0004003bu,0x00000008u,0x00000009u,0x00000000u,0x00040015u,0x0000000au,0x00000020u,
++ 0x00000000u,0x0004002bu,0x0000000au,0x0000000bu,0x00000000u,0x0004002bu,0x0000000au,0x0000000cu,
++ 0x00000001u,0x0004002bu,0x0000000au,0x0000000eu,0x00000002u,0x0004001cu,0x0000000du,0x00000004u,
++ 0x0000000eu,0x0003001eu,0x0000000fu,0x0000000du,0x00040020u,0x00000010u,0x00000002u,0x0000000fu,
++ 0x0004003bu,0x00000010u,0x00000011u,0x00000002u,0x00040020u,0x00000012u,0x00000002u,0x00000004u,
++ 0x0004002bu,0x00000003u,0x00000013u,0x3e000000u,0x0004002bu,0x00000003u,0x00000015u,0x3f600000u,
++ 0x0004002bu,0x00000003u,0x00000016u,0x00000000u,0x0006002cu,0x00000005u,0x00000017u,0x00000013u,
++ 0x00000013u,0x00000013u,0x0006002cu,0x00000005u,0x00000018u,0x00000013u,0x00000013u,0x00000015u,
++ 0x00050036u,0x00000001u,0x00000019u,0x00000000u,0x00000002u,0x000200f8u,0x0000001au,0x0004003du,
++ 0x00000007u,0x0000001bu,0x00000009u,0x00070058u,0x00000004u,0x0000001cu,0x0000001bu,0x00000017u,
++ 0x00000002u,0x00000016u,0x00070058u,0x00000004u,0x0000001du,0x0000001bu,0x00000018u,0x00000002u,
++ 0x00000016u,0x00060041u,0x00000012u,0x0000001eu,0x00000011u,0x0000000bu,0x0000000bu,0x0003003eu,
++ 0x0000001eu,0x0000001cu,0x00060041u,0x00000012u,0x0000001fu,0x00000011u,0x0000000bu,0x0000000cu,
++ 0x0003003eu,0x0000001fu,0x0000001du,0x000100fdu,0x00010038u};
++ const auto device=vk_device();std::lock_guard lock(gpu_lock());auto command=frame_begin(false);auto* image=ensure_contents(command,texture);check(image&&image->view_type==VK_IMAGE_VIEW_TYPE_3D&&image->width==extent&&image->height==extent&&image->depth==extent);transition(command,*image,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
++ VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};sampler_info.magFilter=sampler_info.minFilter=VK_FILTER_NEAREST;sampler_info.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST;sampler_info.addressModeU=sampler_info.addressModeV=sampler_info.addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;sampler_info.maxAnisotropy=1;
++ VkSampler sampler=VK_NULL_HANDLE;check(vk::p_vkCreateSampler(device,&sampler_info,nullptr,&sampler)==VK_SUCCESS);
++ VkDescriptorSetLayoutBinding bindings[2]={{0,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr},{1,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr}};VkDescriptorSetLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};layout_info.bindingCount=2;layout_info.pBindings=bindings;VkDescriptorSetLayout layout=VK_NULL_HANDLE;check(vk::p_vkCreateDescriptorSetLayout(device,&layout_info,nullptr,&layout)==VK_SUCCESS);
++ VkPipelineLayoutCreateInfo pipeline_layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};pipeline_layout_info.setLayoutCount=1;pipeline_layout_info.pSetLayouts=&layout;VkPipelineLayout pipeline_layout=VK_NULL_HANDLE;check(vk::p_vkCreatePipelineLayout(device,&pipeline_layout_info,nullptr,&pipeline_layout)==VK_SUCCESS);
++ VkShaderModuleCreateInfo module_info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};module_info.codeSize=sizeof code;module_info.pCode=code;VkShaderModule module=VK_NULL_HANDLE;check(vk::p_vkCreateShaderModule(device,&module_info,nullptr,&module)==VK_SUCCESS);
++ VkComputePipelineCreateInfo pipeline_info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};pipeline_info.stage={VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};pipeline_info.stage.stage=VK_SHADER_STAGE_COMPUTE_BIT;pipeline_info.stage.module=module;pipeline_info.stage.pName="main";pipeline_info.layout=pipeline_layout;VkPipeline pipeline=VK_NULL_HANDLE;check(vk::p_vkCreateComputePipelines(device,VK_NULL_HANDLE,1,&pipeline_info,nullptr,&pipeline)==VK_SUCCESS);
++ auto output=upload_alloc(32,256);std::memset(output.ptr,0xcc,32);const auto set=descriptor_set(layout);VkDescriptorImageInfo sampled{sampler,image->view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};VkDescriptorBufferInfo buffer{output.buffer,output.offset,32};VkWriteDescriptorSet writes[2]{};for(auto& write:writes){write.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;write.dstSet=set;write.descriptorCount=1;}writes[0].dstBinding=0;writes[0].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;writes[0].pImageInfo=&sampled;writes[1].dstBinding=1;writes[1].descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;writes[1].pBufferInfo=&buffer;vk::p_vkUpdateDescriptorSets(device,2,writes,0,nullptr);vk::p_vkCmdBindPipeline(command,VK_PIPELINE_BIND_POINT_COMPUTE,pipeline);vk::p_vkCmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_COMPUTE,pipeline_layout,0,1,&set,0,nullptr);vk::p_vkCmdDispatch(command,1,1,1);
++ VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=output.buffer;barrier.offset=output.offset;barrier.size=32;vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++ float actual[8];std::memcpy(actual,output.ptr,sizeof actual);const float expected[8]={0,0,0,1,0,0,high_blue,1};for(unsigned n=0;n<8;++n)check(std::isfinite(actual[n])&&std::fabs(actual[n]-expected[n])<1e-6f);
++ vk::p_vkDestroyPipeline(device,pipeline,nullptr);vk::p_vkDestroyShaderModule(device,module,nullptr);vk::p_vkDestroyPipelineLayout(device,pipeline_layout,nullptr);vk::p_vkDestroyDescriptorSetLayout(device,layout,nullptr);vk::p_vkDestroySampler(device,sampler,nullptr);
++}
+--- /dev/null
++++ b/tests/native_wait_cancellation_probe.h
+@@ -0,0 +1,26 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "kernel_state.h"
++#include <thread>
++#include <chrono>
++#include <atomic>
++#include <algorithm>
++template<class Check> void native_wait_cancellation_probe(Check check){
++ using namespace nx;using namespace nx::kstate;
++ const auto prior=t_self;auto current=std::make_shared<KThread>();current->self=current;current->handle=handle_add(current);t_self=current.get();struct Restore{KThread* old;uint32_t handle;~Restore(){t_self=old;handle_close(handle);}}restore{prior,current->handle};
++ auto cancel=[&](uint32_t handle){CPU call{};call.x[0]=handle;svc(call,0x19,0);return uint32_t(call.x[0]);};
++ auto wait=[&](uint64_t handles,int count,int64_t timeout){CPU call{};call.x[1]=handles;call.x[2]=uint32_t(count);call.x[3]=uint64_t(timeout);svc(call,0x18,0);return std::pair{uint32_t(call.x[0]),uint32_t(call.x[1])};};
++ // Cancel delivered before entry must survive until a blocking wait consumes it.
++ check(cancel(current->handle)==0);check(current->cancel);check(wait(0,0,1'000'000).first==0xec01);check(!current->cancel);check(wait(0,0,0).first==0xea01);
++ // Ready-object and zero-timeout fast paths preserve pending cancellation.
++ auto event=std::make_shared<KEvent>();event->state=std::make_shared<EventState>();event->state->signaled=true;const auto event_handle=handle_add(event);const auto handles=kernel_alloc(4,16);vm_set(handles,4,kMemHeap,3);st<uint32_t>(handles,event_handle);
++ check(cancel(current->handle)==0);const auto ready=wait(handles,1,1'000'000);check(ready.first==0&&ready.second==0);check(current->cancel);event->state->signaled=false;check(wait(handles,1,0).first==0xea01);check(current->cancel);check(wait(handles,1,1'000'000).first==0xec01);check(!current->cancel);handle_close(event_handle);
++ check(cancel(current->handle)==0);check(cancel(current->handle)==0);check(wait(0,0,1'000'000).first==0xec01);check(wait(0,0,0).first==0xea01);
++ // An already-blocked host thread is also cancelled through the actual SVC path.
++ auto blocked=std::make_shared<KThread>();blocked->self=blocked;blocked->handle=handle_add(blocked);std::atomic<uint32_t> returned{0xffffffffu};
++ std::thread worker([&]{t_self=blocked.get();CPU call{};call.x[1]=0;call.x[2]=0;call.x[3]=1'000'000'000;svc(call,0x18,0);returned.store(uint32_t(call.x[0]));t_self=nullptr;});
++ bool entered=false;const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(1);
++ while(std::chrono::steady_clock::now()<deadline){{std::lock_guard lock(g_k);entered=std::find(g_sync_waiters.begin(),g_sync_waiters.end(),blocked.get())!=g_sync_waiters.end();}if(entered)break;std::this_thread::yield();}
++ const auto cancel_result=cancel(blocked->handle);worker.join();check(entered);check(cancel_result==0);check(returned.load()==0xec01);check(!blocked->cancel);handle_close(blocked->handle);
++ check(cancel(0)==0xe401);const auto process_handle=handle_add(current_process());check(cancel(process_handle)==0xe401);handle_close(process_handle);
++}
 --- /dev/null
 +++ b/tests/romfs_image_probe.cpp
 @@ -0,0 +1,12 @@

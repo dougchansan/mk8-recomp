@@ -53,5 +53,7 @@ with tempfile.TemporaryDirectory(prefix="offline-nvn-test-") as temporary:
     run("wrong-texture-bank", control, "1", False, ("3:40",))
     run("unaligned-texture-slot", control, "1", False, ("2:41",))
     run("duplicate-texture-slot", control, "1", False, ("2:40","2:40"))
+    run("volume-slot-parser", control, "1", True, ("2:40:3d",))
+    run("volume-shadow-rejected", control, "1", False, ("2:40:3d-shadow",))
     run("wrong-texture-viewport", control, "0", False, ("2:40",))
 print(f"offline shader authored cases={checks} PASS")

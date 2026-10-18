@@ -4,16 +4,33 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe includes the Windows native AVC bridge. All 36
-component suites and the 321-check native GPU fixture pass. A production API
-probe passes 309 checks: 32 compressed inputs produce 32 owned decoded pictures,
-with checked picture IDs, planar pixel conversion, draining and revocation of
-instance/frame memory after release. The source recipe reconstructs all 134
-generic adapted files. The actual game now decodes two pictures and retrieves an original SDK output
-buffer. It then stops at the missing native GPU upload operation
-`nvnCommandBufferCopyBufferToTexture`. The saved main menu and its transition
-after Single Player selection are directly reviewed; video presentation and races
-remain unverified.
+The current source recipe is R146, reconstructing 140 generic adapted files.
+All 36 component suites and the 461-check native GPU fixture pass. A production
+codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
+IDs, planar pixel conversion, draining and mapped-memory revocation. The full
+movie's 13,200 input-owned frame hashes match across default and interactive
+native decoder modes.
+
+The native buffer-to-texture operation now validates active recording, real source
+pools, copied SDK texture descriptors and bounded copy regions. Actual Vulkan
+readbacks check R8/RG8/RGBA transfers, submission-time CPU data, earlier GPU writes
+and partial updates. The original game records both decoded video-plane copies
+and advances to its color-correction shader. The private cache now holds 4,488
+offline-translated stages. An explicit graphics V10 profile permits checked 3D
+float sampling. The live lookup texture identified by the game is packed RGB11F;
+the new bounded 8x8x8 path reuses existing block-linear conversion and exact float
+widening. Authored GPU tests verify all voxels and sampling at distinct depths.
+
+A timing-dependent native wait bug was isolated by tracing the original movie
+client events. The old synchronization entry discarded a cancellation delivered
+before the wait, losing a MultiWait notification. The new regression fails on
+the old code and passes after preserving the pending cancellation. Tests cover
+ready-object and zero-timeout precedence, one-shot/coalesced cancellation, an
+already-blocked host thread, and invalid handles. No game event is forced.
+
+The latest full-game run is checking the complete video draw and presentation.
+Native movie presentation, races and a complete playable application remain
+unverified. No native tag, binary or download is published.
 
 The earlier R132 saved-profile run directly renders the native main menu and
 creates the real bundled Google AVC component. The movie uses Main-profile AVC
@@ -44,7 +61,7 @@ The Vulkan dispatch table is regenerated for the already installed headers.
 Thirty-six CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 321-check GPU fixture creates and drains a real device and queue on
+A separate 461-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,

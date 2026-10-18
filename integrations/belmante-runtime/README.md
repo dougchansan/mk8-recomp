@@ -101,3 +101,17 @@ is not a rendered-video or gameplay result. The native GPU upload is the next ga
 API references: [Windows H.264 decoder](https://learn.microsoft.com/en-us/windows/win32/medfound/h-264-video-decoder),
 [interactive decoder mode](https://learn.microsoft.com/en-us/windows/win32/medfound/codecapi-avlowlatencymode),
 and [original decoder API contract](https://android.googlesource.com/platform/frameworks/av/+/0c1bc74/media/libstagefright/codecs/on2/h264dec/inc/H264SwDecApi.h).
+
+The R146 source adds native buffer-to-texture transfers with checked source pools,
+copy regions and copied SDK descriptors. Native GPU fixtures verify submitted CPU
+data, earlier GPU writes and partial updates. Graphics V10 profiles admit checked
+3D float samplers. Complete API RGBA8 volumes and the bounded 8x8x8 packed RGB11F
+lookup storage use native upload/sampling paths; authored tests check every voxel,
+float conversion and distinct depth samples.
+
+Wait cancellation now remains pending until a blocking synchronization consumes
+it. A deterministic pre-wait test failed on the old kernel and passes after the
+fix, alongside ready-object/poll precedence and cancellation of a blocked host
+thread. The native GPU fixture now passes 461 checks and all 36 suites pass.
+These results do not establish native movie presentation or races. The current
+full-game probe is checking that final video handoff without diagnostic readbacks.

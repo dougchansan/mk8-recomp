@@ -1,12 +1,10 @@
 # mk8-recomp
 
-[**suyu v0.0.11**](https://github.com/dougchansan/suyu-v0.0.4/releases/tag/v0.0.11)
-
 The current goal is a standalone native Mario Kart 8 Deluxe application: statically recompiled CPU code connected to native graphics, platform services, audio, input and storage. This migration is in progress. The working race reference still uses suyu graphics; a fully native playable game is not available yet.
 
 See [native runtime progress](docs/native-runtime-progress.md) for verified results and remaining work. This repository is `dougchansan/mk8-recomp`.
 
-The [native foundations v6 prerelease](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v6-20261015) contains 34 Windows x64 tools and synthetic fixtures. It adds explicit Vulkan features, BC4 and packed sRGB formats, sampler/view options and independent depth/provoking state. Its authored GPU fixture passes 16 draws and 549 pixel comparisons, while uniform bindings retain full declared bounds. The 168-file source checkpoint is `src/patches/native-runtime.patch` against suyu revision `347fcf91d95cd39cb5c3db50f1b6d827ad699311`. [Build instructions](docs/native-builds.md) and [binary/source verification](native-checkpoint/verification.json) accompany it. Live native game rendering, Device integration, audio, controls and save/restart remain pending. Clean-machine portability remains unverified. Earlier [v5](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v5-20261015), [v4](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v4-20261014), [v3](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v3-20261014) and [v2](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-20261014) checkpoints remain available.
+**Release policy:** all five native-foundations prereleases, their 15 download assets and their tags have been removed. No new native release, tag or download will be published until the full native game is working: static CPU execution, live native graphics, platform services, audio, controls, saves and restart. Development builds and verification receipts remain local. See [development build notes](docs/native-builds.md).
 
 Private CPU bring-up passes 12,017 checks across 16 fresh processes for genuine SDK bootstrap, the title's 24 MiB allocator, installed allocation/free hooks, aligned-pointer handling and finalization. One captured game background now draws through native Vulkan and reaches 45 successful, independently retired native presentations without copying pixels through the CPU. All 2,073,600 packed source pixels remain exact. Live native Device integration, complete game frames, audio, controls and save/restart remain pending.
 

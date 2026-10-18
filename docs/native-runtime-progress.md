@@ -257,32 +257,21 @@ Decoded draw state establishes source-alpha blending, a destination-multiplicati
 
 The next graphics gate is live game-to-native Device/resource/draw/presentation integration, extending beyond the captured background replay. Native audio, input, saves and overall gameplay closure remain pending.
 
-## Public checkpoint and prerelease
+## Release policy and local builds
 
-The checkpoint targets suyu source revision:
+All five native-foundations prereleases, their 15 download assets and their tags
+have been removed at the project owner's request. No replacement native tag or
+download will be published until the complete native game is working. The gate
+includes static CPU execution, live native graphics, platform services, audio,
+controls, saves and restart through the supported gameplay path. The campaign
+has not met that gate.
 
-```
-347fcf91d95cd39cb5c3db50f1b6d827ad699311
-```
-
-Source changes are represented by `src/patches/native-runtime.patch` against that exact base. The 168-file v6 checkpoint updates 14 generic graphics/NVN/shader files and adds one authored fixture; 153 subjects retain their v5 bytes. Window and Presenter implementations retain their v5 bytes. Synthetic CPU, service, entry/API v2/v3, estimate, callback, fence, memory and accounting checks are recorded alongside graphics/window validation. [Verification](../native-checkpoint/verification.json) records the public binaries and source correspondence. These notes do not claim a verified setup on a fresh machine.
-
-The [prerelease `native-foundations-v6-20261015`](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v6-20261015) contains 34 Windows x64 verification tools, synthetic fixtures and corresponding source. It is **not a playable MK8D build**. The new explicit GPU fixture passes 16 authored draws and 549 pixel comparisons; a separate rebuilt Presenter completes 45 queued/retired presentations. The source archive disables global Git line-ending conversion and matches 5,389 exported base files to the pinned pristine checkout. The final archive retains all 34 fresh-built binaries and the original 40 build/test records while repacking the base source and packaging helper. The shader-input factory is source-only; matching offline compiler libraries, real allocator AOT and game-linked diagnostics are excluded from release binaries. Earlier [33-tool v5](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v5-20261015), [27-tool v4](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v4-20261014), [24-tool v3](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-v3-20261014) and [13-tool v2](https://github.com/dougchansan/mk8-recomp/releases/tag/native-foundations-20261014) checkpoints remain immutable.
-
-The development checkout also keeps a gitignored `local/native-builds/latest.json` index with exact public-package and private diagnostic executable hashes. Game-linked CPU/reference builds remain local; only tools with synthetic inputs and publishable corresponding source become release assets. See [build instructions](native-builds.md) for the current public package.
-
-The index now contains 31 entries, including the verified native heap CPU
-fixture with its closed eleven-suite logs and review receipts and the latest
-standalone startup diagnostic that completes the heap, thread-priority and
-process core-mask query and thread-core setup, opens FSP, clones the session, initializes it and stops at GetGlobalAccessLogMode. Its retained
-`native_boot.exe` has SHA256
-`4c880928a04c8cfcdf9b00cf9334306dc27433d41d86390ef2ee09378946862e`.
-All 30 earlier entries and seven allocator bundles remain available. Game-linked
-executables require matching local ExeFS inputs and fresh output paths. The
-guarded four-image Host still stops at `pctl:s`; neither startup diagnostic is a
-playable game build. The failed earlier partial boot retains its original result.
-
-The public checkpoint excludes the private exact copy32 matcher and its tests because their provenance is unsuitable for this checkpoint. That omission does not erase the preserved private experiment. No game code, generated game archives, caches, NSOs or keys are published. Keep locally supplied title data separate from public source and release packages; see [LEGAL.md](../LEGAL.md).
+Historical component source and verification records remain in the repository.
+Development binaries, private diagnostic bundles and closed verification receipts
+remain local for continued implementation and regression checks. See
+[development build notes](native-builds.md) for the policy and retained source.
+No game code, generated game archives, caches, NSOs or keys are published. Keep
+locally supplied title data separate from public source; see [LEGAL.md](../LEGAL.md).
 
 ## Completion gates
 

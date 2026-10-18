@@ -12,7 +12,7 @@ The Vulkan dispatch table is regenerated for the already installed headers.
 Thirty-five CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 224-check GPU fixture creates and drains a real device and queue on
+A separate 277-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,
@@ -196,8 +196,40 @@ before releasing the previous one. Copies can share the saved native texture
 until the final owning slot is finalized. Regressions cover self-registration,
 secondary-slot replacement, two-pool sharing and last-owner retirement; all 256
 bytes of a rendered texture survive the self-registration test. All 35 component
-suites and 224 GPU checks pass. A fresh title/menu probe is checking continuation;
-main-menu selection and races remain unverified.
+suites and 224 GPU checks passed in that revision.
+The checked native run then selects a preset and reaches the main menu; selecting
+Single Player stops at the next unsupported application-service request. Races
+remain unverified.
+
+The application termination-result setter now validates and stages its opaque
+32-bit value until after the IPC reply. Normal Windows exits report the stored
+result, while explicit host errors retain their own code. The setter itself does
+not terminate the process. The inspected SDK wrapper and
+[AM command table](https://switchbrew.org/wiki/AM_services#IApplicationFunctions)
+identify this operation; its actual game-time value is being probed.
+
+Reopening the game's own saved profile exposed Mii UpdateLatest. Its captured
+SDK53 request contains an 88-byte character record followed by a 32-bit source
+flag. The native user database is empty: checked refresh requests return the
+not-found result without inventing a user record or modifying the input. Invalid
+characters and malformed requests are rejected. The subsequent GetIndex lookup
+also validates the character and reports no user-database entry without inventing
+an index. Component checks cover these
+results and staged termination-state updates. All 35 suites and 277 GPU/component
+fixture checks pass. The fresh saved-profile probe is testing restart recovery
+and continuation into Single Player; full save/reload gameplay remains open.
+
+A saved-profile run then exposed a registration lifetime gap: the source could
+retire while compiled SDK view getters ran outside the object-registry lock.
+Registration now holds a scoped descriptor reference across those getters and
+transfers it to the destination slot at commit. Invalid slots and repeated commits
+are rejected; abandoned registration releases its reference. A deterministic native
+fixture retires every source-pool owner between capture and commit, verifies the
+rendered image remains live, and checks the final abandoned-owner cleanup. The
+saved-profile startup has passed the earlier registration exception and returned
+to the title screen. Its game-generated report increments the saved startup count
+from one to two. Main-menu/race continuation is still being tested. Full resource ownership
+and rendering equivalence remain separate, unfinished work.
 
 Missing required shader translations and unknown calls remain visible failures.
 Shader/draw/present coverage, GPU upload/layout correctness, allocator callback

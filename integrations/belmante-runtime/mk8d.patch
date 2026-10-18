@@ -1395,17 +1395,21 @@
 +}
 --- /dev/null
 +++ b/runtime/src/native_exit_policy.h
-@@ -0,0 +1,14 @@
+@@ -0,0 +1,18 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include <mutex>
++#include <cstdint>
 +namespace nx {
 +class NativeExitPolicy{
-+ mutable std::mutex mutex;bool locked=false,requested=false;
++ mutable std::mutex mutex;bool locked=false,requested=false;uint32_t termination_result=0;
 +public:
 + bool lock_exit(){std::lock_guard guard(mutex);if(requested)return true;locked=true;return false;}
 + bool unlock_exit(){std::lock_guard guard(mutex);locked=false;return requested;}
 + bool request_close(){std::lock_guard guard(mutex);requested=true;return !locked;}
++ void set_termination_result(uint32_t value){std::lock_guard guard(mutex);termination_result=value;}
++ uint32_t termination_status()const{std::lock_guard guard(mutex);return termination_result;}
++ uint32_t process_status(uint32_t requested_status)const{std::lock_guard guard(mutex);return requested_status?requested_status:termination_result;}
 + bool is_locked()const{std::lock_guard guard(mutex);return locked;}
 +};
 +inline NativeExitPolicy& native_exit_policy(){static NativeExitPolicy value;return value;}
@@ -5024,6 +5028,28 @@
 +inline uint32_t native_texture_storage_layers(uint32_t target,uint32_t depth) {return target==8?6:depth;}
 +}
 --- /dev/null
++++ b/runtime/src/nvn/native_texture_registration.h
+@@ -0,0 +1,19 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn.h"
++namespace nx::nvn {
++// Pins the descriptor while SDK view getters run outside the registry lock.
++class NativeTextureRegistration {
++    uint64_t source_, snapshot_;
++    bool pending_ = true;
++    NativeTextureRegistration(uint64_t source, uint64_t snapshot) : source_(source), snapshot_(snapshot) {}
++public:
++    static NativeTextureRegistration capture(uint64_t descriptor);
++    NativeTextureRegistration(const NativeTextureRegistration&) = delete;
++    NativeTextureRegistration& operator=(const NativeTextureRegistration&) = delete;
++    ~NativeTextureRegistration();
++    uint64_t source_key() const { return source_; }
++    uint64_t snapshot_key() const { return snapshot_; }
++    void register_slot(uint64_t pool, uint32_t id, const ViewInfo& view);
++};
++}
+--- /dev/null
 +++ b/runtime/src/nvn/native_volume_profile.h
 @@ -0,0 +1,15 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -5641,10 +5667,11 @@
  #include <atomic>
  #include <cstdlib>
  #include <cstring>
-@@ -9,10 +11,19 @@
+@@ -9,10 +11,20 @@
  #include <set>
  
  #include "nvn.h"
++#include "native_texture_registration.h"
 +#include "sdk53_texture_builder.h"
 +#include "sdk53_packaged_texture.h"
 +#include "sdk53_texture_descriptor.h"
@@ -5661,7 +5688,7 @@
  
  std::recursive_mutex& gpu_lock();  // nvn_vk.cpp
  
-@@ -111,6 +122,28 @@
+@@ -111,6 +123,28 @@
              (unsigned long long)p.memory, (unsigned long long)p.size, p.flags, (unsigned long long)p.gpu);
      c.x[0] = 1;
  }
@@ -5690,7 +5717,7 @@
  
  void MemoryPoolFinalize(CPU& c) {
      wait_submits_so_far(kWaitInvalidate);  // a submit replayed on another thread may still read it
-@@ -206,6 +239,8 @@
+@@ -206,6 +240,8 @@
      uint64_t memory = 0, gpu = 0;
  };
  
@@ -5699,7 +5726,7 @@
  void BufferInitialize(CPU& c) {  // NVNboolean (NVNbuffer*, const NVNbufferBuilder*)
      uint64_t guest = c.x[0], builder = c.x[1];
      auto& b = make<Buffer>(guest);
-@@ -272,6 +307,7 @@
+@@ -272,6 +308,7 @@
  void TextureInitialize(CPU& c) {  // NVNboolean (NVNtexture*, const NVNtextureBuilder*)
      auto guard = reinit_guard();
      uint64_t guest = c.x[0], builder = c.x[1];
@@ -5707,7 +5734,7 @@
      // Re-initializing a texture a pool slot still names (without finalizing it: Wonder reuses the structs of its
      // dynamic-resolution targets every frame) keeps the old one for those slots, as the pool's descriptor copy
      // would: replayed later, a frame's draws sampled another frame's AO and ambient-light buffers (dark course
-@@ -305,18 +341,13 @@
+@@ -305,18 +342,13 @@
          std::lock_guard lk(objects_lock());
          pool_textures()[t.pool].insert(guest);
      }
@@ -5733,7 +5760,7 @@
      }
  
      // Swizzle: single-channel textures are often read through it (a font atlas in R8 read as alpha = R); without
-@@ -336,6 +367,11 @@
+@@ -336,6 +368,11 @@
              "swizzle %u%u%u%u", (unsigned long long)guest, (unsigned long long)t.memory, t.target, t.format, t.width, t.height, t.depth, t.levels,
              t.samples, t.flags, (unsigned long long)t.storage_size, t.block_height_gobs, t.swizzle[0], t.swizzle[1],
              t.swizzle[2], t.swizzle[3]);
@@ -5745,7 +5772,7 @@
      if (!old) {
          std::lock_guard lk(objects_lock());
          note_replaced(guest);
-@@ -415,6 +451,11 @@
+@@ -415,6 +452,11 @@
      }
  }
  
@@ -5757,7 +5784,7 @@
  void TextureFinalize(CPU& c) {
      auto guard = reinit_guard();
      uint64_t guest = c.x[0];
-@@ -445,6 +486,8 @@
+@@ -445,6 +487,8 @@
  // copy when the slot's texture is gone or no longer has the registered target and format.
  constexpr uint64_t kSnapshot = 0xE000000000000000ull;
  uint64_t g_next_snapshot = 0;
@@ -5766,7 +5793,7 @@
  std::unordered_map<uint64_t, std::vector<uint64_t>> g_snapshots_of;  // guest texture -> its snapshots
  std::deque<std::pair<uint64_t, uint64_t>> g_snapshot_images;         // (snapshot, since ns) that own an image
  
-@@ -452,9 +495,16 @@
+@@ -452,9 +496,16 @@
      auto o = objects().find(guest);
      auto* t = o == objects().end() ? nullptr : dynamic_cast<Texture*>(o->second.get());
      if (!t) return 0;
@@ -5783,7 +5810,7 @@
      copy->width = t->width, copy->height = t->height, copy->depth = t->depth, copy->stride = t->stride;
      copy->pool = t->pool, copy->offset = t->offset, copy->storage_size = t->storage_size;
      copy->memory = t->memory, copy->gpu = t->gpu, copy->block_height_gobs = t->block_height_gobs;
-@@ -462,6 +512,7 @@
+@@ -462,6 +513,7 @@
      copy->pool_swizzle = t->pool_swizzle.load();
      uint64_t key = kSnapshot | ++g_next_snapshot;
      objects()[key] = std::move(copy);
@@ -5791,7 +5818,7 @@
      auto& keys = g_snapshots_of[guest];
      if (keys.size() >= 16)  // re-registered every frame: forget the copies already dropped
          keys.erase(std::remove_if(keys.begin(), keys.end(), [](uint64_t k) { return !objects().count(k); }), keys.end());
-@@ -470,6 +521,11 @@
+@@ -470,6 +522,11 @@
  }
  
  void drop_snapshot(uint64_t key) {  // under objects_lock
@@ -5803,7 +5830,7 @@
      auto o = objects().find(key);
      if (o == objects().end()) return;
      note_replaced(key);  // a replay in flight may resolve the slot to this copy (pool_entry_at, DEBUG.md #63)
-@@ -505,7 +561,9 @@
+@@ -505,7 +562,9 @@
  
  // A kept texture no slot names any more is destroyed (under objects_lock).
  void release_kept(uint64_t key) {
@@ -5814,7 +5841,7 @@
      auto reg = g_registered.find(key);
      if (reg != g_registered.end())
          for (auto [pool, id] : reg->second) {
-@@ -548,6 +606,7 @@
+@@ -548,6 +607,7 @@
      if (n == 1 || n == 100 || n == 1000)
          log("nvn: WriteTexels #%llu into %llx (%ux%u fmt %#x): %ux%ux%u at %u,%u,%u level %u", (unsigned long long)n,
              (unsigned long long)c.x[0], t->width, t->height, t->format, w.w, w.h, w.d, w.x, w.y, w.z, w.level);
@@ -5822,7 +5849,7 @@
      t->writes.push_back(std::move(w));
      t->has_writes.store(true, std::memory_order_release);
  }
-@@ -556,10 +615,38 @@
+@@ -556,10 +616,38 @@
  void TextureWriteTexelsStrided(CPU& c) { write_texels(c, c.x[4], c.x[5]); }
  void TextureFlushTexels(CPU&) {}  // coherent: the writes above are what matters
  
@@ -5863,7 +5890,7 @@
      }
  NX_TEXTURE_GETTER(TextureGetWidth, width)
  NX_TEXTURE_GETTER(TextureGetHeight, height)
-@@ -573,6 +660,13 @@
+@@ -573,6 +661,13 @@
  NX_TEXTURE_GETTER(TextureGetMemoryPool, pool)
  NX_TEXTURE_GETTER(TextureGetMemoryOffset, offset)
  NX_TEXTURE_GETTER(TextureGetStorageSize, storage_size)
@@ -5877,7 +5904,7 @@
  NX_TEXTURE_GETTER(TextureGetDepthStencilMode, depth_stencil_mode)
  #undef NX_TEXTURE_GETTER
  
-@@ -587,22 +681,32 @@
+@@ -587,44 +682,26 @@
      c.x[0] = 1;
  }
  
@@ -5894,52 +5921,98 @@
  
  // nvnTexturePoolRegisterTexture / RegisterImage(pool, int id, const NVNtexture*, const NVNtextureView*)
  void TexturePoolRegister(CPU& c) {
-+    uint64_t texture_key=0;{std::shared_lock guard(objects_lock());if(c.x[2])texture_key=texture_identity_locked(c.x[2]);}
-+
-     // The view may pick levels or layers (a bloom chain samples one mip of its target) and override the swizzle
-     // (a font atlas in R8 is registered with alpha = R).
-     ViewInfo v = read_view(c, c.x[3]);
+-    // The view may pick levels or layers (a bloom chain samples one mip of its target) and override the swizzle
+-    // (a font atlas in R8 is registered with alpha = R).
+-    ViewInfo v = read_view(c, c.x[3]);
++    auto registration = NativeTextureRegistration::capture(c.x[2]);
++    const ViewInfo view = read_view(c, c.x[3]);
      if (trace_textures()) {
 -        auto* tt = get<Texture>(c.x[2]);
-+        auto* tt = get<Texture>(texture_key);
-         log("nvn: pool %llx id %#x = texture %llx (memory %llx %ux%u) view %llx: levels %u+%u layers %u+%u swizzle %08x "
+-        log("nvn: pool %llx id %#x = texture %llx (memory %llx %ux%u) view %llx: levels %u+%u layers %u+%u swizzle %08x "
 -            "format %#x", (unsigned long long)c.x[0], uint32_t(c.x[1]), (unsigned long long)c.x[2],
-+            "format %#x", (unsigned long long)c.x[0], uint32_t(c.x[1]), (unsigned long long)texture_key,
-             (unsigned long long)(tt ? tt->memory : 0), tt ? tt->width : 0, tt ? tt->height : 0, (unsigned long long)c.x[3],
-             v.base_level, v.levels, v.min_layer, v.layers, v.swizzle, v.format);
-     }
-     if (v.swizzle)
+-            (unsigned long long)(tt ? tt->memory : 0), tt ? tt->width : 0, tt ? tt->height : 0, (unsigned long long)c.x[3],
+-            v.base_level, v.levels, v.min_layer, v.layers, v.swizzle, v.format);
+-    }
+-    if (v.swizzle)
 -        if (auto* t = get<Texture>(c.x[2])) t->pool_swizzle = v.swizzle;
-+        if (auto* t = get<Texture>(texture_key)) t->pool_swizzle = v.swizzle;
-     if (auto* d = get<DescriptorPool>(c.x[0])) {
-         std::lock_guard lk(objects_lock());
-         uint32_t id = uint32_t(c.x[1]);
-@@ -610,15 +714,19 @@
-         if (auto it = d->textures.find(id); it != d->textures.end()) before.has = true, before.texture = it->second;
-         if (auto it = d->snapshots.find(id); it != d->snapshots.end()) before.snapshot = it->second;
-         if (auto it = d->views.find(id); it != d->views.end()) before.has_view = true, before.view = it->second;
-+        // Acquire before releasing: the descriptor can resolve to this slot's own snapshot.
-+        const uint64_t snapshot = texture_key ? make_snapshot(texture_key) : 0;
-+        if (texture_key && !snapshot) throw std::invalid_argument("native texture registration lost resource identity");
-         note_pool_change(c.x[0], id, before);
-         uint64_t old = before.texture;
+-    if (auto* d = get<DescriptorPool>(c.x[0])) {
+-        std::lock_guard lk(objects_lock());
+-        uint32_t id = uint32_t(c.x[1]);
+-        PoolEntry before;  // what a replay in flight still has to see in this slot (nvn_incarnation.cpp)
+-        if (auto it = d->textures.find(id); it != d->textures.end()) before.has = true, before.texture = it->second;
+-        if (auto it = d->snapshots.find(id); it != d->snapshots.end()) before.snapshot = it->second;
+-        if (auto it = d->views.find(id); it != d->views.end()) before.has_view = true, before.view = it->second;
+-        note_pool_change(c.x[0], id, before);
+-        uint64_t old = before.texture;
 -        d->textures[id] = c.x[2];
-+        d->textures[id] = texture_key;
-         if (auto s = d->snapshots.find(uint32_t(c.x[1])); s != d->snapshots.end()) drop_snapshot(s->second);
+-        if (auto s = d->snapshots.find(uint32_t(c.x[1])); s != d->snapshots.end()) drop_snapshot(s->second);
 -        if (uint64_t snap = make_snapshot(c.x[2])) d->snapshots[uint32_t(c.x[1])] = snap;
 -        auto& slots = g_registered[c.x[2]];  // re-registered every frame: keep each slot once
-+        d->snapshots.erase(id);
-+        if (snapshot) d->snapshots[id] = snapshot;
-+        auto& slots = g_registered[texture_key];  // re-registered every frame: keep each slot once
-         std::pair<uint64_t, uint32_t> slot{c.x[0], uint32_t(c.x[1])};
-         if (std::find(slots.begin(), slots.end(), slot) == slots.end()) slots.push_back(slot);
+-        std::pair<uint64_t, uint32_t> slot{c.x[0], uint32_t(c.x[1])};
+-        if (std::find(slots.begin(), slots.end(), slot) == slots.end()) slots.push_back(slot);
 -        if (old && old != c.x[2]) release_kept(old);
-+        if (old && old != texture_key) release_kept(old);
-         // A view setting only a base level, first layer or format counts too (it was dropped: level 0 sampled).
-         if (v.base_level || v.levels || v.min_layer || v.layers || v.swizzle || v.format)
-             d->views[uint32_t(c.x[1])] = v;
-@@ -652,6 +760,19 @@
+-        // A view setting only a base level, first layer or format counts too (it was dropped: level 0 sampled).
+-        if (v.base_level || v.levels || v.min_layer || v.layers || v.swizzle || v.format)
+-            d->views[uint32_t(c.x[1])] = v;
+-        else
+-            d->views.erase(uint32_t(c.x[1]));
+-    }
++        auto* texture = get<Texture>(registration.snapshot_key());
++        log("nvn: captured pool registration id=%u texture=%llx size=%ux%u", uint32_t(c.x[1]),
++            (unsigned long long)registration.source_key(), texture ? texture->width : 0, texture ? texture->height : 0);
++    }
++    registration.register_slot(c.x[0], uint32_t(c.x[1]), view);
+ }
  
+ void DescriptorPoolGetMemoryPool(CPU& c) {
+@@ -650,8 +727,65 @@
+ 
+ }  // namespace
+ 
++NativeTextureRegistration NativeTextureRegistration::capture(uint64_t descriptor) {
++    std::lock_guard guard(objects_lock());
++    const uint64_t source = descriptor ? texture_identity_locked(descriptor) : 0;
++    const uint64_t snapshot = source ? make_snapshot(source) : 0;
++    if (source && !snapshot) throw std::invalid_argument("native texture registration lost resource identity");
++    return NativeTextureRegistration(source, snapshot);
++}
++
++NativeTextureRegistration::~NativeTextureRegistration() {
++    if (pending_ && snapshot_) { std::lock_guard guard(objects_lock()); drop_snapshot(snapshot_); }
++}
++
++void NativeTextureRegistration::register_slot(uint64_t pool, uint32_t id, const ViewInfo& view) {
++    std::lock_guard guard(objects_lock());
++    if (!pending_) throw std::invalid_argument("native texture registration already committed");
++    auto object = objects().find(pool);
++    auto* target = object == objects().end() ? nullptr : dynamic_cast<DescriptorPool*>(object->second.get());
++    if (!target || id >= target->count) throw std::invalid_argument("native texture registration pool or slot");
++    PoolEntry before;
++    if (auto it = target->textures.find(id); it != target->textures.end()) before.has = true, before.texture = it->second;
++    if (auto it = target->snapshots.find(id); it != target->snapshots.end()) before.snapshot = it->second;
++    if (auto it = target->views.find(id); it != target->views.end()) before.has_view = true, before.view = it->second;
++    if (view.swizzle) {
++        if (auto it = objects().find(source_); it != objects().end())
++            if (auto* texture = dynamic_cast<Texture*>(it->second.get())) texture->pool_swizzle = view.swizzle;
++        if (auto it = objects().find(snapshot_); it != objects().end())
++            if (auto* texture = dynamic_cast<Texture*>(it->second.get())) texture->pool_swizzle = view.swizzle;
++    }
++    note_pool_change(pool, id, before);
++    target->textures[id] = source_;
++    if (snapshot_) target->snapshots[id] = snapshot_; else target->snapshots.erase(id);
++    if (view.base_level || view.levels || view.min_layer || view.layers || view.swizzle || view.format) target->views[id] = view;
++    else target->views.erase(id);
++    // The new slot now owns the captured reference, including self-registration.
++    pending_ = false;
++    if (before.snapshot) drop_snapshot(before.snapshot);
++    if (source_) {
++        auto& slots = g_registered[source_];
++        const std::pair<uint64_t,uint32_t> slot{pool,id};
++        if (std::find(slots.begin(),slots.end(),slot)==slots.end()) slots.push_back(slot);
++    }
++    if (before.texture && before.texture != source_) release_kept(before.texture);
++}
++
  NX_HLE("nvnMemoryPoolInitialize", MemoryPoolInitialize);
  NX_HLE("nvnMemoryPoolFinalize", MemoryPoolFinalize);
 +NX_HLE("nvnMemoryPoolSetDebugLabel", MemoryPoolSetDebugLabel);
@@ -5958,7 +6031,7 @@
  NX_HLE("nvnMemoryPoolMap", MemoryPoolMap);
  NX_HLE("nvnMemoryPoolMapVirtual", MemoryPoolMapVirtual);
  NX_HLE("nvnTextureWriteTexels", TextureWriteTexels);
-@@ -663,6 +784,7 @@
+@@ -663,6 +797,7 @@
  NX_HLE("nvnMemoryPoolFlushMappedRange", MemoryPoolFlushMappedRange);
  NX_HLE("nvnMemoryPoolInvalidateMappedRange", MemoryPoolInvalidateMappedRange);
  NX_HLE("nvnBufferInitialize", BufferInitialize);
@@ -5966,7 +6039,7 @@
  NX_HLE("nvnBufferFinalize", BufferFinalize);
  NX_HLE("nvnBufferMap", BufferMap);
  NX_HLE("nvnBufferGetAddress", BufferGetAddress);
-@@ -685,6 +807,7 @@
+@@ -685,6 +820,7 @@
  NX_HLE("nvnTextureGetMemoryPool", TextureGetMemoryPool);
  NX_HLE("nvnTextureGetMemoryOffset", TextureGetMemoryOffset);
  NX_HLE("nvnTextureGetStorageSize", TextureGetStorageSize);
@@ -5974,7 +6047,7 @@
  NX_HLE("nvnTextureGetDepthStencilMode", TextureGetDepthStencilMode);
  NX_HLE("nvnSamplerPoolInitialize", DescriptorPoolInitialize);
  NX_HLE("nvnTexturePoolInitialize", DescriptorPoolInitialize);
-@@ -702,4 +825,9 @@
+@@ -702,4 +838,9 @@
  NX_HLE("nvnDeviceGetTexelFetchHandle", DeviceGetTexelFetchHandle);
  NX_HLE("nvnDeviceGetImageHandle", DeviceGetImageHandle);
  
@@ -6919,6 +6992,15 @@
  
  namespace nx {
  HWND g_window = nullptr;
+@@ -63,7 +65,7 @@
+ }
+ 
+ void exit_thread() { ExitThread(0); }
+-void exit_process(int code) { ExitProcess(UINT(code)); }
++void exit_process(int code) { ExitProcess(UINT(native_exit_policy().process_status(uint32_t(code)))); }
+ void sleep_ns(int64_t ns) { std::this_thread::sleep_for(std::chrono::nanoseconds(ns)); }
+ void yield() { SwitchToThread(); }
+ void set_thread_name(const char*) {}
 @@ -148,9 +150,10 @@
  
  static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM w, LPARAM l) {
@@ -6927,7 +7009,7 @@
          case WM_CLOSE:
 -            log("window closed");
 -            ExitProcess(0);
-+            if(native_exit_policy().request_close()){log("window closed");ExitProcess(0);}
++            if(native_exit_policy().request_close()){log("window closed");exit_process(0);}
 +            log("window close deferred by application exit lock");return 0;
          case WM_KEYDOWN:
              if (w == VK_F11) toggle_fullscreen(h);
@@ -7176,10 +7258,17 @@
  
  std::shared_ptr<Service> application_functions() {
      return svc("IApplicationFunctions", [](Service& s) {
-@@ -118,6 +135,23 @@
+@@ -118,6 +135,30 @@
              log("am: desired language = %s", tag);
              c.push<uint64_t>(code);
              return 0u;
++        };
++        s.cmds[22] = [](IpcCtx& c) { // SetTerminateResult(u32): recorded process outcome, not an exit request.
++            if(!c.in||(c.in_size!=4&&c.in_size!=8)||!c.a.empty()||!c.b.empty()||!c.x.empty()||!c.c.empty()||!c.in_copy.empty()||!c.in_move.empty()||!c.in_objects.empty()||c.pid||c.send_pid)return 0xe401u;
++            if(c.in_size==8&&c.arg<uint32_t>(4)!=0)return 0xe401u;
++            const auto result=c.arg<uint32_t>(0);
++            c.commit_reply=[result]{native_exit_policy().set_termination_result(result);log("am: native application termination result stored=%08x",result);};
++            return 0u;
 +        };
 +        s.cmds[23] = [](IpcCtx& c) { // GetDisplayVersion: owner's pinned application control metadata.
 +            if(c.in_size||!c.a.empty()||!c.b.empty()||!c.x.empty()||!c.c.empty()||!c.in_copy.empty()||!c.in_move.empty()||!c.in_objects.empty())return 0xe401u;
@@ -7221,7 +7310,7 @@
  
  namespace nx {
  
-@@ -24,10 +36,154 @@
+@@ -24,10 +36,168 @@
      s.cmds[1] = [](IpcCtx& c) { c.push_object(parental_control()); return 0u; };  // CreateServiceWithoutInitialize
  }
  
@@ -7339,6 +7428,20 @@
 +std::shared_ptr<Service> native_mii_database(){
 +    auto defaults=std::make_shared<std::array<mii::CharInfo,6>>();for(unsigned i=0;i<defaults->size();++i){std::array<uint8_t,16> id{};if(BCryptGenRandom(nullptr,id.data(),ULONG(id.size()),BCRYPT_USE_SYSTEM_PREFERRED_RNG)<0)fatal("native Mii preset entropy");(*defaults)[i]=mii::build_default(i,id);}
 +    return make("IMiiDatabaseService",[defaults](Service& service){
++        service.cmds[21]=[](IpcCtx& ctx){ // GetIndex(CharInfo): no user record exists in this native profile.
++            if(ctx.in_size!=sizeof(mii::CharInfo)||!ctx.in||!ctx.a.empty()||!ctx.b.empty()||!ctx.x.empty()||!ctx.c.empty()||!ctx.in_copy.empty()||!ctx.in_move.empty()||!ctx.in_objects.empty()||ctx.pid||ctx.send_pid)return 0xe401u;
++            const auto info=ctx.arg<mii::CharInfo>(0);if(info.Verify()!=mii::ValidationResult::NoErrors)return 0xc87eu;
++            log("mii: native GetIndex user database empty; returning not found");return 0x87eu;
++        };
++        service.cmds[5]=[](IpcCtx& ctx){ // SDK53 UpdateLatest: CharInfo[88], SourceFlag[4].
++            if(ctx.in_size!=sizeof(mii::CharInfo)+4||!ctx.in||!ctx.a.empty()||!ctx.b.empty()||!ctx.x.empty()||!ctx.c.empty()||!ctx.in_copy.empty()||!ctx.in_move.empty()||!ctx.in_objects.empty()||ctx.pid||ctx.send_pid)return 0xe401u;
++            const auto sources=ctx.arg<uint32_t>(sizeof(mii::CharInfo));if(sources&~3u)return 0x27eu;
++            // MiiManager::UpdateLatest refreshes user-database records, not built-in presets.
++            if(!(sources&1))return 0x87eu;
++            const auto info=ctx.arg<mii::CharInfo>(0);if(info.Verify()!=mii::ValidationResult::NoErrors)return 0xc87eu;
++            log("mii: native UpdateLatest user database empty; returning not found");
++            return 0x87eu;
++        };
 +        service.cmds[6]=[](IpcCtx& ctx){
 +            if(ctx.in_size!=12||!ctx.in||!ctx.a.empty()||!ctx.b.empty()||!ctx.x.empty()||!ctx.c.empty()||!ctx.in_copy.empty()||!ctx.in_move.empty()||!ctx.in_objects.empty())return 0xe401u;
 +            const auto age=ctx.arg<uint32_t>(0),gender=ctx.arg<uint32_t>(4),race=ctx.arg<uint32_t>(8);if(age>3||gender>2||race>3)return 0x27eu;
@@ -7380,7 +7483,7 @@
  
  ServiceRegistrar r_lm("lm", [] {
      return make("lm", [](Service& s) {
-@@ -35,9 +191,17 @@
+@@ -35,9 +205,17 @@
      });
  });
  
@@ -8499,19 +8602,21 @@
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,191 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +// Same compiled runtime as the game, but no guest modules are loaded or executed.
 +#include <nx/runtime.h>
 +#include "ipc.h"
++#include "native_exit_policy.h"
 +#include "platform.h"
 +#include "nvn/native_device.h"
 +#include "nvn/native_raster_policy.h"
 +#include "nvn/nvn_vk.h"
 +#include "nvn/nvn_draw_state.h"
 +#include "nvn/sdk53_texture_wire.h"
++#include "nvn/native_texture_registration.h"
 +#include "native_mii/random.h"
 +namespace nx::nvn {std::recursive_mutex& gpu_lock();GpuImage* ensure_contents(VkCommandBuffer,uint64_t);}
 +#include <iostream>
@@ -8557,6 +8662,23 @@
 + for(unsigned i=0;i<3;++i){nx::IpcCtx message;message.cmd=1;check(common->handle(message)==0);}
 + uint8_t on[4]={1,0,0,0};nx::IpcCtx operation;operation.cmd=11;operation.in=on;operation.in_size=4;check(self->handle(operation)==0);nx::IpcCtx before_notification;before_notification.cmd=1;check(common->handle(before_notification)!=0);operation.commit_reply();nx::IpcCtx mode_message;mode_message.cmd=1;check(common->handle(mode_message)==0&&mode_message.out.size()==4&&mode_message.arg<uint32_t>(0)==0);uint32_t mode_value=0;std::memcpy(&mode_value,mode_message.out.data(),4);check(mode_value==30);
 + auto apm=nx::make_service("apm");nx::IpcCtx session_request;session_request.cmd=0;check(apm->handle(session_request)==0&&session_request.out_objects.size()==1);auto session=session_request.out_objects[0];uint32_t configuration[2]={1,0x92220007};nx::IpcCtx set_performance;set_performance.cmd=0;set_performance.in=reinterpret_cast<uint8_t*>(configuration);set_performance.in_size=8;check(session->handle(set_performance)==0);uint32_t mode=1;nx::IpcCtx get_performance;get_performance.cmd=1;get_performance.in=reinterpret_cast<uint8_t*>(&mode);get_performance.in_size=4;check(session->handle(get_performance)==0);uint32_t stored=0;std::memcpy(&stored,get_performance.out.data(),4);check(stored==0);set_performance.commit_reply();get_performance.out.clear();check(session->handle(get_performance)==0);std::memcpy(&stored,get_performance.out.data(),4);check(stored==configuration[1]);
++ {
++ nx::IpcCtx open{};open.cmd=20;check(proxy->handle(open)==0&&open.out_objects.size()==1);auto functions=open.out_objects[0];
++ uint32_t value[2]={0xf6712345u,0};nx::IpcCtx request{};request.cmd=22;request.in=reinterpret_cast<uint8_t*>(value);request.in_size=4;
++ check(nx::native_exit_policy().termination_status()==0);check(functions->handle(request)==0);check(bool(request.commit_reply));check(request.out.empty()&&request.out_copy.empty()&&request.out_move.empty());check(nx::native_exit_policy().termination_status()==0);request.commit_reply();check(nx::native_exit_policy().termination_status()==value[0]);
++ for(unsigned malformed=0;malformed<6;++malformed){nx::IpcCtx bad{};bad.cmd=22;bad.in=reinterpret_cast<uint8_t*>(value);bad.in_size=4;if(malformed==0)bad.in_size=12;if(malformed==1)bad.in=nullptr;if(malformed==2)bad.a.push_back({1,4});if(malformed==3)bad.in_copy.push_back(1);if(malformed==4)bad.send_pid=true;if(malformed==5){bad.in_size=8;value[1]=1;}check(functions->handle(bad)==0xe401u&&!bad.commit_reply);check(nx::native_exit_policy().termination_status()==value[0]);value[1]=0;}
++ value[0]=0;nx::IpcCtx reset{};reset.cmd=22;reset.in=reinterpret_cast<uint8_t*>(value);reset.in_size=8;check(functions->handle(reset)==0);check(nx::native_exit_policy().termination_status()!=0);reset.commit_reply();check(nx::native_exit_policy().termination_status()==0);
++ }
++ {
++ uint32_t key=0;nx::IpcCtx open{};open.cmd=0;open.in=reinterpret_cast<uint8_t*>(&key);open.in_size=4;auto manager=nx::make_service("mii:u");check(manager->handle(open)==0&&open.out_objects.size()==1);auto database=open.out_objects[0];
++ nx::IpcCtx preset{};preset.cmd=7;preset.in=reinterpret_cast<uint8_t*>(&key);preset.in_size=4;check(database->handle(preset)==0&&preset.out.size()==88);
++ std::array<uint8_t,92> bytes{};std::memcpy(bytes.data(),preset.out.data(),88);
++ for(uint32_t sources:{0u,1u,2u,3u}){std::memcpy(bytes.data()+88,&sources,4);const auto before=bytes;nx::IpcCtx refresh{};refresh.cmd=5;refresh.in=bytes.data();refresh.in_size=bytes.size();check(database->handle(refresh)==0x87eu);check(refresh.out.empty()&&!refresh.commit_reply&&!refresh.validate_reply&&bytes==before);}
++ uint32_t source=4;std::memcpy(bytes.data()+88,&source,4);nx::IpcCtx invalid{};invalid.cmd=5;invalid.in=bytes.data();invalid.in_size=bytes.size();check(database->handle(invalid)==0x27eu);source=1;std::memcpy(bytes.data()+88,&source,4);auto malformed=bytes;malformed[offsetof(nx::mii::CharInfo,height)]=255;invalid.in=malformed.data();check(database->handle(invalid)==0xc87eu);
++ for(unsigned test=0;test<5;++test){nx::IpcCtx bad{};bad.cmd=5;bad.in=bytes.data();bad.in_size=bytes.size();if(test==0)bad.in_size=88;if(test==1)bad.in=nullptr;if(test==2)bad.b.push_back({1,88});if(test==3)bad.in_move.push_back(1);if(test==4)bad.send_pid=true;check(database->handle(bad)==0xe401u&&bad.out.empty()&&!bad.commit_reply);}
++ nx::IpcCtx index{};index.cmd=21;index.in=bytes.data();index.in_size=88;const auto unchanged=bytes;check(database->handle(index)==0x87eu);check(index.out.empty()&&!index.commit_reply&&bytes==unchanged);index.in=malformed.data();check(database->handle(index)==0xc87eu);index.in=bytes.data();index.in_size=84;check(database->handle(index)==0xe401u);index.in_size=88;index.in_copy.push_back(1);check(database->handle(index)==0xe401u);
++ nx::IpcCtx count{};count.cmd=2;count.in=reinterpret_cast<uint8_t*>(&source);count.in_size=4;check(database->handle(count)==0&&count.arg<uint32_t>(0)==1);uint32_t users=99;std::memcpy(&users,count.out.data(),4);check(users==0);
++ }
 + if(gpu){check(nx::nvn::initialize_native_device(device,0));check(nx::nvn::native_device_alive(device));check(nx::nvn::vk_device()!=VK_NULL_HANDLE);check(nx::nvn::native_window_origin()==0);nx::nvn::set_native_origin(device,1);check(nx::nvn::native_window_origin()==1);const auto output=nx::kernel_alloc(4,16);nx::vm_set(output,4,nx::kMemHeap,3);nx::st<uint32_t>(output,0xdeadbeef);nx::CPU query{};query.x[0]=device;query.x[1]=59;query.x[2]=output;auto getter=nx::hle_lookup("nvnDeviceGetInteger");check(getter!=nullptr);getter(query);check(nx::ld<uint32_t>(output)==0);
 + for(uint32_t property:{40u,50u,59u,66u,67u,68u,69u,71u,72u,73u,74u,75u,76u,87u,97u}){query.x[0]=device;query.x[1]=property;getter(query);check(nx::ld<uint32_t>(output)==0);}
 + for(uint32_t property:{23u,24u,42u,45u,55u,56u,58u,61u,62u,63u,64u,65u}){query.x[0]=device;query.x[1]=property;getter(query);check(nx::ld<uint32_t>(output)>0);}
@@ -8611,8 +8733,15 @@
 + check(pool.snapshots.at(1)==snapshot);check(nx::nvn::get<nx::nvn::Texture>(snapshot)->width==8);
 + const auto second_pool_id=nx::kernel_alloc(128,16);auto& second_pool=nx::nvn::make<nx::nvn::DescriptorPool>(second_pool_id);second_pool.count=4;
 + args.x[0]=second_pool_id;args.x[1]=1;args.x[2]=descriptor;args.x[3]=0;register_texture(args);check(second_pool.snapshots.at(1)==snapshot);
++ auto pending=nx::nvn::NativeTextureRegistration::capture(descriptor);check(pending.snapshot_key()==snapshot);
 + args.x[0]=pool_id;finalize_texture_pool(args);check(nx::nvn::get<nx::nvn::Texture>(snapshot)!=nullptr);check(nx::nvn::get<nx::nvn::Texture>(snapshot)->image&&nx::nvn::get<nx::nvn::Texture>(snapshot)->image->rendered);
-+ args.x[0]=second_pool_id;finalize_texture_pool(args);check(nx::nvn::get<nx::nvn::Texture>(snapshot)==nullptr);nx::nvn::destroy(replacement);
++ args.x[0]=second_pool_id;finalize_texture_pool(args);check(nx::nvn::get<nx::nvn::Texture>(snapshot)!=nullptr);
++ const auto final_pool_id=nx::kernel_alloc(128,16);auto& final_pool=nx::nvn::make<nx::nvn::DescriptorPool>(final_pool_id);final_pool.count=4;
++ bool bad_slot=false;try{pending.register_slot(final_pool_id,4,{});}catch(const std::invalid_argument&){bad_slot=true;}check(bad_slot&&final_pool.snapshots.empty());
++ pending.register_slot(final_pool_id,1,{});check(final_pool.snapshots.at(1)==snapshot);check(nx::nvn::get<nx::nvn::Texture>(snapshot)->image&&nx::nvn::get<nx::nvn::Texture>(snapshot)->image->rendered);
++ bool duplicate=false;try{pending.register_slot(final_pool_id,1,{});}catch(const std::invalid_argument&){duplicate=true;}check(duplicate);
++ {auto abandoned=nx::nvn::NativeTextureRegistration::capture(descriptor);args.x[0]=final_pool_id;finalize_texture_pool(args);check(nx::nvn::get<nx::nvn::Texture>(snapshot)!=nullptr);}
++ check(nx::nvn::get<nx::nvn::Texture>(snapshot)==nullptr);nx::nvn::destroy(replacement);
 + }
 + const auto volume_key=nx::kernel_alloc(256,16),volume_data=nx::kernel_alloc(256,16),volume_region=nx::kernel_alloc(32,16);nx::vm_set(volume_data,256,nx::kMemHeap,3);nx::vm_set(volume_region,32,nx::kMemHeap,3);
 + auto& volume=nx::nvn::make<nx::nvn::Texture>(volume_key);volume.target=2;volume.width=volume.height=volume.depth=4;volume.levels=1;volume.format=0x25;volume.samples=0;
@@ -8672,7 +8801,7 @@
 +#include "native_exit_policy.h"
 +#include <iostream>
 +#include <stdexcept>
-+int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("exit policy assertion");};nx::NativeExitPolicy p;check(!p.is_locked());check(!p.lock_exit()&&p.is_locked());check(!p.lock_exit()&&p.is_locked());check(!p.request_close()&&p.is_locked());check(p.unlock_exit()&&!p.is_locked());check(p.lock_exit());nx::NativeExitPolicy q;check(q.request_close());check(q.lock_exit());std::cout<<"native_exit_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
++int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("exit policy assertion");};nx::NativeExitPolicy p;check(!p.is_locked());check(!p.lock_exit()&&p.is_locked());check(!p.lock_exit()&&p.is_locked());check(!p.request_close()&&p.is_locked());check(p.unlock_exit()&&!p.is_locked());check(p.lock_exit());nx::NativeExitPolicy q;check(q.request_close());check(q.lock_exit());check(p.termination_status()==0);check(p.process_status(0)==0);p.set_termination_result(0xf6712345u);check(p.termination_status()==0xf6712345u);check(p.process_status(0)==0xf6712345u);check(p.process_status(1)==1);check(p.process_status(0xc0000005u)==0xc0000005u);check(!p.is_locked());p.set_termination_result(0);check(p.process_status(0)==0);std::cout<<"native_exit_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/native_font_bundle_test.cpp
 @@ -0,0 +1,5 @@

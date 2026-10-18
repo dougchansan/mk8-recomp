@@ -4,7 +4,7 @@
   "license": "MIT",
   "license_sha256": "7f728cfaa94ff27c2a40c906dac12564a216077ceb017fb2d01cc29ba6697720",
   "local_changes_license": "GPL-3.0-or-later",
-  "patch_sha256": "d7317b8bc5d787e789e40c0d4fc39ae2c946c9dbe55affc90b9adfb06594630e",
+  "patch_sha256": "0d486424dc7377299a310fdfcb56491bee863552c132904962228ac8093f0d18",
   "changed_files": [
     "CMakeLists.txt",
     "games/mk8d/game.cpp",
@@ -54,6 +54,7 @@
     "runtime/src/nvn/native_texture_clear_view.h",
     "runtime/src/nvn/native_texture_format.h",
     "runtime/src/nvn/native_texture_layers.h",
+    "runtime/src/nvn/native_texture_registration.h",
     "runtime/src/nvn/native_volume_profile.h",
     "runtime/src/nvn/nvn.h",
     "runtime/src/nvn/nvn_cmd.cpp",

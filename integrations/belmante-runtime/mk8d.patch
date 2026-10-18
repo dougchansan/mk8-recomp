@@ -171,7 +171,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,16 +322,41 @@
+@@ -208,19 +322,50 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -196,17 +196,17 @@
 +    if(NOT NX_RUNTIME_OBJECT_DIR)
 +        target_include_directories(nx_runtime_objects PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_SDK}/Include")
 +    endif()
-+    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt)
++    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt mfplat mfuuid wmcodecdspuuid)
 +    if(NX_TESTS)
 +        add_executable(native_device_fixture tests/native_device_fixture.cpp $<TARGET_OBJECTS:nx_runtime_objects>)
 +        target_compile_definitions(native_device_fixture PRIVATE NX_AUTHORED_IMAGE_PATH="${NX_ROMFS_FIXTURES}/valid.bin")
 +        target_include_directories(native_device_fixture PRIVATE runtime/include runtime/src "${NX_VULKAN_SDK}/Include")
-+        target_link_libraries(native_device_fixture PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt)
++        target_link_libraries(native_device_fixture PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt mfplat mfuuid wmcodecdspuuid mfreadwrite)
 +        target_link_options(native_device_fixture PRIVATE /STACK:67108864 /HIGHENTROPYVA:NO /MAP)
 +        add_test(NAME native_device_cpu COMMAND native_device_fixture)
 +        add_executable(native_sdk_mii_probe tests/native_sdk_mii_probe.cpp $<TARGET_OBJECTS:nx_runtime_objects>)
 +        target_include_directories(native_sdk_mii_probe PRIVATE runtime/include runtime/src "${NX_VULKAN_SDK}/Include")
-+        target_link_libraries(native_sdk_mii_probe PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt)
++        target_link_libraries(native_sdk_mii_probe PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt mfplat mfuuid wmcodecdspuuid)
 +        target_link_options(native_sdk_mii_probe PRIVATE /STACK:67108864 /HIGHENTROPYVA:NO /MAP)
 +
 +    endif()
@@ -218,6 +218,15 @@
      if(MSVC)
          # Keep host allocations low so the guest ranges (0x40_0000_0000..0x70_0000_0000) are always free; a big
          # main-thread stack (recompiled calls nest deeply); a link map for tools/symbolize.py.
+         target_link_options(${NX_GAME} PRIVATE /STACK:67108864 /HIGHENTROPYVA:NO /MAP)
+     endif()
+ endif()
++
++if(NX_TESTS)
++    add_executable(native_avc_sps_test tests/native_avc_sps_test.cpp)
++    target_include_directories(native_avc_sps_test PRIVATE runtime/src)
++    add_test(NAME native_avc_sps COMMAND native_avc_sps_test)
++endif()
 --- /dev/null
 +++ b/games/mk8d/game.cpp
 @@ -0,0 +1,9 @@
@@ -712,16 +721,18 @@
  uint64_t g_sampling = 0;
  
  // Scripted input for automated runs: NX_INPUT="3300:A,3900:A,4200:Down" holds the button for 8 frames from the
-@@ -85,7 +89,7 @@
+@@ -85,8 +89,9 @@
          std::lock_guard lk(m);
          if (seen.insert({id, hle_current_name()}).second) log("hid: reads id %#x via %s", id, hle_current_name());
      }
 -    if (id != 0) return;  // only player 1 is connected
 +    if (!native_policy.style(id)) return;
      PadState p = read();
++    if(std::getenv("NX_TRACE_INPUT")){static thread_local uint64_t previous=0;if(previous!=p.buttons){log("hid: delivered frame=%llu id=%u buttons=%llx",(unsigned long long)g_frame,id,(unsigned long long)p.buttons);previous=p.buttons;}}
      static bool pressed = false;
      if (p.buttons && !pressed) log("hid: first buttons %llx", (unsigned long long)p.buttons), pressed = true;
-@@ -173,8 +177,19 @@
+     st<uint64_t>(out + 8, p.buttons);
+@@ -173,8 +178,19 @@
  void GetNpadStyleSet(CPU& c) {
      static int logged = 0;
      if (logged++ < 4) log("hid: GetNpadStyleSet id %#x", ld<uint32_t>(c.x[0]));
@@ -743,7 +754,7 @@
  
  void BindNpadStyleSetUpdateEvent(CPU& c) {  // (const u32& id, SystemEventType*, EventClearMode)
      uint64_t create = find_symbol("_ZN2nn2os17CreateSystemEventEPNS0_15SystemEventTypeENS0_14EventClearModeEb");
-@@ -204,10 +219,10 @@
+@@ -204,10 +220,10 @@
  
  }  // namespace
  
@@ -758,7 +769,7 @@
  NX_HLE("_ZN2nn3hid27BindNpadStyleSetUpdateEventERKjPNS_2os15SystemEventTypeENS3_14EventClearModeE", BindNpadStyleSetUpdateEvent);
  NX_HLE("_ZN2nn3hid15GetNpadStyleSetERKj", GetNpadStyleSet);
  NX_HLE("_ZN2nn3hid12GetNpadStateEPNS0_16NpadFullKeyStateERKj", GetNpadState);
-@@ -227,7 +242,7 @@
+@@ -227,7 +243,7 @@
  NX_HLE("_ZN2nn3hid14GetMouseStatesEPNS0_10MouseStateEi", GetMouseStates);
  NX_HLE("_ZN2nn3hid18InitializeKeyboardEv", noop);
  NX_HLE("_ZN2nn3hid16GetKeyboardStateEPNS0_13KeyboardStateE", GetKeyboardState);
@@ -767,7 +778,7 @@
  NX_HLE("_ZN2nn3hid18SwapNpadAssignmentERKjS2_", noop);
  NX_HLE("_ZN2nn3hid30SetNpadJoyAssignmentModeSingleERKj", noop);
  NX_HLE("_ZN2nn3hid21StartLrAssignmentModeEv", noop);
-@@ -240,3 +255,9 @@
+@@ -240,3 +256,9 @@
  NX_HLE("_ZN2nn3hid22GetSixAxisSensorStatesEPNS0_18SixAxisSensorStateEiRKNS0_19SixAxisSensorHandleE", zero);
  
  }  // namespace nx
@@ -779,7 +790,7 @@
 +NX_HLE("_ZN2nn3hid20GetTouchScreenStatesILm16EEEiPNS0_16TouchScreenStateIXT_EEEi",nx::GetNativeTouchStates);
 --- a/runtime/src/hle_vi.cpp
 +++ b/runtime/src/hle_vi.cpp
-@@ -2,6 +2,9 @@
+@@ -2,7 +2,12 @@
  // (Win32 window / Android surface); its handle is the "native window" the game hands to vkCreateViSurfaceNN, which
  // the Vulkan bridge turns into the platform's surface.
  #include <cstdlib>
@@ -787,19 +798,24 @@
 +#include <stdexcept>
 +#include <string>
  #include <memory>
++#include <vector>
++#include <algorithm>
  #include <mutex>
  #include <thread>
-@@ -10,6 +13,9 @@
+ 
+@@ -10,6 +15,11 @@
  
  #include "kernel.h"
  #include "platform.h"
 +#include "vi_state.h"
 +#include "compiled_callback.h"
 +#include "nvn/native_guest_span.h"
++#include <atomic>
++#include "native_avc_bridge.h"
  
  namespace nx {
  
-@@ -28,30 +34,122 @@
+@@ -28,30 +38,139 @@
  
  namespace {
  
@@ -937,10 +953,27 @@
 +    if(!compiled_callback_target(target))throw std::invalid_argument("compiled codec lookup unavailable");
 +    call(c,target);log("movie: codec-list lookup name=%s index=%lld",name.c_str(),(long long)int64_t(c.x[0]));
 +}
++
++// Diagnostic wrappers preserve the original compiled call and its CPU result.
++void native_codec_stage_observe(CPU& c) {
++    const char* name=hle_current_name();if(!name)throw std::invalid_argument("native codec stage name");
++    const std::string stage=name;const auto target=find_symbol(name);
++    if(!compiled_callback_target(target)||target>=kThunkBase)throw std::invalid_argument("compiled codec stage unavailable");
++    static std::mutex mutex;static std::vector<std::pair<std::string,unsigned>> counts;
++    bool trace=false;
++    if(std::getenv("NX_TRACE_CODEC")){std::lock_guard lock(mutex);auto it=std::find_if(counts.begin(),counts.end(),[&](const auto& x){return x.first==stage;});if(it==counts.end())it=counts.emplace(counts.end(),stage,0);trace=it->second++<12;}
++    if(trace)log("movie: stage enter %s x1=%016llx x2=%016llx x3=%016llx caller=%s",stage.c_str(),(unsigned long long)c.x[1],(unsigned long long)c.x[2],(unsigned long long)c.x[3],describe(c.x[30]).c_str());
++    if(trace&&stage=="_ZN7android10MediaCodec7onErrorEiiPKc"){
++        std::string detail;if(c.x[3])for(size_t n=0;n<128&&nvn::native_guest_span(c.x[3]+n,1,1);++n){const auto ch=ld<uint8_t>(c.x[3]+n);if(!ch)break;detail+=ch>=32&&ch<127?char(ch):'?';}
++        log("movie: asynchronous codec error status=%d hex=%08x action=%d detail=%s",int32_t(c.x[1]),uint32_t(c.x[1]),int32_t(c.x[2]),detail.c_str());
++    }
++    call(c,target);
++    if(trace)log("movie: stage return %s result=%016llx",stage.c_str(),(unsigned long long)c.x[0]);
++}
  
  // The display's vsync: a kernel event a host thread signals every 1/60 s. The game gets it as an nn::os
  // SystemEvent (AttachSystemEvent with our read/write handles, auto clear: each wait consumes one vsync).
-@@ -70,6 +168,7 @@
+@@ -70,6 +189,7 @@
  }
  
  void GetDisplayVsyncEvent(CPU& c) {  // (os::SystemEventType*, Display*)
@@ -948,7 +981,7 @@
      auto r = std::make_shared<KEvent>(), w = std::make_shared<KEvent>();
      r->state = w->state = g_vsync;
      uint32_t hr = handle_add(r), hw = handle_add(w);
-@@ -86,13 +185,25 @@
+@@ -86,13 +206,44 @@
  
  }  // namespace
  
@@ -978,6 +1011,25 @@
 +NX_HLE("_ZNK7android14MediaCodecList15findCodecByNameEPKc",nx::native_codec_lookup_observe);
 +
 +NX_HLE("_ZN7android8OMXCodec18findMatchingCodecsEPKcbS2_jPNS_6VectorINS_7String8EEE",nx::native_find_matching_codecs);
++
++NX_HLE("_ZN5movie7Decoder9ConfigureEPNS_9MediaDataE",nx::native_codec_stage_observe);
++NX_HLE("_ZN5movie7Decoder5StartEv",nx::native_codec_stage_observe);
++NX_HLE("_ZN5movie7Decoder12GetLastErrorEv",nx::native_codec_stage_observe);
++NX_HLE("_ZN5movie7Decoder24AcquireOutputBufferIndexEPiPlPjS1_",nx::native_codec_stage_observe);
++NX_HLE("_ZN5movie7Decoder15GetOutputBufferEiPNS_6BufferEPNS_9MediaDataE",nx::native_codec_stage_observe);
++NX_HLE("_ZN5movie7Decoder15GetOutputBufferEiPNS_6BufferE",nx::native_codec_stage_observe);
++NX_HLE("_ZN7android10MediaCodec9configureERKNS_2spINS_8AMessageEEERKNS1_INS_7SurfaceEEERKNS1_INS_7ICryptoEEEj",nx::native_codec_stage_observe);
++NX_HLE("_ZN7android10MediaCodec5startEv",nx::native_codec_stage_observe);
++NX_HLE("_ZN7android10MediaCodec19dequeueOutputBufferEPmS1_S1_PlPjl",nx::native_codec_stage_observe);
++NX_HLE("_ZN7android10MediaCodec7onErrorEiiPKc",nx::native_codec_stage_observe);
++
++NX_HLE("_ZN7android6ACodec11signalErrorE13OMX_ERRORTYPEi",nx::native_codec_stage_observe);
++NX_HLE("_ZN7android6ACodec21allocateBuffersOnPortEj",nx::native_codec_stage_observe);
++NX_HLE("_ZN7android6ACodec17LoadedToIdleState15allocateBuffersEv",nx::native_codec_stage_observe);
++NX_HLE("_ZN7android6ACodec14configureCodecEPKcRKNS_2spINS_8AMessageEEE",nx::native_codec_stage_observe);
++NX_HLE("_ZN7android28SoftVideoDecoderOMXComponent20internalGetParameterE13OMX_INDEXTYPEPv",nx::native_codec_stage_observe);
++NX_HLE("_ZN7android28SoftVideoDecoderOMXComponent20internalSetParameterE13OMX_INDEXTYPEPv",nx::native_codec_stage_observe);
++NX_HLE("_ZN7android7SoftAVC13onQueueFilledEj",nx::native_codec_stage_observe);
 --- a/runtime/src/ipc.cpp
 +++ b/runtime/src/ipc.cpp
 @@ -36,15 +36,13 @@
@@ -1569,6 +1621,115 @@
 +inline Sdk53AudioCommand sdk53_audio_command(std::span<const uint8_t> bytes){if(bytes.size()<0x14)throw std::invalid_argument("audio command header truncated");uint32_t magic;uint16_t size,id;std::memcpy(&magic,bytes.data(),4);std::memcpy(&size,bytes.data()+4,2);std::memcpy(&id,bytes.data()+6,2);if(magic!=0xcafebabe||size<0x14||size>bytes.size())throw std::invalid_argument("audio command range/magic");return {size,id,bytes[0x10]!=0};}
 +}
 --- /dev/null
++++ b/runtime/src/native_avc_bridge.h
+@@ -0,0 +1,67 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#ifdef _WIN32
++#include "native_mf_avc.h"
++#include "native_avc_sps.h"
++#include <map>
++#include <deque>
++#include <memory>
++#include <mutex>
++#include <optional>
++namespace nx::native_avc {
++inline void com_thread(){struct Apartment{HRESULT status=CoInitializeEx(nullptr,COINIT_MULTITHREADED);Apartment(){native_video::require(status,"Native AVC COM apartment");}~Apartment(){if(SUCCEEDED(status))CoUninitialize();}};static thread_local Apartment apartment;}
++struct Picture {native_video::Frame frame;uint32_t id=0,idr=0;};
++struct State {
++ std::mutex mutex;uint64_t identity=0,pixels=0,pixel_capacity=0;bool failed=false,drained=false;uint32_t no_reorder=0;uint64_t next_token=0;
++ std::optional<native_video::AvcInfo> info;std::unique_ptr<native_video::AvcDecoder> decoder;
++ std::vector<uint8_t> prefix;std::deque<Picture> ready;std::map<int64_t,std::pair<uint32_t,uint32_t>> timestamps;
++ ~State(){decoder.reset();if(pixels){vm_set(pixels,pixel_capacity,kMemFree,0);decommit(pixels,pixel_capacity);}if(identity){vm_set(identity,4096,kMemFree,0);decommit(identity,4096);}}
++ void collect(std::vector<native_video::Frame> frames){for(auto& frame:frames){if(ready.size()>=16)throw std::runtime_error("Native AVC output queue bound");auto it=timestamps.lower_bound(frame.timestamp);if(it==timestamps.end()||it->first!=frame.timestamp){if(it!=timestamps.begin()){auto prior=std::prev(it);if(frame.timestamp>=prior->first&&frame.timestamp-prior->first<=1)it=prior;}if(it==timestamps.end()||std::llabs(it->first-frame.timestamp)>1)throw std::runtime_error("Native AVC output timestamp has no input owner");}ready.push_back({std::move(frame),it->second.first,it->second.second});timestamps.erase(it);}}
++};
++struct Backend {
++ std::mutex mutex;std::map<uint64_t,std::shared_ptr<State>> instances;
++ Backend(){native_video::require(MFStartup(MF_VERSION),"Native AVC MFStartup");}
++ ~Backend(){const HRESULT hr=CoInitializeEx(nullptr,COINIT_MULTITHREADED);instances.clear();MFShutdown();if(SUCCEEDED(hr))CoUninitialize();}
++};
++inline Backend& backend(){static Backend value;return value;}
++inline std::shared_ptr<State> find(uint64_t identity){auto& host=backend();std::lock_guard lock(host.mutex);auto it=host.instances.find(identity);if(it==host.instances.end())throw std::invalid_argument("Unowned native AVC instance");return it->second;}
++inline void result(CPU& c,int32_t status){c.x[0]=uint32_t(status);}
++inline void init(CPU& c){
++ try{if(!nvn::native_guest_span(c.x[0],8,3)||c.x[1]>1)throw std::invalid_argument("Native AVC initialization arguments");const auto output=c.x[0];com_thread();auto& host=backend();auto state=std::make_shared<State>();state->no_reorder=uint32_t(c.x[1]);state->identity=kernel_alloc(4096,4096);vm_set(state->identity,4096,kMemHeap,3);{std::lock_guard lock(host.mutex);host.instances.emplace(state->identity,state);}st<uint64_t>(output,state->identity);log("movie: native MF AVC instance initialized");result(c,0);}catch(const std::exception& e){log("movie: native AVC init failed: %s",e.what());result(c,-5);}
++}
++inline void release(CPU& c){
++ try{com_thread();auto& host=backend();std::shared_ptr<State> state;{std::lock_guard lock(host.mutex);auto it=host.instances.find(c.x[0]);if(it==host.instances.end())throw std::invalid_argument("Unowned native AVC release");state=std::move(it->second);host.instances.erase(it);}std::lock_guard lock(state->mutex);state->failed=true;state->decoder.reset();log("movie: native MF AVC instance released");}catch(const std::exception& e){fatal("native AVC release: %s",e.what());}
++}
++inline void info(CPU& c){
++ try{if(!nvn::native_guest_span(c.x[1],48,3))throw std::invalid_argument("Native AVC info storage");auto state=find(c.x[0]);std::lock_guard lock(state->mutex);if(state->failed){result(c,-2);return;}if(!state->info){result(c,-6);return;}const auto& i=*state->info;const uint32_t values[]={i.profile,i.width,i.height,i.range,i.matrix,i.par_width,i.par_height,i.crop,i.left,i.crop_width,i.top,i.crop_height};for(unsigned n=0;n<12;++n)st<uint32_t>(c.x[1]+4*n,values[n]);result(c,0);}catch(const std::exception& e){log("movie: native AVC info failed: %s",e.what());result(c,-1);}
++}
++inline void decode(CPU& c){
++ std::shared_ptr<State> state;
++ try{
++  if(!nvn::native_guest_span(c.x[1],24,1)||!nvn::native_guest_span(c.x[2],8,3))throw std::invalid_argument("Native AVC decode argument storage");const auto input=ld<uint64_t>(c.x[1]);const auto length=ld<uint32_t>(c.x[1]+8),id=ld<uint32_t>(c.x[1]+12);if(!length||length>16*1024*1024||!nvn::native_guest_span(input,length,1))throw std::invalid_argument("Native AVC compressed input extent");com_thread();state=find(c.x[0]);std::lock_guard lock(state->mutex);if(state->failed||state->drained){result(c,-2);return;}
++  const std::span<const uint8_t> bytes(reinterpret_cast<const uint8_t*>(input),length);const auto nals=native_video::avc_nals(bytes);bool picture=false,idr=false;
++  for(auto nal:nals){if(nal.empty())continue;const auto kind=nal[0]&31;if(kind==7){const auto parsed=native_video::avc_info(nal);if(!state->info){state->decoder=std::make_unique<native_video::AvcDecoder>(parsed.width,parsed.height);state->info=parsed;st<uint64_t>(c.x[2],input);log("movie: native MF AVC headers profile=%u width=%u height=%u",parsed.profile,parsed.width,parsed.height);result(c,4);return;}if(parsed.width!=state->info->width||parsed.height!=state->info->height||parsed.profile!=state->info->profile)throw std::invalid_argument("Native AVC in-instance format change not admitted");}if(kind>=1&&kind<=5){picture=true;idr|=kind==5;}}
++  if(!state->decoder)throw std::invalid_argument("Native AVC picture before SPS");
++  if(!picture){if(state->prefix.size()+bytes.size()>1024*1024)throw std::invalid_argument("Native AVC parameter prefix bound");state->prefix.insert(state->prefix.end(),bytes.begin(),bytes.end());st<uint64_t>(c.x[2],input+length);result(c,1);return;}
++  std::vector<uint8_t> packet;if(!state->prefix.empty()){packet=std::move(state->prefix);packet.insert(packet.end(),bytes.begin(),bytes.end());}else packet.assign(bytes.begin(),bytes.end());
++  if(state->next_token>uint64_t(INT64_MAX/10000000))throw std::invalid_argument("Native AVC timestamp extent");const int64_t timestamp=int64_t(state->next_token++)*10000000;if(state->timestamps.size()>=32)throw std::invalid_argument("Native AVC pending timestamp capacity");if(!state->timestamps.emplace(timestamp,std::pair{id,uint32_t(idr)}).second)throw std::invalid_argument("Native AVC duplicate timestamp owner");auto decoded=state->decoder->push(packet,timestamp);if(state->next_token<=12)log("movie: native AVC input picture=%u token=%llu bytes=%llu outputs=%llu pending=%llu",id,(unsigned long long)(state->next_token-1),(unsigned long long)packet.size(),(unsigned long long)decoded.size(),(unsigned long long)state->timestamps.size());state->collect(std::move(decoded));st<uint64_t>(c.x[2],input+length);result(c,1);
++ }catch(const std::exception& e){if(state){std::lock_guard lock(state->mutex);state->failed=true;}log("movie: native AVC decode failed: %s",e.what());result(c,-2);}
++}
++inline void next(CPU& c){
++ std::shared_ptr<State> state;
++ try{
++  if(!nvn::native_guest_span(c.x[1],24,3)||c.x[2]>1)throw std::invalid_argument("Native AVC output argument storage");com_thread();state=find(c.x[0]);std::lock_guard lock(state->mutex);if(state->failed){result(c,-2);return;}
++  if(c.x[2]&&!state->drained&&state->decoder){state->collect(state->decoder->drain());state->drained=true;}if(state->ready.empty()){result(c,0);return;}
++  auto picture=std::move(state->ready.front());state->ready.pop_front();const auto& frame=picture.frame;const uint64_t size=uint64_t(frame.width)*frame.height*3/2;if(frame.nv12.size()!=size)throw std::invalid_argument("Native AVC decoded extent");
++  if(!state->pixels){state->pixel_capacity=(size+4095)&~uint64_t(4095);state->pixels=kernel_alloc(state->pixel_capacity,4096);vm_set(state->pixels,state->pixel_capacity,kMemHeap,3);}if(size>state->pixel_capacity)throw std::invalid_argument("Native AVC output storage extent");
++  auto* pixels=reinterpret_cast<uint8_t*>(state->pixels);const size_t luma=size_t(frame.width)*frame.height;std::memcpy(pixels,frame.nv12.data(),luma);for(size_t n=0;n<luma/4;++n){pixels[luma+n]=frame.nv12[luma+2*n];pixels[luma+luma/4+n]=frame.nv12[luma+2*n+1];}
++  st<uint64_t>(c.x[1],state->pixels);st<uint32_t>(c.x[1]+8,picture.id);st<uint32_t>(c.x[1]+12,picture.idr);st<uint32_t>(c.x[1]+16,0);static std::atomic<uint64_t> count{0};const auto n=++count;if(n<=12||n%300==0)log("movie: native MF decoded picture=%u bytes=%llu count=%llu",picture.id,(unsigned long long)size,(unsigned long long)n);result(c,2);
++ }catch(const std::exception& e){if(state){std::lock_guard lock(state->mutex);state->failed=true;}log("movie: native AVC output failed: %s",e.what());result(c,-2);}
++}
++}
++NX_HLE("H264SwDecInit",nx::native_avc::init);
++NX_HLE("H264SwDecRelease",nx::native_avc::release);
++NX_HLE("H264SwDecGetInfo",nx::native_avc::info);
++NX_HLE("H264SwDecDecode",nx::native_avc::decode);
++NX_HLE("H264SwDecNextPicture",nx::native_avc::next);
++#endif
+--- /dev/null
++++ b/runtime/src/native_avc_sps.h
+@@ -0,0 +1,36 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++#include <vector>
++#include <span>
++#include <stdexcept>
++#include <array>
++namespace native_video {
++struct AvcInfo {uint32_t profile=0,width=0,height=0,range=0,matrix=2,par_width=1,par_height=1,crop=0,left=0,crop_width=0,top=0,crop_height=0;};
++class AvcBits {
++ std::vector<uint8_t> bytes_;size_t position_=0;
++ public:
++ explicit AvcBits(std::span<const uint8_t> nal){unsigned zeros=0;for(auto byte:nal){if(zeros>=2&&byte==3){zeros=0;continue;}bytes_.push_back(byte);zeros=byte==0?zeros+1:0;}}
++ uint32_t bits(unsigned count){if(count>32||position_+count>bytes_.size()*8)throw std::invalid_argument("Truncated AVC parameter set");uint32_t value=0;for(unsigned n=0;n<count;++n){value=(value<<1)|((bytes_[position_/8]>>(7-position_%8))&1);++position_;}return value;}
++ uint32_t ue(){unsigned zeros=0;while(!bits(1)){if(++zeros>30)throw std::invalid_argument("AVC Golomb extent");}return ((1u<<zeros)-1)+bits(zeros);}
++ int32_t se(){const auto n=ue();return n&1?int32_t((n+1)/2):-int32_t(n/2);}
++};
++inline AvcInfo avc_info(std::span<const uint8_t> nal){
++ if(nal.empty()||(nal[0]&31)!=7)throw std::invalid_argument("AVC SPS required");AvcBits b(nal.subspan(1));AvcInfo info;info.profile=b.bits(8);b.bits(8);b.bits(8);if(b.ue()>31)throw std::invalid_argument("AVC SPS id");
++ if(info.profile!=66&&info.profile!=77&&info.profile!=88)throw std::invalid_argument("Native AVC SPS profile not yet admitted");
++ if(b.ue()>12)throw std::invalid_argument("AVC frame number width");const auto order=b.ue();if(order==0){if(b.ue()>12)throw std::invalid_argument("AVC POC width");}else if(order==1){b.bits(1);b.se();b.se();const auto count=b.ue();if(count>255)throw std::invalid_argument("AVC POC cycle");for(uint32_t n=0;n<count;++n)b.se();}else if(order!=2)throw std::invalid_argument("AVC POC type");
++ if(b.ue()>16)throw std::invalid_argument("AVC reference count");b.bits(1);const uint64_t columns=uint64_t(b.ue())+1,rows=uint64_t(b.ue())+1;const auto progressive=b.bits(1);if(!progressive)b.bits(1);b.bits(1);const auto crop=b.bits(1);uint64_t left=0,right=0,top=0,bottom=0;if(crop){left=b.ue();right=b.ue();top=b.ue();bottom=b.ue();}
++ const uint64_t width=columns*16,height=rows*16*(2-progressive);left*=2;right*=2;top*=2*(2-progressive);bottom*=2*(2-progressive);
++ if(width>4096||height>4096||left+right>=width||top+bottom>=height)throw std::invalid_argument("AVC dimensions/crop");info.width=uint32_t(width);info.height=uint32_t(height);info.crop=crop;info.left=uint32_t(left);info.top=uint32_t(top);info.crop_width=uint32_t(width-left-right);info.crop_height=uint32_t(height-top-bottom);
++ if(b.bits(1)){
++  if(b.bits(1)){const auto aspect=b.bits(8);if(aspect==255){info.par_width=b.bits(16);info.par_height=b.bits(16);if(!info.par_width||!info.par_height)throw std::invalid_argument("AVC pixel aspect");}else{constexpr std::array<std::array<uint32_t,2>,17> ratios={{{1,1},{1,1},{12,11},{10,11},{16,11},{40,33},{24,11},{20,11},{32,11},{80,33},{18,11},{15,11},{64,33},{160,99},{4,3},{3,2},{2,1}}};if(aspect>=ratios.size())throw std::invalid_argument("AVC aspect id");info.par_width=ratios[aspect][0];info.par_height=ratios[aspect][1];}}
++  if(b.bits(1))b.bits(1);if(b.bits(1)){b.bits(3);info.range=b.bits(1);if(b.bits(1)){b.bits(8);b.bits(8);info.matrix=b.bits(8);}}
++ }
++ return info;
++}
++inline std::vector<std::span<const uint8_t>> avc_nals(std::span<const uint8_t> bytes){
++ auto prefix=[&](size_t at)->size_t{if(at+3<=bytes.size()&&bytes[at]==0&&bytes[at+1]==0){if(bytes[at+2]==1)return 3;if(at+4<=bytes.size()&&bytes[at+2]==0&&bytes[at+3]==1)return 4;}return 0;};
++ std::vector<std::span<const uint8_t>> result;size_t start=0;while(start<bytes.size()&&!prefix(start))++start;if(start==bytes.size()){if(!bytes.empty())result.push_back(bytes);return result;}
++ while(start<bytes.size()){const auto length=prefix(start);const auto first=start+length;size_t end=first;while(end<bytes.size()&&!prefix(end))++end;if(end>first)result.push_back(bytes.subspan(first,end-first));start=end;}return result;
++}
++}
+--- /dev/null
 +++ b/runtime/src/native_control_metadata.h
 @@ -0,0 +1,16 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -1653,6 +1814,82 @@
 + void joy_hold(uint32_t value){if(value>1)throw std::invalid_argument("native Joy-Con hold mode");std::lock_guard guard(lock);hold=value;}
 + void disconnect(uint32_t id){std::lock_guard guard(lock);if(id==0)disconnected=true;}
 + uint32_t style(uint32_t id)const{std::lock_guard guard(lock);return initialized&&!disconnected&&id==0&&ids.contains(id)&&(supported&1)?1:0;}
++};
++}
+--- /dev/null
++++ b/runtime/src/native_mf_avc.h
+@@ -0,0 +1,73 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#include <mfapi.h>
++#include <mfidl.h>
++#include <mftransform.h>
++#include <mferror.h>
++#include <wmcodecdsp.h>
++#include <codecapi.h>
++#include <wrl/client.h>
++#include <cstdint>
++#include <cstring>
++#include <vector>
++#include <span>
++#include <stdexcept>
++#include <string>
++#include <limits>
++namespace native_video {
++using Microsoft::WRL::ComPtr;
++inline void require(HRESULT hr,const char* op){if(FAILED(hr))throw std::runtime_error(std::string(op)+" HRESULT="+std::to_string(uint32_t(hr)));}
++struct Frame {uint32_t width=0,height=0;int64_t timestamp=0;std::vector<uint8_t> nv12;};
++// Calls are serialized by the owner, on threads initialized for COM/MF.
++class AvcDecoder {
++ ComPtr<IMFTransform> transform_;uint32_t width_,height_;LONG stride_=0;bool draining_=false;
++ void output_type(){
++  for(DWORD n=0;n<64;++n){ComPtr<IMFMediaType> type;HRESULT hr=transform_->GetOutputAvailableType(0,n,&type);if(hr==MF_E_NO_MORE_TYPES)break;require(hr,"GetOutputAvailableType");GUID subtype{};require(type->GetGUID(MF_MT_SUBTYPE,&subtype),"Output subtype");if(subtype!=MFVideoFormat_NV12)continue;
++   UINT32 w=0,h=0;require(MFGetAttributeSize(type.Get(),MF_MT_FRAME_SIZE,&w,&h),"Output dimensions");if(w!=width_||h!=height_)throw std::runtime_error("Unexpected decoder dimensions");
++   require(transform_->SetOutputType(0,type.Get(),0),"SetOutputType");UINT32 stride=0;
++   if(SUCCEEDED(type->GetUINT32(MF_MT_DEFAULT_STRIDE,&stride)))stride_=LONG(stride);else require(MFGetStrideForBitmapInfoHeader(MFVideoFormat_NV12.Data1,LONG(w),&stride_),"NV12 stride");
++   if(stride_<LONG(w)||stride_>32768)throw std::runtime_error("Unsupported NV12 stride");return;
++  }throw std::runtime_error("Native decoder offers no compatible NV12 output");
++ }
++ std::vector<Frame> receive(){
++  std::vector<Frame> frames;
++  for(unsigned attempt=0;attempt<64;++attempt){
++   MFT_OUTPUT_STREAM_INFO info{};require(transform_->GetOutputStreamInfo(0,&info),"GetOutputStreamInfo");
++   MFT_OUTPUT_DATA_BUFFER output{};ComPtr<IMFSample> allocated;ComPtr<IMFMediaBuffer> memory;
++   if(!(info.dwFlags&MFT_OUTPUT_STREAM_PROVIDES_SAMPLES)){
++    const uint64_t minimum=uint64_t(stride_)*height_*3/2;const uint64_t size=info.cbSize>minimum?info.cbSize:minimum;if(!size||size>64*1024*1024)throw std::runtime_error("Decoder output extent");
++    require(MFCreateSample(&allocated),"MFCreateSample output");require(MFCreateAlignedMemoryBuffer(DWORD(size),info.cbAlignment?info.cbAlignment-1:0,&memory),"MFCreateAlignedMemoryBuffer");require(allocated->AddBuffer(memory.Get()),"AddBuffer output");output.pSample=allocated.Get();
++   }
++   DWORD status=0;HRESULT hr=transform_->ProcessOutput(0,1,&output,&status);if(output.pEvents)output.pEvents->Release();
++   ComPtr<IMFSample> provided;if(output.pSample&&output.pSample!=allocated.Get())provided.Attach(output.pSample);
++   if(hr==MF_E_TRANSFORM_NEED_MORE_INPUT)return frames;
++   if(hr==MF_E_TRANSFORM_STREAM_CHANGE){output_type();continue;}require(hr,"ProcessOutput");
++   if(!output.pSample)throw std::runtime_error("Decoder returned no sample");
++   Frame frame;frame.width=width_;frame.height=height_;require(output.pSample->GetSampleTime(&frame.timestamp),"Decoded sample timestamp");ComPtr<IMFMediaBuffer> buffer;require(output.pSample->ConvertToContiguousBuffer(&buffer),"Contiguous decoder output");
++   BYTE* bytes=nullptr;DWORD capacity=0,size=0;require(buffer->Lock(&bytes,&capacity,&size),"Lock decoder output");
++   const uint64_t minimum=uint64_t(stride_)*height_*3/2;
++   try{
++    if(size<minimum)throw std::runtime_error("Truncated decoder output");frame.nv12.resize(uint64_t(width_)*height_*3/2);
++    for(uint32_t y=0;y<height_;++y)std::memcpy(frame.nv12.data()+uint64_t(y)*width_,bytes+uint64_t(y)*stride_,width_);
++    for(uint32_t y=0;y<height_/2;++y)std::memcpy(frame.nv12.data()+uint64_t(width_)*height_+uint64_t(y)*width_,bytes+uint64_t(stride_)*height_+uint64_t(y)*stride_,width_);
++   }catch(...){buffer->Unlock();throw;}require(buffer->Unlock(),"Unlock decoder output");frames.push_back(std::move(frame));
++  }throw std::runtime_error("Decoder output did not quiesce");
++ }
++ public:
++ AvcDecoder(uint32_t width,uint32_t height):width_(width),height_(height){
++  if(!width||!height||(width&1)||(height&1)||width>4096||height>4096)throw std::invalid_argument("AVC dimensions");
++  require(CoCreateInstance(CLSID_CMSH264DecoderMFT,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&transform_)),"Create native H264 decoder");
++  ComPtr<IMFAttributes> attributes;require(transform_->GetAttributes(&attributes),"Decoder attributes");require(attributes->SetUINT32(CODECAPI_AVLowLatencyMode,TRUE),"Interactive decoder latency");
++  ComPtr<IMFMediaType> input;require(MFCreateMediaType(&input),"Input type");require(input->SetGUID(MF_MT_MAJOR_TYPE,MFMediaType_Video),"Input video");require(input->SetGUID(MF_MT_SUBTYPE,MFVideoFormat_H264),"Input H264");require(MFSetAttributeSize(input.Get(),MF_MT_FRAME_SIZE,width,height),"Input dimensions");require(transform_->SetInputType(0,input.Get(),0),"SetInputType");output_type();require(transform_->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING,0),"Begin streaming");require(transform_->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM,0),"Start stream");
++ }
++ std::vector<Frame> push(std::span<const uint8_t> bytes,int64_t timestamp){
++  if(draining_||bytes.empty()||bytes.size()>16*1024*1024)throw std::invalid_argument("Compressed AVC extent/state");ComPtr<IMFSample> sample;ComPtr<IMFMediaBuffer> buffer;require(MFCreateSample(&sample),"Input sample");require(MFCreateMemoryBuffer(DWORD(bytes.size()),&buffer),"Input buffer");BYTE* data=nullptr;DWORD capacity=0,length=0;require(buffer->Lock(&data,&capacity,&length),"Lock input");std::memcpy(data,bytes.data(),bytes.size());require(buffer->Unlock(),"Unlock input");require(buffer->SetCurrentLength(DWORD(bytes.size())),"Input length");require(sample->AddBuffer(buffer.Get()),"Input sample buffer");require(sample->SetSampleTime(timestamp),"Input timestamp");
++  std::vector<Frame> before;HRESULT hr=transform_->ProcessInput(0,sample.Get(),0);if(hr==MF_E_NOTACCEPTING){before=receive();hr=transform_->ProcessInput(0,sample.Get(),0);}require(hr,"ProcessInput");auto after=receive();for(auto& frame:after)before.push_back(std::move(frame));return before;
++ }
++ std::vector<Frame> drain(){if(!draining_){require(transform_->ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM,0),"End stream");require(transform_->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN,0),"Drain stream");draining_=true;}return receive();}
 +};
 +}
 --- /dev/null
@@ -8880,6 +9117,69 @@
 +#include <iostream>
 +int main(){unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("audio layout assertion");};check(nx::sdk53_audio_u32_getter_offset(0xb9400000u|((0x238u/4)<<10),0xd65f03c0)==0x238);check(nx::sdk53_audio_system_offset(0x91000013u|(0x60u<<10))==0x60);bool bad=false;try{nx::sdk53_audio_u32_getter_offset(0xf9400000,0xd65f03c0);}catch(const std::invalid_argument&){bad=true;}check(bad);std::array<uint8_t,0x130> bytes{};uint32_t magic=0xcafebabe;uint16_t size=0x130,id=15;std::memcpy(bytes.data(),&magic,4);std::memcpy(bytes.data()+4,&size,2);std::memcpy(bytes.data()+6,&id,2);bytes[0x10]=1;auto command=nx::sdk53_audio_command(bytes);check(command.size==0x130&&command.id==15&&command.enabled);bytes[4]=0;bytes[5]=0;bad=false;try{nx::sdk53_audio_command(bytes);}catch(const std::invalid_argument&){bad=true;}check(bad);std::cout<<"audio layout checks="<<checks<<" PASS\n";}
 --- /dev/null
++++ b/tests/native_avc_bridge_probe.h
+@@ -0,0 +1,47 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#ifdef _WIN32
++#include "native_mf_avc.h"
++#include "nvn/native_guest_span.h"
++#include <mfreadwrite.h>
++#include <filesystem>
++#include <set>
++#include <cstdlib>
++namespace codec_probe {
++using namespace native_video;
++static std::vector<uint8_t> annex_b(std::span<const uint8_t> bytes){
++ if(bytes.size()>=4&&bytes[0]==0&&bytes[1]==0&&(bytes[2]==1||(bytes[2]==0&&bytes[3]==1)))return {bytes.begin(),bytes.end()};
++ std::vector<uint8_t> result;size_t offset=0;while(offset<bytes.size()){if(bytes.size()-offset<4)throw std::runtime_error("Truncated AVC length");uint32_t length=0;for(unsigned n=0;n<4;++n)length=(length<<8)|bytes[offset++];if(!length||length>bytes.size()-offset)throw std::runtime_error("Invalid AVC length");result.insert(result.end(),{0,0,0,1});result.insert(result.end(),bytes.begin()+offset,bytes.begin()+offset+length);offset+=length;}return result;
++}
++static std::vector<uint8_t> sequence(IMFMediaType* type){
++ UINT32 length=0;if(FAILED(type->GetBlobSize(MF_MT_MPEG_SEQUENCE_HEADER,&length)))return {};if(length>1024*1024)throw std::runtime_error("Header extent");std::vector<uint8_t> bytes(length);require(type->GetBlob(MF_MT_MPEG_SEQUENCE_HEADER,bytes.data(),length,&length),"Sequence header");if(bytes.empty()||bytes[0]!=1)return annex_b(bytes);
++ if(bytes.size()<7||(bytes[4]&3)!=3)throw std::runtime_error("Unsupported AVC configuration");size_t offset=6;std::vector<uint8_t> result;
++ auto group=[&](unsigned count){for(unsigned n=0;n<count;++n){if(bytes.size()-offset<2)throw std::runtime_error("Truncated parameter length");const size_t size=(size_t(bytes[offset])<<8)|bytes[offset+1];offset+=2;if(!size||size>bytes.size()-offset)throw std::runtime_error("Truncated parameter");result.insert(result.end(),{0,0,0,1});result.insert(result.end(),bytes.begin()+offset,bytes.begin()+offset+size);offset+=size;}};
++ group(bytes[5]&31);if(offset>=bytes.size())throw std::runtime_error("Missing PPS count");group(bytes[offset++]);return result;
++}
++static uint64_t hash(const std::vector<uint8_t>& bytes){uint64_t value=14695981039346656037ull;for(auto byte:bytes){value^=byte;value*=1099511628211ull;}return value;}
++
++inline int run(const char* path,uint64_t expected_first){
++ require(CoInitializeEx(nullptr,COINIT_MULTITHREADED),"Codec probe COM");require(MFStartup(MF_VERSION),"Codec probe MFStartup");
++ unsigned checks=0;auto check=[&](bool valid){++checks;if(!valid)throw std::runtime_error("Native AVC bridge probe check");};
++ nx::memory_init();check(nx::find_symbol("nnMain")==0);
++ auto alloc=[](size_t bytes){const auto address=nx::kernel_alloc(bytes,4096);nx::vm_set(address,bytes,nx::kMemHeap,3);return address;};
++ const auto instance_output=alloc(4096),input=alloc(24),position=alloc(8),info=alloc(48),picture=alloc(24),compressed=alloc(16*1024*1024);
++ auto call=[&](const char* name,std::initializer_list<uint64_t> arguments){nx::CPU cpu{};unsigned n=0;for(auto value:arguments)cpu.x[n++]=value;const auto fn=nx::hle_lookup(name);check(fn!=nullptr);fn(cpu);return int32_t(cpu.x[0]);};
++ check(call("H264SwDecInit",{instance_output,1})==0);const auto instance=nx::ld<uint64_t>(instance_output);check(instance&&nx::nvn::native_guest_span(instance,4096,3));std::memset(reinterpret_cast<void*>(info),0xa5,48);check(call("H264SwDecGetInfo",{instance,info})==-6);check(nx::ld<uint32_t>(info)==0xa5a5a5a5);
++ bool released=false;unsigned inputs=0,outputs=0;uint32_t width=0,height=0;std::set<uint32_t> identities;uint64_t first=0,pixels=0;
++ try{
++  {
++   ComPtr<IMFSourceReader> reader;const auto filename=std::filesystem::path(path).wstring();require(MFCreateSourceReaderFromURL(filename.c_str(),nullptr,&reader),"Private compressed source");require(reader->SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS,FALSE),"Deselect streams");require(reader->SetStreamSelection(MF_SOURCE_READER_FIRST_VIDEO_STREAM,TRUE),"Select video");ComPtr<IMFMediaType> request;require(MFCreateMediaType(&request),"Compressed type");require(request->SetGUID(MF_MT_MAJOR_TYPE,MFMediaType_Video),"Video type");require(request->SetGUID(MF_MT_SUBTYPE,MFVideoFormat_H264),"H264 type");require(reader->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM,nullptr,request.Get()),"Compressed stream");ComPtr<IMFMediaType> actual;require(reader->GetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM,&actual),"Compressed actual");auto prefix=sequence(actual.Get());
++   auto receive=[&](bool eos){for(unsigned n=0;n<64;++n){const auto status=call("H264SwDecNextPicture",{instance,picture,uint64_t(eos)});if(status==0)return;check(status==2);pixels=nx::ld<uint64_t>(picture);const auto id=nx::ld<uint32_t>(picture+8);check(id>=100&&id<100+inputs&&identities.insert(id).second);const size_t luma=size_t(width)*height,size=luma*3/2;check(nx::nvn::native_guest_span(pixels,size,1));const auto* planar=reinterpret_cast<const uint8_t*>(pixels);std::vector<uint8_t> nv12(size);std::memcpy(nv12.data(),planar,luma);for(size_t k=0;k<luma/4;++k){nv12[luma+2*k]=planar[luma+k];nv12[luma+2*k+1]=planar[luma+luma/4+k];}const auto fingerprint=hash(nv12);if(!outputs)first=fingerprint;++outputs;}throw std::runtime_error("Native AVC probe output failed to quiesce");};
++   for(unsigned n=0;n<32;++n){DWORD stream=0,flags=0;LONGLONG timestamp=0;ComPtr<IMFSample> sample;require(reader->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM,0,&stream,&flags,&timestamp,&sample),"Read compressed sample");if(flags&MF_SOURCE_READERF_ERROR)throw std::runtime_error("Compressed input error");if(flags&MF_SOURCE_READERF_ENDOFSTREAM)break;if(!sample)continue;ComPtr<IMFMediaBuffer> buffer;require(sample->ConvertToContiguousBuffer(&buffer),"Compressed buffer");BYTE* bytes=nullptr;DWORD capacity=0,length=0;require(buffer->Lock(&bytes,&capacity,&length),"Lock compressed");std::vector<uint8_t> packet;try{packet=annex_b({bytes,length});}catch(...){buffer->Unlock();throw;}require(buffer->Unlock(),"Unlock compressed");if(!inputs){prefix.insert(prefix.end(),packet.begin(),packet.end());packet=std::move(prefix);}check(!packet.empty()&&packet.size()<=16*1024*1024);std::memcpy(reinterpret_cast<void*>(compressed),packet.data(),packet.size());nx::st<uint64_t>(input,compressed);nx::st<uint32_t>(input+8,uint32_t(packet.size()));nx::st<uint32_t>(input+12,100+inputs++);nx::st<uint32_t>(input+16,1);
++    auto status=call("H264SwDecDecode",{instance,input,position});if(status==4){check(nx::ld<uint64_t>(position)==compressed);check(call("H264SwDecGetInfo",{instance,info})==0);width=nx::ld<uint32_t>(info+4);height=nx::ld<uint32_t>(info+8);check(width&&height);status=call("H264SwDecDecode",{instance,input,position});}check(status==1);check(nx::ld<uint64_t>(position)==compressed+packet.size());receive(false);
++   }
++   receive(true);check(inputs==32&&outputs==inputs&&identities.size()==inputs);check(first==expected_first);check(outputs>0&&pixels);
++  }
++  call("H264SwDecRelease",{instance});released=true;check(!nx::nvn::native_guest_span(instance,4096,1));check(!nx::nvn::native_guest_span(pixels,1,1));check(call("H264SwDecGetInfo",{instance,info})<0);
++ }catch(...){if(!released)call("H264SwDecRelease",{instance});throw;}
++ MFShutdown();CoUninitialize();std::printf("native_avc_bridge checks=%u inputs=%u outputs=%u dimensions=%ux%u first_fnv=%016llx guest_modules=0 PASS\n",checks,inputs,outputs,width,height,(unsigned long long)first);return 0;
++}
++}
++#endif
+--- /dev/null
++++ b/tests/native_avc_sps_test.cpp
+@@ -0,0 +1,10 @@
++#include "native_avc_sps.h"
++#include <cstdio>
++#include <vector>
++#include <stdexcept>
++struct Writer{std::vector<unsigned> data;void bits(uint32_t value,unsigned count){for(unsigned n=count;n;--n)data.push_back((value>>(n-1))&1);}void ue(uint32_t value){const uint64_t code=uint64_t(value)+1;unsigned width=0;for(auto n=code;n;n>>=1)++width;bits(0,width-1);bits(uint32_t(code),width);}std::vector<uint8_t> bytes(){bits(1,1);while(data.size()%8)bits(0,1);std::vector<uint8_t> out{0x67};for(size_t n=0;n<data.size();n+=8){uint8_t b=0;for(unsigned j=0;j<8;++j)b=uint8_t((b<<1)|data[n+j]);out.push_back(b);}return out;}};
++static std::vector<uint8_t> sps(uint32_t profile,uint32_t columns,uint32_t rows,bool crop=false,bool vui=false){Writer w;w.bits(profile,8);w.bits(0,8);w.bits(32,8);w.ue(0);w.ue(0);w.ue(0);w.ue(0);w.ue(1);w.bits(0,1);w.ue(columns-1);w.ue(rows-1);w.bits(1,1);w.bits(1,1);w.bits(crop,1);if(crop){w.ue(1);w.ue(2);w.ue(3);w.ue(4);}w.bits(vui,1);if(vui){w.bits(1,1);w.bits(255,8);w.bits(12,16);w.bits(11,16);w.bits(0,1);w.bits(1,1);w.bits(5,3);w.bits(1,1);w.bits(1,1);w.bits(1,8);w.bits(1,8);w.bits(1,8);}return w.bytes();}
++int main(){unsigned checks=0;auto check=[&](bool condition){++checks;if(!condition)throw std::runtime_error("AVC metadata check");};auto main=sps(77,32,38);auto info=native_video::avc_info(main);check(info.profile==77&&info.width==512&&info.height==608);check(!info.crop&&info.crop_width==512&&info.crop_height==608);info=native_video::avc_info(sps(66,1,1));check(info.width==16&&info.height==16&&info.par_width==1&&info.par_height==1);info=native_video::avc_info(sps(77,32,38,true,true));check(info.left==2&&info.top==6&&info.crop_width==506&&info.crop_height==594);check(info.par_width==12&&info.par_height==11&&info.range==1&&info.matrix==1);
++ for(size_t n=0;n<main.size();++n){bool rejected=false;try{native_video::avc_info(std::span(main).first(n));}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
++ for(auto bad:{sps(100,32,38),sps(77,257,1)}){bool rejected=false;try{native_video::avc_info(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
++ auto wrong=main;wrong[0]=0x68;bool rejected=false;try{native_video::avc_info(wrong);}catch(const std::invalid_argument&){rejected=true;}check(rejected);std::vector<uint8_t> annex{0,0,0,1};annex.insert(annex.end(),main.begin(),main.end());annex.insert(annex.end(),{0,0,1,0x68,0xaa});auto nals=native_video::avc_nals(annex);check(nals.size()==2&&nals[0].size()==main.size()&&nals[1][0]==0x68);check(native_video::avc_nals(std::span<const uint8_t>{}).empty());std::printf("AVC SPS metadata checks=%u PASS\n",checks);}
+--- /dev/null
 +++ b/tests/native_compute_profile_test.cpp
 @@ -0,0 +1,5 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -8898,7 +9198,7 @@
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,221 @@
+@@ -0,0 +1,225 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -8926,7 +9226,11 @@
 +}
 +nx::HleRegistrar authored_registration("authoredMemoryCallback",authored_memory_callback);
 +}
++#include "native_avc_bridge_probe.h"
 +int main(int argc,char** argv){try{
++#ifdef _WIN32
++ if(argc==4&&std::string_view(argv[1])=="--avc-private")return codec_probe::run(argv[2],std::strtoull(argv[3],nullptr,16));
++#endif
 + const bool gpu=argc==2&&std::string_view(argv[1])=="--gpu";if(argc>1&&!gpu)throw std::runtime_error("expected --gpu or no arguments");
 + if(gpu){if(_putenv_s("NX_PIPELINED","1"))throw std::runtime_error("fixture pipeline mode setup failed");}
 + unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("native device assertion "+std::to_string(n));};

@@ -6,7 +6,7 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 35 CPU/component suites and a 321-check native
+Windows integration now passes 36 CPU/component suites and a 321-check native
 GPU fixture on an RX 9070 XT. Actual MK8D startup reaches its owned window,
 Vulkan device/queue, three presentation textures, command-buffer setup, native
 save mounts and first texture upload. Copied texture/sampler descriptors now
@@ -85,3 +85,19 @@ for generic AVC decoder requests using the original String8/vector APIs. A
 fresh saved-profile run creates that real codec and renders the native main menu,
 but repeated scripted A presses do not advance it. Decoder configuration, decoded
 video and races remain unverified. No development binary or download is published.
+
+The Windows native AVC bridge uses built-in Media Foundation through the original
+H264SwDec API contract. Its private-input production probe checks 32 decoded
+pictures, SDK picture identity, NV12/planar conversion, draining and mapped-memory
+revocation (309 checks). A full 13,200-picture test checks pixel-hash parity across
+default and interactive decoder modes. These receipts remain local. No codec
+package is installed, and no movie data is included in this recipe. This bridge
+has not established video presentation or gameplay in the full game yet.
+
+The R137 game probe decodes two pictures and retrieves an SDK output buffer before
+stopping at the missing native `nvnCommandBufferCopyBufferToTexture` upload. This
+is not a rendered-video or gameplay result. The native GPU upload is the next gate.
+
+API references: [Windows H.264 decoder](https://learn.microsoft.com/en-us/windows/win32/medfound/h-264-video-decoder),
+[interactive decoder mode](https://learn.microsoft.com/en-us/windows/win32/medfound/codecapi-avlowlatencymode),
+and [original decoder API contract](https://android.googlesource.com/platform/frameworks/av/+/0c1bc74/media/libstagefright/codecs/on2/h264dec/inc/H264SwDecApi.h).

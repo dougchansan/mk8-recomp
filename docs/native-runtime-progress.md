@@ -4,13 +4,28 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The latest tested source recipe is R132. All 35 component suites and the
-321-check native GPU fixture pass. A fresh, intentionally stopped 676-second
-saved-profile run renders the native main menu and creates the real bundled
-`OMX.google.h264.decoder` through its statically compiled SoftAVC factory.
-Repeated scripted A presses do not yet leave the menu. Decoder configuration,
-video output and gameplay remain under investigation; codec creation alone does
-not establish video playback.
+The current source recipe includes the Windows native AVC bridge. All 36
+component suites and the 321-check native GPU fixture pass. A production API
+probe passes 309 checks: 32 compressed inputs produce 32 owned decoded pictures,
+with checked picture IDs, planar pixel conversion, draining and revocation of
+instance/frame memory after release. The source recipe reconstructs all 134
+generic adapted files. The actual game now decodes two pictures and retrieves an original SDK output
+buffer. It then stops at the missing native GPU upload operation
+`nvnCommandBufferCopyBufferToTexture`. The saved main menu and its transition
+after Single Player selection are directly reviewed; video presentation and races
+remain unverified.
+
+The earlier R132 saved-profile run directly renders the native main menu and
+creates the real bundled Google AVC component. The movie uses Main-profile AVC
+with CABAC, which the bundled baseline parser rejects. The Windows bridge uses
+the operating system's native Media Foundation decoder behind the original
+H264SwDec interface, preserving the original movie/OMX lifecycle and parameters.
+A separate full-movie test decodes all 13,200 pictures with unique input ownership;
+pixel hashes match between the default and interactive decoder modes. Interactive
+mode prevents the default buffering from exhausting the SDK-facing pending-input
+bound. Transport timestamps start at zero and map back to real SDK picture IDs.
+No movie data or decoder-success status is fabricated. Runtime video presentation
+and races remain unverified.
 
 The SDK's real component registry already contains the software decoder, but its
 separate MIME matching table still chooses NVIDIA even with software preference.
@@ -26,7 +41,7 @@ The isolated Windows target uses MIT-licensed SuperMarioWonderRecomp revision
 main/subsdk0/SDK form three static libraries and a local standalone executable.
 The Vulkan dispatch table is regenerated for the already installed headers.
 
-Thirty-five CPU/component suites pass, including SDK 53 texture/sampler
+Thirty-six CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
 A separate 321-check GPU fixture creates and drains a real device and queue on

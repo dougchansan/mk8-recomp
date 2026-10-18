@@ -39,8 +39,18 @@ claimed. The 65,536-slice cap, 30-second internal and 45-second Root deadlines
 remain. GetInfo1 is CPU-tested but uncalled. No Windows affinity or scheduler
 mutation is implemented or credited.
 
-All fourteen CPU suites pass, including 6,462 core-policy, 2,035 process-policy
-and 3,999 thread-priority checks. The latest native heap suite completes 2,215 checks and two
+The next native FSP build opens `fsp-srv`, returns its actual 4,096-byte pointer
+capacity and converts its session to domain object 1. The game then requests
+HIPC clone control 2 and stops at 12,781,144 blocks, 9,066 slices and 184 SVCs.
+All 10,992 inputs match and teardown completes. `SetCurrentProcess` is implemented
+and tested but remains uncalled in that game run. Shared-session cloning now
+passes the full fifteen-suite CPU run, including shared domain state, closing the
+original alias, final object destruction and failed-write rollback. Its fresh
+game observation is pending. Content reads, mounts and saves remain unsupported.
+
+All fifteen CPU suites pass, including 112 filesystem process-binding checks,
+6,462 core-policy, 2,035 process-policy and 3,999 thread-priority checks. The
+whole-heap assertions include two
 separate real 3,100 MiB allocations, independently checking the whole Windows
 allocation, growth, shrink, zeroed regrowth, SVC register behavior and ownership
 failures. The check count includes memory-map inventory and can vary between
@@ -96,10 +106,11 @@ path still needs actual execution evidence.
 | Owned-window focus policy and continued startup | Eight CPU suites pass. A fresh native process commits one real `SetFocusHandlingMode` command13 and one `SetOutOfFocusSuspendingEnabled` command16 reply, then reaches the `aoc:u` service request after 12,608,290 blocks / 83 SVCs. Its unsupported request leaves TLS unchanged and receives no reply. Normal exit10, all 6,970 input pins, unchanged OS foreground, right revocation and focus-authority retirement are recorded | Existing static CPU images and the explicit SingleApplication visible-run/hidden-or-minimized-park policy. Raw OS focus remains inactive; native Device, complete frames, input/audio/save and full guarded-image startup remain open. |
 | Native AOC service connection | Nine CPU suites pass, including owned catalog, same-buffer NPDM identity, Count/BaseId and real event-registry transactions. Independent fresh-run review verifies `GetService("aoc:u")` returning a real session, successful response/kernel/SVC results and later `GetService("pctl")`. Normal exit10 after 12,609,347 blocks / 84 SVCs, all 7,466 pins and context retirement match | No AOC query method was called by this game run. Its explicit native mounted-base-game catalog makes no global installed-DLC claim. Next unsupported service is `pctl`; Device, complete frames, audio/input/save and guarded-image startup remain open. |
 | Native parental-control manager and restricted ports | Actual startup verifies primary `pctl` and all three restricted ports, distinct child/domain transactions, primary Initialize success and complete closes | Restricted child methods and AOC queries remain uncalled; capability-denial checks are authored CPU tests. No global parental-control or gameplay claim. |
-| Native heap SVC1 | All fourteen CPU suites pass; the latest heap suite has 2,215 checks and two whole-allocation 3,100 MiB VM observations. Actual game SVC1 succeeds; all 10,653 startup inputs match in Root direct review | The verified boot continues through thread-priority setup and the process core-mask query through SVC15 to missing fsp-srv. No native Device or game frame yet. |
+| Native heap SVC1 | All fifteen CPU suites pass; the heap fixture includes two whole-allocation 3,100 MiB VM observations. Actual game SVC1 succeeds; all 10,653 startup inputs match in Root direct review | The verified boot continues through thread-priority setup and the process core-mask query through SVC15 to missing fsp-srv. No native Device or game frame yet. |
 | Native owned-thread priority | 3,999 CPU checks cover NPDM permissions, signed low32 ABI, error order, state and ownership. Actual SVC13 succeeds for handle 0x100 / priority 44, preserving x1–x31 and continuing to GetInfo0 | Idempotent delivery for the owned single-thread subset. No Windows priority change, inheritance or multithread scheduler claim. |
 | Native process capability queries | 2,035 CPU checks cover declared masks, ABI, validation and ownership. Actual GetInfo0 returns mask 7 and continues to SetThreadCoreMask | GetInfo1 is CPU-tested but uncalled. No Windows CPU-mask query, affinity change or native concurrency claim. |
 | Native owned-thread core mask | 6,462 CPU checks; actual SVC15 stores ideal -1 / affinity 1, preserves x1–x31 and resumes to fsp-srv | Logical owned-thread state and captured execution core 0. Migration outside that core and ambiguous NoUpdate-after-DontCare remain unsupported; no Windows affinity change. |
+| Native filesystem process binding and session clones | 112 FSP checks and all fifteen CPU suites pass. Actual startup connects FSP and converts to a domain, then stops at clone control 2. The shared-session implementation passes fresh CPU regressions | Process binding is uncalled by the latest game run. Clone game observation and native content/storage operations remain pending. |
 | SDK Device callback archive integration | Seventeen fresh SDK/runtime objects and 57 retained title objects pass cross-header ABI, symbol and five-archive member/index review; compiled canonical callback descriptor matches | CPU archive facts only; native consumer linking, runtime callback and actual title Device admission remain pending. |
 | Guarded startup with current services | All 24 strict C++ units, current inputs, three executables and stopped controls pass independent review. Actual original entry executes 12,614,619 fenced blocks / 3,478 slices / 90 SVCs; 304 run pins and 3,570 journal rows match, and all four bindings clear | Stops at missing `pctl:s`; native Device, GPU game frames, audio/input/save and supported gameplay remain open. |
 | Native Vulkan Device bridge | Full 35-unit compiled-artifact review and all eight actual runtime fixtures pass. Includes 42 CPU rejection checks, 43 Vulkan component checks, a 64-byte GPU copy / 31 resource rejections, 76 state draws / 306,176 pixels, persistent images, presentation conversion and retirement. Every run's inputs match | Authored component inputs only; no title Device or native game frame. No validation layer, vendor/physical-device-class or broad recovery claim. The earlier failed resource test remains preserved; its corrected lifetime expectations keep production rejection checks intact. |
@@ -258,13 +269,13 @@ The [prerelease `native-foundations-v6-20261015`](https://github.com/dougchansan
 
 The development checkout also keeps a gitignored `local/native-builds/latest.json` index with exact public-package and private diagnostic executable hashes. Game-linked CPU/reference builds remain local; only tools with synthetic inputs and publishable corresponding source become release assets. See [build instructions](native-builds.md) for the current public package.
 
-The index now contains 29 entries, including the verified native heap CPU
+The index now contains 30 entries, including the verified native heap CPU
 fixture with its closed eleven-suite logs and review receipts and the latest
 standalone startup diagnostic that completes the heap, thread-priority and
-process core-mask query and thread-core setup, then stops at missing fsp-srv. Its retained
+process core-mask query and thread-core setup, opens FSP and stops at clone control 2. Its retained
 `native_boot.exe` has SHA256
-`09c0846a78fd0a8f2247755d4dc2ebbdf4fb2c5e2929d9a40386a198c3bb58d0`.
-All 28 earlier entries and seven allocator bundles remain available. Game-linked
+`4bb32e0a2160b7e81339ce15a76a6f90ee9424f653cbf28e236b1ef751676126`.
+All 29 earlier entries and seven allocator bundles remain available. Game-linked
 executables require matching local ExeFS inputs and fresh output paths. The
 guarded four-image Host still stops at `pctl:s`; neither startup diagnostic is a
 playable game build. The failed earlier partial boot retains its original result.

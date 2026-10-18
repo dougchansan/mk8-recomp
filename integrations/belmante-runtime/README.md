@@ -6,7 +6,7 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 35 CPU/component suites and a 315-check native
+Windows integration now passes 35 CPU/component suites and a 321-check native
 GPU fixture on an RX 9070 XT. Actual MK8D startup reaches its owned window,
 Vulkan device/queue, three presentation textures, command-buffer setup, native
 save mounts and first texture upload. Copied texture/sampler descriptors now
@@ -79,3 +79,9 @@ creates and drains a native Vulkan device without loading guest modules. Use fre
 Native startup, live rendering and gameplay must be verified before these
 instructions can be treated as a working-game build guide. The project's full
 native release gate remains unchanged.
+
+The R132 adaptation selects the SDK's already registered software AVC component
+for generic AVC decoder requests using the original String8/vector APIs. A
+fresh saved-profile run creates that real codec and renders the native main menu,
+but repeated scripted A presses do not advance it. Decoder configuration, decoded
+video and races remain unverified. No development binary or download is published.

@@ -4,6 +4,23 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
+The latest tested source recipe is R132. All 35 component suites and the
+321-check native GPU fixture pass. A fresh, intentionally stopped 676-second
+saved-profile run renders the native main menu and creates the real bundled
+`OMX.google.h264.decoder` through its statically compiled SoftAVC factory.
+Repeated scripted A presses do not yet leave the menu. Decoder configuration,
+video output and gameplay remain under investigation; codec creation alone does
+not establish video playback.
+
+The SDK's real component registry already contains the software decoder, but its
+separate MIME matching table still chooses NVIDIA even with software preference.
+The adapter adds the existing software candidate through the original SDK
+String8 and vector copy/destruction APIs. Explicit component requests and
+hardware-only filters retain their original behavior. It preserves the original
+movie parameters and MIME factory, without inventing codec objects, statuses or
+frames. The public recipe contains generic adapter code only; development
+executables, game libraries and assets remain private.
+
 The isolated Windows target uses MIT-licensed SuperMarioWonderRecomp revision
 `010ed7a596a621c15d3a8dfa5795ca8c3668b066`, retaining its attribution. MK8D's
 main/subsdk0/SDK form three static libraries and a local standalone executable.
@@ -12,7 +29,7 @@ The Vulkan dispatch table is regenerated for the already installed headers.
 Thirty-five CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 315-check GPU fixture creates and drains a real device and queue on
+A separate 321-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,
@@ -32,9 +49,19 @@ UI and RaceCommon asset loading. The pinned application-control reader answers
 the display-version request using privately supplied title metadata. Startup
 continues through menu, Mario, kart and 3D Mii assets. The native random-Mii
 request succeeds. Game-driven Vulkan draws and presentation are now logged.
-Five presented-texture readbacks at 1920x1080 are entirely black, so a rendered
-game image is still unverified. Subsequent startup probes pass raster state
-setup and stop at checked shader/resource compatibility boundaries. There is still no native game frame or playable result.
+The early black readbacks were superseded by directly reviewed native frames:
+the startup logo and title screen, then the main menu after scripted built-in
+Mii selection. A saved-profile restart reaches the same menu and the original
+game reports its second startup. These results establish native menu rendering
+and basic profile persistence; races and complete gameplay remain unverified.
+
+The genuine compiled SDK graphics initializer now runs instead of the inherited
+no-op. The native driver client retains the real 16 MiB transfer-memory work
+buffer and process capability, binds its resource user to the actual process ID,
+and receives a kernel-supplied PID. Allocation policy commits after its reply.
+The next hardware video-device request is unavailable on the host; it must not
+receive a fabricated successful device handle.
+
 
 The [offline shader diagnostic](../integrations/belmante-runtime/offline/README.md)
 uses the existing shader-only compiler libraries. Thirteen authored parser/profile

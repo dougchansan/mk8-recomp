@@ -9,10 +9,10 @@ The isolated Windows target uses MIT-licensed SuperMarioWonderRecomp revision
 main/subsdk0/SDK form three static libraries and a local standalone executable.
 The Vulkan dispatch table is regenerated for the already installed headers.
 
-Thirty-four CPU/component suites pass, including SDK 53 texture/sampler
+Thirty-five CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 188-check GPU fixture creates and drains a real device and queue on
+A separate 194-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,
@@ -138,8 +138,16 @@ an owned-process hardware trace then identified an all-zero game-time character
 record. The default-source query had incorrectly returned an empty list. It now
 returns six validated preset records with source tags and staged buffer writes;
 the fresh native startup log confirms a count of six. All six also pass both
-compiled SDK checks. Model initialization and visible rendering still need
-end-to-end verification.
+compiled SDK checks. The next actual startup run passes the former null-model failure and reaches
+`nvnCommandBufferClearTexture`. Visible rendering still needs verification.
+
+Texture clears now record the captured view, region and float color and replay
+through native Vulkan. The current profile handles full XY subresources at one
+mip, selected array/cube layers, full RGBA masks and supported uncompressed color
+formats. Other clear profiles stop explicitly. A transfer-ordering regression
+verifies all 128 bytes of a two-layer image: the selected layer clears to magenta
+while the blue layer remains unchanged. Upload and clear have an explicit memory
+dependency even when they would otherwise use the same image layout.
 
 Missing required shader translations and unknown calls remain visible failures.
 Shader/draw/present coverage, GPU upload/layout correctness, allocator callback

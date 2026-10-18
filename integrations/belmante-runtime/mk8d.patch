@@ -4789,7 +4789,7 @@
 +namespace nx::nvn {void set_native_origin(uint64_t,uint32_t);uint32_t native_window_origin();}
 --- /dev/null
 +++ b/runtime/src/nvn/native_sampled_profile.h
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,37 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include <cstdint>
@@ -4810,6 +4810,11 @@
 +inline bool native_sampled_2d_float_compatible(uint32_t target,uint32_t depth,uint32_t samples,uint32_t format) {
 +    return target==1&&depth==1&&samples<=1&&native_float_color_format(format);
 +}
++// A non-Dref float lookup may read the depth aspect with comparison disabled.
++// https://docs.vulkan.org/spec/latest/chapters/textures.html
++inline bool native_sampled_depth_float_compatible(bool arrayed,uint32_t target,uint32_t layers,uint32_t samples,uint32_t format,uint32_t depth_mode,uint32_t compare_mode){
++ return target==(arrayed?4u:1u)&&(arrayed?layers>0:layers==1)&&samples<=1&&format>=0x32&&format<=0x36&&depth_mode==0&&compare_mode==0;
++}
 +inline bool native_sampled_shadow_compatible(bool arrayed,uint32_t target,uint32_t layers,uint32_t samples,uint32_t format,uint32_t depth_mode,uint32_t compare_mode,uint32_t compare_func) {
 +    return target==(arrayed?4u:1u)&&(arrayed?layers>0:layers==1)&&samples<=1&&format>=0x32&&format<=0x36&&depth_mode==0&&compare_mode==1&&compare_func>=1&&compare_func<=8;
 +}
@@ -4817,7 +4822,7 @@
 +    return native_sampled_shadow_compatible(true,target,layers,samples,format,depth_mode,compare_mode,compare_func);
 +}
 +inline bool native_sampled_array_float_compatible(uint32_t target,uint32_t layers,uint32_t samples,uint32_t format){return target==4&&layers>0&&samples<=1&&native_float_color_format(format);}
-+inline bool native_sampled_cube_array_float_compatible(uint32_t target,uint32_t width,uint32_t height,uint32_t layers,uint32_t samples,uint32_t format){return target==9&&width>0&&width==height&&layers>=6&&layers%6==0&&samples<=1&&native_float_color_format(format);}
++inline bool native_sampled_cube_array_float_compatible(uint32_t target,uint32_t width,uint32_t height,uint32_t layers,uint32_t samples,uint32_t format){return (target==9||(target==8&&layers==6))&&width>0&&width==height&&layers>=6&&layers%6==0&&samples<=1&&native_float_color_format(format);}
 +inline bool native_sampled_cube_float_compatible(uint32_t target,uint32_t width,uint32_t height,uint32_t samples,uint32_t format) {
 +    return target==8&&width>0&&width==height&&samples<=1&&native_float_color_format(format);
 +}
@@ -4907,13 +4912,20 @@
          BindImage, DispatchCompute,
          SetStencilRef, SetStencilMask, SetStencilValueMask, SetPolygonOffsetClamp, SetDepthBounds, SetDepthClamp,
          BindDeferred,  // mask: 0 textures, 1 images, 2 uniform buffers, 3 storage buffers; a[0] the guest array
-+        SetLineWidth,
++        SetLineWidth, SetPointSize,
          BindMultisampleState,  // n: alpha to coverage enabled (nvn_state.cpp)
      } op;
      uint32_t n = 0, mask = 0;
 --- a/runtime/src/nvn/nvn_cmd.cpp
 +++ b/runtime/src/nvn/nvn_cmd.cpp
-@@ -16,6 +16,11 @@
+@@ -10,12 +10,18 @@
+ #include <algorithm>
+ #include <atomic>
+ #include <chrono>
++#include <cmath>
+ #include <cstring>
+ #include <cstdlib>
+ #include <deque>
  #include <map>
  
  #include "nvn.h"
@@ -4925,7 +4937,7 @@
  #include "nvn_shaders.h"
  
  namespace nx::nvn {
-@@ -32,6 +37,9 @@
+@@ -32,6 +38,9 @@
      // at the free ones (to add memory in time), so usage grows with the commands recorded, survives EndRecording
      // and BeginRecording like the real memory does, and is given back only when memory is added. It never reaches
      // the total.
@@ -4935,7 +4947,7 @@
      uint64_t command_size = 0, control_size = 0;
      uint64_t command_base = 0, control_base = 0;  // usage before this recording
      uint64_t command_memory = 0;                  // the memory added last: its GPU address (see AddCommandMemory)
-@@ -40,9 +48,41 @@
+@@ -40,9 +49,41 @@
  
  constexpr uint64_t kCommandBytes = 16, kControlBytes = 4;  // per recorded command
  
@@ -4980,7 +4992,7 @@
  
  // A handle lives as long as its command memory: on the GPU a list is valid until the game records over the memory it
  // used, so a newer list recorded over the same bytes (our usage estimate, command_base) drops the older ones. Engines
-@@ -135,6 +175,7 @@
+@@ -135,6 +176,7 @@
  
  
  void CommandBufferInitialize(CPU& c) {  // NVNboolean (NVNcommandBuffer*, NVNdevice*)
@@ -4988,7 +5000,7 @@
      make<CommandBuffer>(c.x[0]);
      c.x[0] = 1;
  }
-@@ -145,12 +186,15 @@
+@@ -145,12 +187,15 @@
      if (auto* cb = get<CommandBuffer>(c.x[0])) {
          std::lock_guard lk(cb->lock);
          cb->recording = std::make_shared<CmdList>();
@@ -5004,7 +5016,7 @@
          cb->command_size = c.x[3];
          cb->command_base = 0;
          cb->command_memory = command_memory_address(c.x[1], c.x[2]);
-@@ -161,6 +205,8 @@
+@@ -161,6 +206,8 @@
  void AddControlMemory(CPU& c) {  // (cmd, void* memory, size_t size)
      if (auto* cb = get<CommandBuffer>(c.x[0])) {
          std::lock_guard lk(cb->lock);
@@ -5013,7 +5025,7 @@
          cb->control_size = c.x[2];
          cb->control_base = 0;
      }
-@@ -193,6 +239,7 @@
+@@ -193,6 +240,7 @@
  }
  
  void CommandBufferEndRecording(CPU& c) {  // NVNcommandHandle
@@ -5021,7 +5033,7 @@
      std::shared_ptr<CmdList> list = std::make_shared<CmdList>();
      uint64_t start = 0, end = 0, pool = 0;
      const uint64_t cb_guest = c.x[0];
-@@ -204,7 +251,7 @@
+@@ -204,7 +252,7 @@
          cb->command_base = used(cb->command_size, cb->command_base, n, kCommandBytes);
          end = std::max(cb->command_memory + cb->command_base, start + 1);
          cb->control_base = used(cb->control_size, cb->control_base, n, kControlBytes);
@@ -5030,10 +5042,17 @@
      }
      list->epoch = current_epoch();
      g_ends++;
-@@ -343,6 +390,13 @@
+@@ -343,6 +391,20 @@
          log("nvn: SetViewport with a negative size: %d %d %d %d", cmd.i[0], cmd.i[1], cmd.i[2], cmd.i[3]);
  }
  
++void SetPointSize(CPU& c) {
++    auto* buffer=get<CommandBuffer>(c.x[0]);if(!buffer)throw std::invalid_argument("native point size requires command buffer");
++    {std::lock_guard lock(buffer->lock);if(!buffer->recording_cpu||buffer->recording_thread!=std::this_thread::get_id())throw std::invalid_argument("native point size requires active recording");}
++    const float size=c.v[0].f32[0];if(!std::isfinite(size)||size<=0)throw std::invalid_argument("native point size must be positive and finite");
++    Cmd command{Cmd::SetPointSize};command.f[0]=size;record(c.x[0],command);
++}
++
 +void SetLineWidth(CPU& c) {
 +    auto* buffer=get<CommandBuffer>(c.x[0]);if(!buffer)throw std::invalid_argument("native line width requires command buffer");
 +    {std::lock_guard lock(buffer->lock);if(!buffer->recording_cpu||buffer->recording_thread!=std::this_thread::get_id())throw std::invalid_argument("native line width requires active recording");}
@@ -5044,7 +5063,7 @@
  void SetScissor(CPU& c) {
      Cmd cmd{Cmd::SetScissor};
      for (int k = 0; k < 4; k++) cmd.i[k] = int32_t(c.x[1 + k]);
-@@ -371,6 +425,7 @@
+@@ -371,6 +433,7 @@
          g_no_cb++;
          return;
      }
@@ -5052,15 +5071,16 @@
      std::lock_guard lk(cb->lock);
      if (blob) {
          cmd.blob = uint32_t(cb->recording->blobs.size());
-@@ -507,6 +562,7 @@
+@@ -507,6 +570,8 @@
  NX_HLE("nvnCommandBufferClearDepthStencil", ClearDepthStencil);
  NX_HLE("nvnCommandBufferSetViewport", SetViewport);
  NX_HLE("nvnCommandBufferSetScissor", SetScissor);
 +NX_HLE("nvnCommandBufferSetLineWidth", SetLineWidth);
++NX_HLE("nvnCommandBufferSetPointSize", SetPointSize);
  NX_HLE("nvnCommandBufferCallCommands", CallCommands);
  NX_HLE("nvnCommandBufferAddCommandMemory", AddCommandMemory);
  NX_HLE("nvnCommandBufferAddControlMemory", AddControlMemory);
-@@ -518,3 +574,10 @@
+@@ -518,3 +583,10 @@
  NX_HLE("nvnCommandBufferGetControlMemoryFree", (memory_query<false, 2>));
  
  }  // namespace nx::nvn
@@ -5338,6 +5358,16 @@
      g_stats.total++;
      if (g_state.rasterizer_discard || !g_state.render_enable) return false;  // nothing reaches the targets
      const auto* shaders = program_shaders(g_state.program);
+--- a/runtime/src/nvn/nvn_draw_state.h
++++ b/runtime/src/nvn/nvn_draw_state.h
+@@ -33,6 +33,7 @@
+     bool rasterizer_discard = false, render_enable = true;  // SetRasterizerDiscard / SetRenderEnable: draws skipped
+     bool has_viewport = false, has_scissor = false;
+     float depth_near = 0, depth_far = 1;
++    float point_size = 1;
+     // Command-buffer rasterizer state (nvn_raster.cpp), per face 0 front, 1 back. NVN's defaults: masks 0xFF, ref 0.
+     uint8_t stencil_ref[2] = {0, 0}, stencil_compare_mask[2] = {0xFF, 0xFF}, stencil_write_mask[2] = {0xFF, 0xFF};
+     float bias_factor = 0, bias_units = 0, bias_clamp = 0;  // SetPolygonOffsetClamp
 --- a/runtime/src/nvn/nvn_objects.cpp
 +++ b/runtime/src/nvn/nvn_objects.cpp
 @@ -2,6 +2,8 @@
@@ -5565,10 +5595,42 @@
  #include "nvn_pipeline.h"
  #include "nvn_ultrawide.h"
  #include "platform.h"
-@@ -573,10 +574,21 @@
+@@ -169,7 +170,7 @@
+     bool img1d = img.view_type == VK_IMAGE_VIEW_TYPE_1D || img.view_type == VK_IMAGE_VIEW_TYPE_1D_ARRAY;
+     switch (type) {
+         case VK_IMAGE_VIEW_TYPE_CUBE:
+-        case VK_IMAGE_VIEW_TYPE_CUBE_ARRAY: return cube_img && layers >= 6;
++        case VK_IMAGE_VIEW_TYPE_CUBE_ARRAY: return cube_img && layers >= 6 && (type!=VK_IMAGE_VIEW_TYPE_CUBE_ARRAY||vk_features().imageCubeArray);
+         case VK_IMAGE_VIEW_TYPE_3D: return img3d;
+         case VK_IMAGE_VIEW_TYPE_1D:
+         case VK_IMAGE_VIEW_TYPE_1D_ARRAY: return img1d;
+@@ -217,7 +218,7 @@
+                                    ? VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT)
+                                    : img.aspect,
+                                base, levels, min_layer, layers};
+-        if (p_vkCreateImageView(vk_device(), &ci, nullptr, &v) != VK_SUCCESS) v = img.view;
++        if (p_vkCreateImageView(vk_device(), &ci, nullptr, &v) != VK_SUCCESS) v = VK_NULL_HANDLE;
+     }
+     if (v) hit = {key, v};  // never a null one: those are tried again
      return v;
- }
+@@ -289,6 +290,7 @@
+ // ---- graphics pipelines ---------------------------------------------------------------------------------------------
  
+ VkPipeline graphics_pipeline(const PipelineKey& key, const ProgramLayout& layout) {
++    if(key.topology==0)fatal("native point primitive rendering requires a point-size shader profile");
+     // By the key's bytes, as before, but hashed (nvn_pipeline.h) instead of a ~700-byte std::string built and
+     // compared down a tree per draw; and the last entry first: consecutive draws mostly share their state.
+     using Key = ByteKey<sizeof(PipelineKey)>;
+@@ -568,15 +570,26 @@
+         ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+         ci.format = format;
+         ci.subresourceRange = {img.aspect, level, 1, layer, 1};
+-        if (p_vkCreateImageView(vk_device(), &ci, nullptr, &v) != VK_SUCCESS) v = img.view;
++        if (p_vkCreateImageView(vk_device(), &ci, nullptr, &v) != VK_SUCCESS) v = VK_NULL_HANDLE;
+     }
+     return v;
++}
++
 +bool native_volume_ready_for_sample(const Texture& texture) {
 +    std::shared_lock guard(objects_lock());
 +    if(texture.target!=2||!texture.volume_texels_complete.load(std::memory_order_acquire))return false;
@@ -5577,8 +5639,8 @@
 +        {texture.width,texture.height,texture.depth,texture.levels,texture.format,texture.samples},
 +        {write.level,write.x,write.y,write.z,write.w,write.h,write.d,write.data.size()}))return true;
 +    return false;
-+}
-+
+ }
+ 
  GpuImage* ensure_contents(VkCommandBuffer cb, uint64_t texture) {
      Texture* t = get<Texture>(texture);
      GpuImage* img = t ? image_of(texture) : nullptr;
@@ -5587,7 +5649,7 @@
      bool dirty = t->dirty.exchange(false);
      uint64_t dirty_lo = t->dirty_lo.exchange(UINT64_MAX), dirty_hi = t->dirty_hi.exchange(0);
      if (dirty_hi <= dirty_lo) dirty_lo = 0, dirty_hi = UINT64_MAX;  // marked without a range: all of it
-@@ -595,8 +607,10 @@
+@@ -595,8 +608,10 @@
          }
      }
      // A texture already on the GPU that the CPU wrote part of: only those bytes go again (the glyph cache).
@@ -5598,6 +5660,39 @@
      if (img->layout == VK_IMAGE_LAYOUT_UNDEFINED) {  // never written: black, not garbage
          transition(cb, *img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
          VkImageSubresourceRange r{img->aspect, 0, img->levels, 0, img->layers};
+@@ -609,11 +624,12 @@
+ }
+ 
+ VkImageView sampled_view(VkCommandBuffer cb, uint64_t texture, const ImageShape& shape, const ViewInfo* view,
+-                         VkImageLayout* layout) {
++                         VkImageLayout* layout, bool required) {
+     *layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+     GpuImage* img = ensure_contents(cb, texture);
+     static uint64_t no_image = 0, incompatible = 0;
+     if (!img) {
++        if(required)throw std::invalid_argument("required native sampled texture has no image");
+         if (++no_image % 100000 == 1) log("nvn/vk: dummy sampled: %llu with no image, %llu with an incompatible view",
+                                           (unsigned long long)no_image, (unsigned long long)incompatible);
+         return dummy_view(cb, shape);
+@@ -643,6 +659,7 @@
+     }
+     VkImageView v = view_of(*img, view_type(shape), vi);
+     if (!v) {
++        if(required)throw std::invalid_argument("required native sampled texture has no compatible Vulkan view");
+         *layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+         if (++incompatible % 1000 == 1)
+             log("nvn/vk: texture %llx (%ux%u x%u, view type %d) sampled as view type %d: dummy", (unsigned long long)texture,
+--- a/runtime/src/nvn/nvn_pipeline.h
++++ b/runtime/src/nvn/nvn_pipeline.h
+@@ -114,7 +114,7 @@
+ // `view`: the texture pool entry's view (levels, layers, swizzle), if any. `layout` gets the layout to sample in:
+ // images the GPU renders stay GENERAL (a bloom chain samples one level while rendering another).
+ VkImageView sampled_view(VkCommandBuffer cb, uint64_t texture, const ImageShape& shape, const ViewInfo* view,
+-                         VkImageLayout* layout);
++                         VkImageLayout* layout, bool required = false);
+ // The image behind a texture with its contents in place (uploaded, CPU writes applied, never-written ones cleared);
+ // null for an unknown texture. Records transfers: outside render passes.
+ GpuImage* ensure_contents(VkCommandBuffer cb, uint64_t texture);
 --- a/runtime/src/nvn/nvn_program.cpp
 +++ b/runtime/src/nvn/nvn_program.cpp
 @@ -36,9 +36,10 @@
@@ -5730,18 +5825,22 @@
  NX_HLE("nvnWindowAcquireTexture", WindowAcquireTexture);
 --- a/runtime/src/nvn/nvn_raster.cpp
 +++ b/runtime/src/nvn/nvn_raster.cpp
-@@ -11,6 +11,7 @@
+@@ -11,6 +11,8 @@
  //   SetDepthBounds(cmd, NVNboolean enable, float min [s0], float max [s1])  (Wonder: disabled)
  //   SetDepthClamp(cmd, NVNboolean enable)  (Wonder: 0)
  #include <atomic>
++#include <cmath>
 +#include <stdexcept>
  #include <cstdlib>
  
  #include "nvn_draw_state.h"
-@@ -107,6 +108,10 @@
+@@ -107,6 +109,13 @@
                  log("nvn: depth bounds test enabled (%g..%g), not applied", c.f[0], c.f[1]);
              return true;
          }
++        case Cmd::SetPointSize:
++            if(!std::isfinite(c.f[0])||c.f[0]<=0)throw std::invalid_argument("invalid recorded native point size");
++            s.point_size=c.f[0];return true;
 +        case Cmd::SetLineWidth:
 +            // Every native raster pipeline currently has static lineWidth1.
 +            if(c.f[0]!=1.0f)throw std::invalid_argument("unsupported recorded native line width");
@@ -5840,7 +5939,16 @@
      // The written ranges first (nvn_written.cpp): two bindings of one dispatch that meet get one copy, and bindings
      // that read what the dispatch writes see it, as on the GPU.
      for (const ShaderInfo* s : shaders)
-@@ -657,6 +689,20 @@
+@@ -543,7 +575,7 @@
+         const ResolvedTexture r = k < t.resolved.size() ? t.resolved[k] : ResolvedTexture{};
+         VkDescriptorImageInfo ii{};
+         ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+-        ii.imageView = r.texture ? sampled_view(cb, r.texture, b->image, &r.view, &ii.imageLayout)
++        ii.imageView = r.texture ? sampled_view(cb, r.texture, b->image, &r.view, &ii.imageLayout, native_shader_uses_sampled_float_profile(s))
+                                  : dummy_view(cb, b->image);
+         ii.sampler = r.vk_sampler ? r.vk_sampler : sampler_for(r.sampler, b->image.depth);
+         images.push_back(ii);
+@@ -657,6 +689,21 @@
              else
                  texture = 0;
          }
@@ -5852,11 +5960,12 @@
 +                if(b->image.dim==2)compatible=native_volume_ready_for_sample(*actual);
 +                else if(b->image.depth)compatible=native_sampled_shadow_compatible(b->image.arrayed,actual->target,actual->depth,actual->samples,format,actual->depth_stencil_mode,r.sampler.compare_mode,r.sampler.compare_func);
 +                else if(b->image.arrayed&&b->image.dim==3)compatible=native_sampled_cube_array_float_compatible(actual->target,actual->width,actual->height,actual->depth,actual->samples,format);
-+                else if(b->image.arrayed)compatible=native_sampled_array_float_compatible(actual->target,actual->depth,actual->samples,format);
++                else if(b->image.arrayed)compatible=native_sampled_array_float_compatible(actual->target,actual->depth,actual->samples,format)||native_sampled_depth_float_compatible(true,actual->target,actual->depth,actual->samples,format,actual->depth_stencil_mode,r.sampler.compare_mode);
 +                else if(b->image.dim==3)compatible=native_sampled_cube_float_compatible(actual->target,actual->width,actual->height,actual->samples,format);
-+                else compatible=native_sampled_2d_float_compatible(actual->target,actual->depth,actual->samples,format);
++                else compatible=native_sampled_2d_float_compatible(actual->target,actual->depth,actual->samples,format)||native_sampled_depth_float_compatible(false,actual->target,actual->depth,actual->samples,format,actual->depth_stencil_mode,r.sampler.compare_mode);
++                if(!b->image.depth&&r.sampler.compare_mode!=0)compatible=false;
 +            }
-+            if(!compatible)fatal("bound texture does not match offline sampled float shader profile shader=%s slot=%d target=%u depth=%u format=%u compare=%u/%u",s->hash.c_str(),b->nvn.index,actual?actual->target:0,actual?actual->depth:0,format,r.sampler.compare_mode,r.sampler.compare_func);
++            if(!compatible)fatal("bound texture does not match offline sampled float shader profile shader=%s slot=%d expected_dim=%u expected_array=%u expected_depth=%u target=%u depth=%u format=%u compare=%u/%u",s->hash.c_str(),b->nvn.index,b->image.dim,unsigned(b->image.arrayed),unsigned(b->image.depth),actual?actual->target:0,actual?actual->depth:0,format,r.sampler.compare_mode,r.sampler.compare_func);
 +        }
          r.texture = texture;
          if (texture ? !sampled_ready(texture) : !dummy_ready(b->image)) out |= kNeedBreak;
@@ -7800,7 +7909,7 @@
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,97 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -7811,6 +7920,7 @@
 +#include "nvn/native_device.h"
 +#include "nvn/native_raster_policy.h"
 +#include "nvn/nvn_vk.h"
++#include "nvn/nvn_draw_state.h"
 +namespace nx::nvn {std::recursive_mutex& gpu_lock();GpuImage* ensure_contents(VkCommandBuffer,uint64_t);}
 +#include <iostream>
 +#include <cstdlib>
@@ -7874,7 +7984,8 @@
 + for(unsigned i=0;i<4;++i)nx::st<float>(rgba+i*4,0.0f);commands.x[0]=cb;commands.x[1]=0;commands.x[2]=rgba;commands.x[3]=15;api("nvnCommandBufferClearColor");check(callback_calls==1);
 + commands.x[0]=cb;api("nvnCommandBufferGetCommandMemoryUsed");check(commands.x[0]==16);commands.x[0]=cb;api("nvnCommandBufferGetControlMemoryUsed");check(commands.x[0]==4);
 + for(float width:{0.0f,2.0f,std::numeric_limits<float>::quiet_NaN()}){commands.x[0]=cb;commands.v[0].f32[0]=width;bool rejected=false;try{api("nvnCommandBufferSetLineWidth");}catch(const std::invalid_argument&){rejected=true;}check(rejected);}commands.x[0]=cb;commands.v[0].f32[0]=1;api("nvnCommandBufferSetLineWidth");check(commands.x[0]==cb);commands.x[0]=cb;api("nvnCommandBufferGetCommandMemoryUsed");check(commands.x[0]==32);commands.x[0]=cb;api("nvnCommandBufferGetControlMemoryUsed");check(commands.x[0]==8);
-+ commands.x[0]=cb;api("nvnCommandBufferEndRecording");check(commands.x[0]!=0);commands.x[0]=cb;api("nvnCommandBufferGetCommandMemoryUsed");check(commands.x[0]==48);
++ for(float size:{0.0f,-1.0f,std::numeric_limits<float>::quiet_NaN()}){commands.x[0]=cb;commands.v[0].f32[0]=size;bool rejected=false;try{api("nvnCommandBufferSetPointSize");}catch(const std::invalid_argument&){rejected=true;}check(rejected);}commands.x[0]=cb;commands.v[0].f32[0]=2;api("nvnCommandBufferSetPointSize");check(commands.x[0]==cb);commands.x[0]=cb;api("nvnCommandBufferGetCommandMemoryUsed");check(commands.x[0]==48);nx::nvn::Cmd point{nx::nvn::Cmd::SetPointSize};point.f[0]=2;check(nx::nvn::replay::raster_command(point)&&nx::nvn::replay::g_state.point_size==2);point.f[0]=0;bool point_rejected=false;try{nx::nvn::replay::raster_command(point);}catch(const std::invalid_argument&){point_rejected=true;}check(point_rejected);point.f[0]=1;check(nx::nvn::replay::raster_command(point)&&nx::nvn::replay::g_state.point_size==1);
++ commands.x[0]=cb;api("nvnCommandBufferEndRecording");check(commands.x[0]!=0);commands.x[0]=cb;api("nvnCommandBufferGetCommandMemoryUsed");check(commands.x[0]==64);
 + commands.x[0]=cb;api("nvnCommandBufferFinalize");commands.x[0]=pool_key;api("nvnMemoryPoolFinalize");
 + const auto texture_a=nx::kernel_alloc(256,16),texture_b=nx::kernel_alloc(256,16);auto& ta=nx::nvn::make<nx::nvn::Texture>(texture_a);auto& tb=nx::nvn::make<nx::nvn::Texture>(texture_b);ta.pool=tb.pool=0x1234;ta.offset=tb.offset=64;ta.format=tb.format=0x25;ta.width=tb.width=16;ta.height=tb.height=16;ta.depth=tb.depth=1;ta.levels=tb.levels=1;ta.samples=tb.samples=1;
 + nx::CPU compare{};auto cmp=nx::hle_lookup("nvnTextureCompare");check(cmp!=nullptr);compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==1);tb.width=32;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);tb.width=16;tb.swizzle[3]=0;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);compare.x[0]=texture_a;compare.x[1]=texture_a;cmp(compare);check(compare.x[0]==1);text(text_area+512,"owned texture label");auto label=nx::hle_lookup("nvnTextureSetDebugLabel");check(label!=nullptr);compare.x[0]=texture_a;compare.x[1]=text_area+512;label(compare);check(ta.debug_label=="owned texture label");text(text_area+512,"changed input");check(ta.debug_label=="owned texture label");compare.x[0]=texture_a;compare.x[1]=0;label(compare);check(ta.debug_label.empty());auto zcull=nx::hle_lookup("nvnTextureGetZCullStorageSize");check(zcull!=nullptr);nx::CPU zquery{};zquery.x[0]=texture_a;zquery.x[1]=0x12345678;zcull(zquery);check(zquery.x[0]==0);check(zquery.x[1]==0x12345678);ta.format=0x34;zquery.x[0]=texture_a;zcull(zquery);check(zquery.x[0]==0);const auto copied=nx::kernel_alloc(0xb0,16);nx::vm_set(copied,0xb0,nx::kMemHeap,3);std::memset(reinterpret_cast<void*>(copied),0,0xb0);nx::st<uint64_t>(copied+8,device);nx::st<uint64_t>(copied+0x80,ta.gpu);nx::st<uint64_t>(copied+0x10,ta.pool);nx::st<uint64_t>(copied+0x18,ta.offset);nx::st<uint64_t>(copied+0x60,ta.stride);nx::st<uint32_t>(copied+0x54,nx::nvn::format_aspect(ta.format));const std::array<uint32_t,13> desc={ta.flags,ta.target,ta.width,ta.height,ta.depth,ta.levels,ta.format,ta.samples,ta.swizzle[0],ta.swizzle[1],ta.swizzle[2],ta.swizzle[3],ta.depth_stencil_mode};for(size_t i=0;i<desc.size();++i)nx::st<uint32_t>(copied+0x20+i*4,desc[i]);zquery.x[0]=copied;zcull(zquery);check(zquery.x[0]==0);check(zquery.x[1]==0x12345678);nx::st<uint32_t>(copied+0x28,ta.width+1);zquery.x[0]=copied;bool copy_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){copy_rejected=true;}check(copy_rejected);nx::st<uint32_t>(copied+0x28,ta.width);for(uint64_t invalid:{uint64_t(0),device}){zquery.x[0]=invalid;bool rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}nx::nvn::destroy(texture_a);zquery.x[0]=texture_a;bool retired_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){retired_rejected=true;}check(retired_rejected);zquery.x[0]=copied;bool retired_copy_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){retired_copy_rejected=true;}check(retired_copy_rejected);nx::nvn::destroy(texture_b);
@@ -7885,6 +7996,14 @@
 + nx::CPU volume_cpu{};volume_cpu.x[0]=volume_key;volume_cpu.x[1]=0;volume_cpu.x[2]=volume_region;volume_cpu.x[3]=volume_data;auto write_volume=nx::hle_lookup("nvnTextureWriteTexels");check(write_volume!=nullptr);write_volume(volume_cpu);check(volume.volume_texels_complete.load());
 + {std::lock_guard lock(nx::nvn::gpu_lock());auto command=nx::nvn::frame_begin(false);auto* image=nx::nvn::ensure_contents(command,volume_key);check(image&&image->view_type==VK_IMAGE_VIEW_TYPE_3D&&image->uploaded&&image->texels);auto readback=nx::nvn::upload_alloc(256,16);nx::nvn::transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);VkBufferImageCopy region{};region.bufferOffset=readback.offset;region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};region.imageExtent={4,4,4};nx::vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&region);VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=readback.buffer;barrier.offset=readback.offset;barrier.size=256;nx::vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);check(std::memcmp(readback.ptr,reinterpret_cast<void*>(volume_data),256)==0);}
 + nx::nvn::destroy(volume_key);
++ const auto cube_key=nx::kernel_alloc(256,16),cube_data=nx::kernel_alloc(384,16),cube_region=nx::kernel_alloc(32,16);nx::vm_set(cube_data,384,nx::kMemHeap,3);nx::vm_set(cube_region,32,nx::kMemHeap,3);auto& cube=nx::nvn::make<nx::nvn::Texture>(cube_key);cube.target=8;cube.width=cube.height=4;cube.depth=6;cube.levels=1;cube.format=0x25;cube.samples=0;for(unsigned i=0;i<384;++i)nx::st<uint8_t>(cube_data+i,uint8_t(i));for(unsigned i=0;i<6;++i)nx::st<uint32_t>(cube_region+i*4,i<3?0:i==5?6:4);nx::CPU cube_cpu{};cube_cpu.x[0]=cube_key;cube_cpu.x[1]=0;cube_cpu.x[2]=cube_region;cube_cpu.x[3]=cube_data;write_volume(cube_cpu);
++ {std::lock_guard lock(nx::nvn::gpu_lock());auto command=nx::nvn::frame_begin(false);auto* image=nx::nvn::ensure_contents(command,cube_key);check(image&&image->layers==6&&image->view_type==VK_IMAGE_VIEW_TYPE_CUBE);check(nx::nvn::vk_features().imageCubeArray);nx::nvn::ImageShape shape{};shape.dim=3;shape.arrayed=true;shape.component=nx::nvn::ScalarType::Float;nx::nvn::ViewInfo view{};VkImageLayout layout{};auto sampled=nx::nvn::sampled_view(command,cube_key,shape,&view,&layout,true);check(sampled!=VK_NULL_HANDLE&&sampled!=image->view);shape.dim=2;shape.arrayed=false;bool wrong_view=false;try{nx::nvn::sampled_view(command,cube_key,shape,&view,&layout,true);}catch(const std::invalid_argument&){wrong_view=true;}check(wrong_view);bool missing_image=false;try{nx::nvn::sampled_view(command,0,shape,&view,&layout,true);}catch(const std::invalid_argument&){missing_image=true;}check(missing_image);nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);}
++ nx::nvn::destroy(cube_key);
++ const auto depth_key=nx::kernel_alloc(256,16),depth_data=nx::kernel_alloc(64,16),depth_region=nx::kernel_alloc(32,16);nx::vm_set(depth_data,64,nx::kMemHeap,3);nx::vm_set(depth_region,32,nx::kMemHeap,3);auto& depth=nx::nvn::make<nx::nvn::Texture>(depth_key);depth.target=1;depth.width=depth.height=4;depth.depth=1;depth.levels=1;depth.format=0x34;depth.samples=0;for(unsigned i=0;i<16;++i)nx::st<float>(depth_data+i*4,float(i)/16);for(unsigned i=0;i<6;++i)nx::st<uint32_t>(depth_region+i*4,i<3?0:i==5?1:4);nx::CPU depth_cpu{};depth_cpu.x[0]=depth_key;depth_cpu.x[1]=0;depth_cpu.x[2]=depth_region;depth_cpu.x[3]=depth_data;write_volume(depth_cpu);
++ {std::lock_guard lock(nx::nvn::gpu_lock());auto command=nx::nvn::frame_begin(false);auto* image=nx::nvn::ensure_contents(command,depth_key);check(image&&image->format==VK_FORMAT_D32_SFLOAT&&image->aspect==VK_IMAGE_ASPECT_DEPTH_BIT);nx::nvn::ImageShape shape{};shape.dim=1;shape.component=nx::nvn::ScalarType::Float;nx::nvn::ViewInfo view{};VkImageLayout layout{};check(nx::nvn::sampled_view(command,depth_key,shape,&view,&layout,true)!=VK_NULL_HANDLE);auto readback=nx::nvn::upload_alloc(64,16);nx::nvn::transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);VkBufferImageCopy region{};region.bufferOffset=readback.offset;region.imageSubresource={VK_IMAGE_ASPECT_DEPTH_BIT,0,0,1};region.imageExtent={4,4,1};nx::vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&region);VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=readback.buffer;barrier.offset=readback.offset;barrier.size=64;nx::vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);check(std::memcmp(readback.ptr,reinterpret_cast<void*>(depth_data),64)==0);}
++ nx::nvn::destroy(depth_key);
++
++
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
@@ -7935,7 +8054,7 @@
 +#include "nvn/native_sampled_profile.h"
 +#include <iostream>
 +#include <stdexcept>
-+int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("sampled profile assertion");};for(unsigned format:{0x25u,0x4bu,0x79u,0x95u,0xau})check(native_sampled_2d_float_compatible(1,1,1,format));for(unsigned format:{0u,3u,4u,0x27u,0x31u,0x32u,0x33u,0x3eu,0x51u,0xffffffffu})check(!native_sampled_2d_float_compatible(1,1,1,format));for(unsigned target:{0u,2u,3u,4u,5u,6u,7u,8u,9u,0xffffffffu})check(!native_sampled_2d_float_compatible(target,1,1,0x25));check(!native_sampled_2d_float_compatible(1,2,1,0x25));check(!native_sampled_2d_float_compatible(1,1,4,0x25));check(native_sampled_2d_float_compatible(1,1,0,0x25));check(native_sampled_cube_float_compatible(8,16,16,1,0x25));check(native_sampled_cube_float_compatible(8,16,16,0,0x4b));check(!native_sampled_cube_float_compatible(1,16,16,1,0x25));check(!native_sampled_cube_float_compatible(8,16,8,1,0x25));check(!native_sampled_cube_float_compatible(8,0,0,1,0x25));check(!native_sampled_cube_float_compatible(8,16,16,4,0x25));check(!native_sampled_cube_float_compatible(8,16,16,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_array_shadow_compatible(4,4,1,format,0,1,4));check(!native_sampled_array_shadow_compatible(1,4,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,0,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,4,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x25,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,1,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,0,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,0));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,9));check(native_sampled_shadow_compatible(false,1,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,4,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,4,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x25,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x34,0,0,4));check(native_sampled_array_float_compatible(4,3,1,0x25));check(!native_sampled_array_float_compatible(4,0,1,0x25));check(!native_sampled_array_float_compatible(1,3,1,0x25));check(native_sampled_cube_array_float_compatible(9,16,16,12,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,7,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,8,12,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,4,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,1,0x27));std::cout<<"sampled profile checks="<<checks<<" PASS\n";}
++int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("sampled profile assertion");};for(unsigned format:{0x25u,0x4bu,0x79u,0x95u,0xau})check(native_sampled_2d_float_compatible(1,1,1,format));for(unsigned format:{0u,3u,4u,0x27u,0x31u,0x32u,0x33u,0x3eu,0x51u,0xffffffffu})check(!native_sampled_2d_float_compatible(1,1,1,format));for(unsigned target:{0u,2u,3u,4u,5u,6u,7u,8u,9u,0xffffffffu})check(!native_sampled_2d_float_compatible(target,1,1,0x25));check(!native_sampled_2d_float_compatible(1,2,1,0x25));check(!native_sampled_2d_float_compatible(1,1,4,0x25));check(native_sampled_2d_float_compatible(1,1,0,0x25));check(native_sampled_cube_float_compatible(8,16,16,1,0x25));check(native_sampled_cube_float_compatible(8,16,16,0,0x4b));check(!native_sampled_cube_float_compatible(1,16,16,1,0x25));check(!native_sampled_cube_float_compatible(8,16,8,1,0x25));check(!native_sampled_cube_float_compatible(8,0,0,1,0x25));check(!native_sampled_cube_float_compatible(8,16,16,4,0x25));check(!native_sampled_cube_float_compatible(8,16,16,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_array_shadow_compatible(4,4,1,format,0,1,4));check(!native_sampled_array_shadow_compatible(1,4,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,0,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,4,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x25,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,1,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,0,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,0));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,9));check(native_sampled_shadow_compatible(false,1,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,4,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,4,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x25,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x34,0,0,4));check(native_sampled_array_float_compatible(4,3,1,0x25));check(!native_sampled_array_float_compatible(4,0,1,0x25));check(!native_sampled_array_float_compatible(1,3,1,0x25));check(native_sampled_cube_array_float_compatible(9,16,16,12,1,0x25));check(native_sampled_cube_array_float_compatible(8,16,16,6,1,0x25));check(!native_sampled_cube_array_float_compatible(8,16,16,12,1,0x25));check(!native_sampled_cube_array_float_compatible(8,16,16,6,4,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,7,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,8,12,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,4,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_depth_float_compatible(false,1,1,1,format,0,0));check(native_sampled_depth_float_compatible(true,4,6,1,0x34,0,0));check(!native_sampled_depth_float_compatible(false,1,1,1,0x34,0,1));check(!native_sampled_depth_float_compatible(false,1,1,1,0x34,1,0));check(!native_sampled_depth_float_compatible(false,1,1,4,0x34,0,0));check(!native_sampled_depth_float_compatible(false,8,6,1,0x34,0,0));check(!native_sampled_depth_float_compatible(false,1,1,1,0x25,0,0));check(!native_sampled_depth_float_compatible(true,4,0,1,0x34,0,0));std::cout<<"sampled profile checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_texture_layers_test.cpp
 @@ -0,0 +1,5 @@

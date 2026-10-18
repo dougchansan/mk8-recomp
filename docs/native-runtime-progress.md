@@ -12,7 +12,7 @@ The Vulkan dispatch table is regenerated for the already installed headers.
 Thirty-two CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 135-check GPU fixture creates and drains a real device and queue on
+A separate 151-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,
@@ -31,8 +31,10 @@ starts the SDK53 software audio render thread and loads sound banks, then reache
 UI and RaceCommon asset loading. The pinned application-control reader answers
 the display-version request using privately supplied title metadata. Startup
 continues through menu, Mario, kart and 3D Mii assets. The native random-Mii
-request succeeds. The next closed probe passes depth-resource metadata queries
-and reaches line-width setup; unit-width command recording and replay are now integrated. There is still no native game frame or playable result.
+request succeeds. Game-driven Vulkan draws and presentation are now logged.
+Five presented-texture readbacks at 1920x1080 are entirely black, so a rendered
+game image is still unverified. Subsequent startup probes pass raster state
+setup and stop at checked shader/resource compatibility boundaries. There is still no native game frame or playable result.
 
 The [offline shader diagnostic](../integrations/belmante-runtime/offline/README.md)
 uses the existing shader-only compiler libraries. Thirteen authored parser/profile
@@ -93,9 +95,19 @@ device pointer at +8, the GPU address at +0x80 and depth/stencil aspect bits at
 +0x54; a dedicated authored regression checks those offsets.
 
 Line width is recorded and replayed against the native pipeline's supported
-unit width. Other widths and malformed state stop explicitly. Vulkan image
+unit width. Positive finite point-size state is recorded and replayed; point
+primitive rendering still requires its own shader profile and stops explicitly.
+Other line widths and malformed state stop explicitly. Vulkan image
 [memory requirements](https://docs.vulkan.org/refpages/latest/refpages/source/VkMemoryRequirements.html)
 account for resource allocation; these adaptations do not prove depth rendering.
+
+A cubemap can supply a cube-array shader through a checked one-cube, six-face
+native Vulkan view. Missing or incompatible required sampled views now stop;
+they cannot substitute a dummy or a differently shaped base view. Ordinary
+floating-point depth reads use the depth aspect with comparison disabled,
+separately from comparison sampling. Native fixtures create the cube-array view
+and verify all 64 bytes of an authored D32 upload/readback. This does not prove
+the title's depth results or image correctness.
 
 Missing required shader translations and unknown calls remain visible failures.
 Shader/draw/present coverage, GPU upload/layout correctness, allocator callback

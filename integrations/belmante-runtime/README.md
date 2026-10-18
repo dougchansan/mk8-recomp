@@ -6,13 +6,13 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 29 CPU/component suites and a 118-check native
+Windows integration now passes 30 CPU/component suites and a 118-check native
 GPU fixture on an RX 9070 XT. Actual MK8D startup reaches its owned window,
 Vulkan device/queue, three presentation textures, command-buffer setup, native
 save mounts and first texture upload. Copied texture/sampler descriptors now
 compare using the inspected SDK 53 layout. The inspected 2D packaged texture layout and shared debug-label storage are
 integrated. With the offline graphics/compute cache and verified local Mii system data,
-startup starts the SDK53 software audio thread, loads sound banks, native system fonts, UI and RaceCommon assets, then stops at display-version metadata. No native game frame is established.
+startup starts the SDK53 software audio thread, loads sound banks, native system fonts, UI and RaceCommon assets, and serves the pinned application display-version metadata before continuing into further RaceCommon resources. No native game frame is established.
 
 The adaptation adds an MK8D target, loads and initializes main/subsdk0/sdk,
 uses an existing checked LZ4 implementation without installing a package, and
@@ -64,6 +64,8 @@ paths. `NX_DATA_ROOT` selects the local directory containing `analysis/`;
 `NX_NPDM_SHA256` select and pin its matching metadata (recorded by generation).
 Optional `NX_MII_ROMFS_IMAGE` and `NX_MII_ROMFS_SHA256` select a privately supplied,
 verified system-data image. No system contents or keys are distributed.
+`NX_NACP` and `NX_NACP_SHA256` supply and pin the matching private application control metadata.
+`NX_NACP` and `NX_NACP_SHA256` supply and pin the matching private application control metadata.
 `NX_FONT_BUNDLE` and `NX_FONT_BUNDLE_SHA256` select and pin the privately prepared native font bundle.
 `NX_SHOW_INACTIVE=1` creates the owned window without foreground activation;
 focus policy parks hidden/minimized execution.

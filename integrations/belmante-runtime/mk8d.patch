@@ -1,9 +1,12 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -36,6 +36,86 @@
+@@ -36,6 +36,89 @@
  option(NX_TESTS "Build the standalone unit tests" OFF)
  if(NX_TESTS AND NOT ANDROID)
      enable_testing()
++    add_executable(native_control_metadata_test tests/native_control_metadata_test.cpp)
++    target_include_directories(native_control_metadata_test PRIVATE runtime/src)
++    add_test(NAME native_control_metadata COMMAND native_control_metadata_test)
 +    add_executable(native_font_bundle_test tests/native_font_bundle_test.cpp)
 +    target_include_directories(native_font_bundle_test PRIVATE runtime/src)
 +    add_test(NAME native_font_bundle COMMAND native_font_bundle_test)
@@ -87,7 +90,7 @@
      add_executable(gpu_pick_test tests/gpu_pick_test.cpp runtime/src/nvn/nvn_gpu_pick.cpp)
      target_compile_definitions(gpu_pick_test PRIVATE NX_GPU_PICK_STANDALONE)
      target_include_directories(gpu_pick_test PRIVATE runtime/src/nvn)
-@@ -67,7 +147,14 @@
+@@ -67,7 +150,14 @@
      return()
  endif()
  
@@ -103,7 +106,7 @@
      file(GLOB src CONFIGURE_DEPENDS "${NX_GEN_DIR}/${mod}/*.cpp")
      add_library(game_${mod} STATIC ${src})
      target_include_directories(game_${mod} PRIVATE runtime/include "${NX_GEN_DIR}/${mod}")
-@@ -84,8 +171,10 @@
+@@ -84,8 +174,10 @@
          target_compile_options(game_${mod} PRIVATE -O2 -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
      endif()
  endforeach()
@@ -114,7 +117,7 @@
      runtime/src/main.cpp
      runtime/src/sampler.cpp
      runtime/src/loader.cpp
-@@ -93,6 +182,12 @@
+@@ -93,6 +185,12 @@
      runtime/src/kernel.cpp
      runtime/src/kernel_watch.cpp
      runtime/src/ipc.cpp
@@ -127,7 +130,7 @@
      runtime/src/svc_am.cpp
      runtime/src/svc_set.cpp
      runtime/src/svc_misc.cpp
-@@ -101,6 +196,7 @@
+@@ -101,6 +199,7 @@
      runtime/src/hle_fs.cpp
      runtime/src/svc_account.cpp
      runtime/src/hle_ro.cpp
@@ -135,7 +138,7 @@
      runtime/src/hle_vi.cpp
      runtime/src/hle_hid.cpp
      runtime/src/hle_net.cpp
-@@ -185,7 +281,7 @@
+@@ -185,7 +284,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -144,7 +147,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +292,7 @@
+@@ -196,7 +295,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -153,7 +156,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,16 +304,36 @@
+@@ -208,16 +307,36 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -1326,6 +1329,25 @@
 +inline uint32_t sdk53_audio_system_offset(uint32_t instruction){if((instruction&0xffc003ffu)!=0x91000013u)throw std::invalid_argument("unsupported audio render-system code");return (instruction>>10)&0xfff;}
 +struct Sdk53AudioCommand {uint16_t size,id;bool enabled;};
 +inline Sdk53AudioCommand sdk53_audio_command(std::span<const uint8_t> bytes){if(bytes.size()<0x14)throw std::invalid_argument("audio command header truncated");uint32_t magic;uint16_t size,id;std::memcpy(&magic,bytes.data(),4);std::memcpy(&size,bytes.data()+4,2);std::memcpy(&id,bytes.data()+6,2);if(magic!=0xcafebabe||size<0x14||size>bytes.size())throw std::invalid_argument("audio command range/magic");return {size,id,bytes[0x10]!=0};}
++}
+--- /dev/null
++++ b/runtime/src/native_control_metadata.h
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <algorithm>
++#include <array>
++#include <span>
++#include <stdexcept>
++#include <cstdint>
++namespace nx {
++inline std::array<char,16> native_display_version(std::span<const uint8_t> bytes) {
++    if(bytes.size()!=0x4000)throw std::invalid_argument("NACP extent");
++    const auto field=bytes.subspan(0x3060,16);
++    const auto end=std::find(field.begin(),field.end(),uint8_t(0));
++    if(end==field.begin()||end==field.end()||!std::all_of(field.begin(),end,[](uint8_t value){return value>=0x20&&value<=0x7e;}))throw std::invalid_argument("NACP display version");
++    std::array<char,16> result{};std::copy(field.begin(),end,result.begin());return result;
++}
 +}
 --- /dev/null
 +++ b/runtime/src/native_exit_policy.h
@@ -2965,7 +2987,7 @@
  
 --- a/runtime/src/svc_am.cpp
 +++ b/runtime/src/svc_am.cpp
-@@ -1,8 +1,13 @@
+@@ -1,9 +1,18 @@
  // am services (appletOE): application proxy, focus/operation-mode state, launch parameters.
  #include <cstdlib>
 +#include <algorithm>
@@ -2977,9 +2999,14 @@
 +#include "native_exit_policy.h"
 +#include "platform.h"
  #include "language.h"
++#include "native_control_metadata.h"
++#include <fstream>
++#include <windows.h>
++#include <bcrypt.h>
  
  namespace nx {
-@@ -15,13 +20,15 @@
+ 
+@@ -15,13 +24,15 @@
  constexpr uint32_t kMsgPerformanceModeChanged = 31;
  
  struct AppletState {
@@ -2996,7 +3023,7 @@
  }
  
  uint32_t event_handle(std::shared_ptr<EventState> st) {
-@@ -39,12 +46,13 @@
+@@ -39,12 +50,13 @@
  std::shared_ptr<Service> common_state_getter() {
      return svc("ICommonStateGetter", [](Service& s) {
          s.cmds[0] = [](IpcCtx& c) {  // GetEventHandle
@@ -3012,7 +3039,7 @@
              if (a.messages.empty()) {
                  a.message_event->signaled = false;
                  return kAmNoMessage;
-@@ -58,7 +66,7 @@
+@@ -58,7 +70,7 @@
          static const bool handheld = std::getenv("NX_HANDHELD") != nullptr;
          s.cmds[5] = [](IpcCtx& c) { c.push<uint8_t>(handheld ? 0 : 1); return 0u; };   // GetOperationMode
          s.cmds[6] = [](IpcCtx& c) { c.push<uint32_t>(handheld ? 0 : 1); return 0u; };  // GetPerformanceMode
@@ -3021,7 +3048,7 @@
          // SetCpuBoostMode(CpuBoostMode): Wonder asks for the boost around every load. A PC has no clock to raise, so
          // the request is taken and dropped (no output). Same answer as the generic stub, without its log line.
          s.cmds[66] = [](IpcCtx&) { return 0u; };
-@@ -84,8 +92,17 @@
+@@ -84,8 +96,17 @@
  
  std::shared_ptr<Service> self_controller() {
      return svc("ISelfController", [](Service& s) {
@@ -3040,7 +3067,7 @@
          s.cmds[62] = [](IpcCtx&) { return 0u; };                            // SetIdleTimeDetectionExtension
          for (uint32_t cmd : {19u, 50u, 71u, 110u})                           // AccumulatedSuspendedTickChangedEvent etc.
              s.cmds[cmd] = [](IpcCtx& c) {
-@@ -95,11 +112,7 @@
+@@ -95,11 +116,7 @@
      });
  }
  
@@ -3053,6 +3080,30 @@
  
  std::shared_ptr<Service> application_functions() {
      return svc("IApplicationFunctions", [](Service& s) {
+@@ -118,6 +135,23 @@
+             log("am: desired language = %s", tag);
+             c.push<uint64_t>(code);
+             return 0u;
++        };
++        s.cmds[23] = [](IpcCtx& c) { // GetDisplayVersion: owner's pinned application control metadata.
++            if(c.in_size||!c.a.empty()||!c.b.empty()||!c.x.empty()||!c.c.empty()||!c.in_copy.empty()||!c.in_move.empty()||!c.in_objects.empty())return 0xe401u;
++            static const auto version=[] {
++                const char* path=std::getenv("NX_NACP"),*expected=std::getenv("NX_NACP_SHA256");
++                if(!path||!expected||std::strlen(expected)!=64)fatal("display version requires pinned application control metadata");
++                std::ifstream input(path,std::ios::binary|std::ios::ate);if(!input||input.tellg()!=0x4000)fatal("native NACP extent");
++                std::array<uint8_t,0x4000> bytes{};input.seekg(0);if(!input.read(reinterpret_cast<char*>(bytes.data()),bytes.size()))fatal("native NACP read");
++                BCRYPT_ALG_HANDLE algorithm=nullptr;std::array<uint8_t,32> digest{};
++                if(BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,nullptr,0)<0)fatal("native NACP hash provider");
++                const auto hashed=BCryptHash(algorithm,nullptr,0,bytes.data(),ULONG(bytes.size()),digest.data(),ULONG(digest.size()));const auto closed=BCryptCloseAlgorithmProvider(algorithm,0);
++                if(hashed<0||closed<0)fatal("native NACP hash");
++                const char* hex="0123456789abcdef";std::string actual;for(auto value:digest){actual+=hex[value>>4];actual+=hex[value&15];}
++                if(actual!=expected)fatal("native NACP identity mismatch");
++                try{return native_display_version(bytes);}catch(const std::exception& e){fatal("native NACP metadata: %s",e.what());}
++            }();
++            c.push(version);log("am: native application display version=%s",version.data());return 0u;
+         };
+         s.cmds[40] = [](IpcCtx& c) { c.push<uint8_t>(0); return 0u; };  // NotifyRunning
+         s.cmds[50] = [](IpcCtx& c) {                                     // GetPseudoDeviceId
 --- a/runtime/src/svc_misc.cpp
 +++ b/runtime/src/svc_misc.cpp
 @@ -1,6 +1,17 @@
@@ -4324,6 +4375,15 @@
 +#include <iostream>
 +#include <stdexcept>
 +int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("compute profile assertion");};check(native_compute_group_valid({32,1,1},{32,1,1},0));check(!native_compute_group_valid({32,1,1},{64,1,1},0));check(!native_compute_group_valid({0,1,1},{0,1,1},0));check(!native_compute_group_valid({1024,2,1},{1024,2,1},0));check(!native_compute_group_valid({1,1,65},{1,1,65},0));check(!native_compute_group_valid({32,1,1},{32,1,1},3));check(!native_compute_group_valid({32,1,1},{32,1,1},65540));check(native_compute_buffer_extent_valid(16,32,48,64));check(!native_compute_buffer_extent_valid(49,1,48,64));check(!native_compute_buffer_extent_valid(16,33,48,64));check(!native_compute_buffer_extent_valid(0,0,48,64));check(!native_compute_buffer_extent_valid(0,65,128,64));check(!native_compute_buffer_extent_valid(UINT64_MAX,2,UINT64_MAX,64));std::cout<<"compute profile checks="<<checks<<" PASS\n";}
+--- /dev/null
++++ b/tests/native_control_metadata_test.cpp
+@@ -0,0 +1,6 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "native_control_metadata.h"
++#include <vector>
++#include <cstring>
++#include <iostream>
++int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
 @@ -0,0 +1,84 @@

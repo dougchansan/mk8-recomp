@@ -9,12 +9,13 @@ The isolated Windows target uses MIT-licensed SuperMarioWonderRecomp revision
 main/subsdk0/SDK form three static libraries and a local standalone executable.
 The Vulkan dispatch table is regenerated for the already installed headers.
 
-Twenty-nine CPU/component suites pass, including SDK 53 texture/sampler
+Thirty CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
 A separate 118-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
-configuration without loading guest modules. The 29th component suite validates the bounded font-bundle parser. The real image's 1,122 directories,
+configuration without loading guest modules. Font-bundle and application-control
+parsers cover valid and malformed inputs. The real image's 1,122 directories,
 6,597 files and eight native sample reads match an independent parser.
 
 Actual MK8D startup enters `nnMain`, mounts its content, creates an owned native
@@ -27,11 +28,14 @@ Packaged texture layouts carry block height into storage sizing and upload.
 With the local offline graphics cache, startup passes the previous textured
 shader setup, raw compute program setup and system-resource mounting. It now
 starts the SDK53 software audio render thread and loads sound banks, then reaches
-UI and RaceCommon asset loading. The latest run stops at application display-version metadata (IApplicationFunctions command 23). There is still no native game frame or playable result.
+UI and RaceCommon asset loading. The pinned application-control reader answers
+the display-version request using privately supplied title metadata. Startup
+continues into the menu course's assets, where the latest closed probe stopped
+at another required shader. There is still no native game frame or playable result.
 
 The [offline shader diagnostic](../integrations/belmante-runtime/offline/README.md)
 uses the existing shader-only compiler libraries. Thirteen authored parser/profile
-cases pass. The cache contains 3,703 pretranslated graphics/compute shader stages from inspected startup
+cases pass. The cache contains 3,894 pretranslated graphics/compute shader stages from inspected startup
 assets, with Vulkan module acceptance and no pipeline/draw credit. Explicit
 profiles cover normalized 2D/cube/array float sampling and depth comparisons on 2D or
 array textures; live bindings must match before upload/draw. Cubemap storage uses
@@ -41,6 +45,11 @@ workgroup/shared metadata and checked native buffer bindings. The 3D noise-volum
 path uses complete single-level RGBA8 API texels; an authored 4x4x4 volume passes
 all 256 bytes through native Vulkan upload/readback. Raw tiled volumes, multisample
 layouts and remaining resource classes still require integration.
+
+The application-control adapter checks the supplied NACP digest, exact extent
+and display-version string before replying. Its metadata remains private.
+
+The application-control adapter checks the supplied NACP digest, exact extent and display-version string before replying. Its metadata remains private.
 
 The font adapter maps seven privately supplied, verified system fonts into native shared memory and serves font metadata and language queries. No font contents are distributed.
 
@@ -58,8 +67,11 @@ runs and sound-bank reads advance, but these probes are muted and do not prove
 audible output or complete audio correctness. Local play-report and offline-friend
 interfaces have begun integration; their remaining calls still stop explicitly.
 
-The owned window does not activate or change the foreground. Fresh startup
-processes stop at explicit unsupported calls and close without a timeout. These
+The owned window does not activate or change the foreground. An expanded-cache
+probe hit its 30-second bound while loading assets. A fresh 120-second probe
+then reached menu-course assets and stopped at a missing shader after 40.9 seconds,
+without a timeout. Owned processes closed, source and executable hashes stayed
+unchanged, and the foreground stayed unchanged. These
 observations establish startup progress, not correct rendering or full gameplay.
 
 The adaptation reads DT_INIT from each module, reuses the existing native

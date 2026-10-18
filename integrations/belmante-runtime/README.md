@@ -6,7 +6,7 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 33 CPU/component suites and a 163-check native
+Windows integration now passes 34 CPU/component suites and a 188-check native
 GPU fixture on an RX 9070 XT. Actual MK8D startup reaches its owned window,
 Vulkan device/queue, three presentation textures, command-buffer setup, native
 save mounts and first texture upload. Copied texture/sampler descriptors now
@@ -57,6 +57,11 @@ match the installed headers; verification here used version 1.4.345. No addition
 Vulkan library is installed. `NX_PREBUILT_MODULE_DIR` is only for local reuse
 when generated inputs and runtime headers are hash-verified against the build
 that produced those libraries. A normal build compiles the generated modules.
+
+The optional `native_sdk_mii_probe <private-analysis-directory>` executable checks
+the generated native Mii layout using the supplied SDK's statically compiled
+verifier and parameter accessor. It loads private module images but does not run
+title entry or initialize a GPU. Its inputs must match the generated libraries.
 
 Keep generated code, module images, builds and game data under ignored local
 paths. `NX_DATA_ROOT` selects the local directory containing `analysis/`;

@@ -1,9 +1,12 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -36,6 +36,98 @@
+@@ -36,6 +36,101 @@
  option(NX_TESTS "Build the standalone unit tests" OFF)
  if(NX_TESTS AND NOT ANDROID)
      enable_testing()
++    add_executable(native_mii_defaults_test tests/native_mii_defaults_test.cpp)
++    target_include_directories(native_mii_defaults_test PRIVATE runtime/src)
++    add_test(NAME native_mii_defaults COMMAND native_mii_defaults_test)
 +    add_executable(sdk53_sampler_values_test tests/sdk53_sampler_values_test.cpp)
 +    target_include_directories(sdk53_sampler_values_test PRIVATE runtime/src)
 +    add_test(NAME sdk53_sampler_values COMMAND sdk53_sampler_values_test)
@@ -99,7 +102,7 @@
      add_executable(gpu_pick_test tests/gpu_pick_test.cpp runtime/src/nvn/nvn_gpu_pick.cpp)
      target_compile_definitions(gpu_pick_test PRIVATE NX_GPU_PICK_STANDALONE)
      target_include_directories(gpu_pick_test PRIVATE runtime/src/nvn)
-@@ -67,7 +159,14 @@
+@@ -67,7 +162,14 @@
      return()
  endif()
  
@@ -115,7 +118,7 @@
      file(GLOB src CONFIGURE_DEPENDS "${NX_GEN_DIR}/${mod}/*.cpp")
      add_library(game_${mod} STATIC ${src})
      target_include_directories(game_${mod} PRIVATE runtime/include "${NX_GEN_DIR}/${mod}")
-@@ -84,8 +183,10 @@
+@@ -84,8 +186,10 @@
          target_compile_options(game_${mod} PRIVATE -O2 -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
      endif()
  endforeach()
@@ -126,7 +129,7 @@
      runtime/src/main.cpp
      runtime/src/sampler.cpp
      runtime/src/loader.cpp
-@@ -93,6 +194,12 @@
+@@ -93,6 +197,12 @@
      runtime/src/kernel.cpp
      runtime/src/kernel_watch.cpp
      runtime/src/ipc.cpp
@@ -139,7 +142,7 @@
      runtime/src/svc_am.cpp
      runtime/src/svc_set.cpp
      runtime/src/svc_misc.cpp
-@@ -101,6 +208,7 @@
+@@ -101,6 +211,7 @@
      runtime/src/hle_fs.cpp
      runtime/src/svc_account.cpp
      runtime/src/hle_ro.cpp
@@ -147,7 +150,7 @@
      runtime/src/hle_vi.cpp
      runtime/src/hle_hid.cpp
      runtime/src/hle_net.cpp
-@@ -185,7 +293,7 @@
+@@ -185,7 +296,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -156,7 +159,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +304,7 @@
+@@ -196,7 +307,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -165,7 +168,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,16 +316,36 @@
+@@ -208,16 +319,41 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -198,6 +201,11 @@
 +        target_link_libraries(native_device_fixture PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt)
 +        target_link_options(native_device_fixture PRIVATE /STACK:67108864 /HIGHENTROPYVA:NO /MAP)
 +        add_test(NAME native_device_cpu COMMAND native_device_fixture)
++        add_executable(native_sdk_mii_probe tests/native_sdk_mii_probe.cpp $<TARGET_OBJECTS:nx_runtime_objects>)
++        target_include_directories(native_sdk_mii_probe PRIVATE runtime/include runtime/src "${NX_VULKAN_SDK}/Include")
++        target_link_libraries(native_sdk_mii_probe PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt)
++        target_link_options(native_sdk_mii_probe PRIVATE /STACK:67108864 /HIGHENTROPYVA:NO /MAP)
++
 +    endif()
      # The runtime uses the portable C library (getenv, fopen, ...) on every host: no "_s" variants.
 -    target_compile_definitions(${NX_GAME} PRIVATE _CRT_SECURE_NO_WARNINGS _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
@@ -768,15 +776,25 @@
 +NX_HLE("_ZN2nn3hid20GetTouchScreenStatesILm16EEEiPNS0_16TouchScreenStateIXT_EEEi",nx::GetNativeTouchStates);
 --- a/runtime/src/hle_vi.cpp
 +++ b/runtime/src/hle_vi.cpp
-@@ -10,6 +10,7 @@
+@@ -2,6 +2,8 @@
+ // (Win32 window / Android surface); its handle is the "native window" the game hands to vkCreateViSurfaceNN, which
+ // the Vulkan bridge turns into the platform's surface.
+ #include <cstdlib>
++#include <stdexcept>
++#include <string>
+ #include <memory>
+ #include <mutex>
+ #include <thread>
+@@ -10,6 +12,8 @@
  
  #include "kernel.h"
  #include "platform.h"
 +#include "vi_state.h"
++#include "compiled_callback.h"
  
  namespace nx {
  
-@@ -28,28 +29,21 @@
+@@ -28,27 +32,29 @@
  
  namespace {
  
@@ -802,17 +820,23 @@
 +    const auto layer=native_vi::create_layer(c.x[1]);st<uint64_t>(c.x[0],layer);c.x[0]=0;
 +    log("vi: owned layer created");
  }
--
--void GetNativeWindow(CPU& c) {  // (void** out, Layer*)
--    st<uint64_t>(c.x[0], uint64_t(plat::create_window()));
--    c.x[0] = 0;
--}
 +void GetNativeWindow(CPU& c){st<uint64_t>(c.x[0],uint64_t(native_vi::native_window(c.x[1])));c.x[0]=0;}
 +void SetLayerScalingMode(CPU& c){native_vi::set_scaling(c.x[0],uint32_t(c.x[1]));log("vi: ScaleToWindow applied");c.x[0]=0;}
  
- void nv_noop(CPU&) {}
+-void GetNativeWindow(CPU& c) {  // (void** out, Layer*)
+-    st<uint64_t>(c.x[0], uint64_t(plat::create_window()));
+-    c.x[0] = 0;
++void nv_set_allocator(CPU& c) {
++    for(unsigned i=0;i<3;++i)if(!compiled_callback_target(c.x[i]))throw std::invalid_argument("native graphics allocator callback is not compiled");
++    const char* current=hle_current_name();if(!current)throw std::invalid_argument("native graphics allocator entry name");const std::string name=current;
++    const auto target=find_symbol(name.c_str());if(!compiled_callback_target(target)||target>=kThunkBase)throw std::invalid_argument("native graphics allocator SDK setter is unavailable");
++    // The inspected exported setter stores callbacks/userdata and installs its
++    // compiled wrappers. It does not initialize a console GPU driver.
++    call(c,target);log("nv: compiled graphics allocator callbacks registered via %s",name.c_str());
+ }
  
-@@ -70,6 +64,7 @@
+ void nv_noop(CPU&) {}
+@@ -70,6 +76,7 @@
  }
  
  void GetDisplayVsyncEvent(CPU& c) {  // (os::SystemEventType*, Display*)
@@ -820,7 +844,7 @@
      auto r = std::make_shared<KEvent>(), w = std::make_shared<KEvent>();
      r->state = w->state = g_vsync;
      uint32_t hr = handle_add(r), hw = handle_add(w);
-@@ -86,7 +81,8 @@
+@@ -86,13 +93,14 @@
  
  }  // namespace
  
@@ -830,6 +854,14 @@
  NX_HLE("_ZN2nn2vi18OpenDefaultDisplayEPPNS0_7DisplayE", OpenDefaultDisplay);
  NX_HLE("_ZN2nn2vi11CreateLayerEPPNS0_5LayerEPNS0_7DisplayE", CreateLayer);
  NX_HLE("_ZN2nn2vi15GetNativeWindowEPPvPNS0_5LayerE", GetNativeWindow);
+ NX_HLE("_ZN2nn2vi20GetDisplayVsyncEventEPNS_2os15SystemEventTypeEPNS0_7DisplayE", GetDisplayVsyncEvent);
+-NX_HLE("_ZN2nv20SetGraphicsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_", nv_noop);
+-NX_HLE("_ZN2nv28SetGraphicsDevtoolsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_", nv_noop);
++NX_HLE("_ZN2nv20SetGraphicsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_", nv_set_allocator);
++NX_HLE("_ZN2nv28SetGraphicsDevtoolsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_", nv_set_allocator);
+ NX_HLE("_ZN2nv18InitializeGraphicsEPvm", nv_noop);
+ 
+ }  // namespace nx
 --- a/runtime/src/ipc.cpp
 +++ b/runtime/src/ipc.cpp
 @@ -36,15 +36,13 @@
@@ -1469,7 +1501,7 @@
 +}
 --- /dev/null
 +++ b/runtime/src/native_mii/random.h
-@@ -0,0 +1,671 @@
+@@ -0,0 +1,748 @@
 +// SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
 +// SPDX-License-Identifier: GPL-2.0-or-later
 +// Standalone native adaptation: no emulator runtime dependencies.
@@ -2086,9 +2118,8 @@
 +CommonColor GetHairColor()const{return static_cast<CommonColor>(data.hair_color.Value());}
 +Nickname GetDefaultNickname()const{return {u'n',u'o',u' ',u'n',u'a',u'm',u'e'};}
 +};
-+inline CharInfo build_random(u32 age,u32 gender,u32 race,u64 seed,std::array<u8,16> id){
-+if(age>3||gender>2||race>3)throw std::invalid_argument("Mii random descriptor");
-+MiiUtil::engine.seed(seed);CoreData core;core.BuildRandom(Age(age),Gender(gender),Race(race));CharInfo out{};out.create_id=id;out.create_id[6]=(out.create_id[6]&15)|0x40;out.create_id[8]=(out.create_id[8]&63)|0x80;out.name=core.name;
++inline CharInfo finish_char_info(const CoreData& core,std::array<u8,16> id){
++CharInfo out{};out.create_id=id;out.create_id[6]=(out.create_id[6]&15)|0x40;out.create_id[8]=(out.create_id[8]&63)|0x80;out.name=core.name;
 +out.font_region=static_cast<decltype(out.font_region)>(core.data.font_region.Value());
 +out.favorite_color=static_cast<decltype(out.favorite_color)>(core.data.favorite_color.Value());
 +out.gender=static_cast<decltype(out.gender)>(core.data.gender.Value());
@@ -2140,6 +2171,84 @@
 +out.mole_y=static_cast<decltype(out.mole_y)>(core.data.mole_y.Value());
 +if(out.Verify()!=ValidationResult::NoErrors)throw std::runtime_error("generated Mii validation failed");return out;
 +}
++inline CharInfo build_random(u32 age,u32 gender,u32 race,u64 seed,std::array<u8,16> id){
++ if(age>3||gender>2||race>3)throw std::invalid_argument("Mii random descriptor");
++ MiiUtil::engine.seed(seed);CoreData core;core.BuildRandom(Age(age),Gender(gender),Race(race));return finish_char_info(core,id);
++}
++inline CharInfo build_default(u32 mii_index,std::array<u8,16> id){
++if(mii_index>=RawData::DefaultMii.size())throw std::invalid_argument("Mii preset index");CoreData core;
++
++    const auto& default_mii = RawData::DefaultMii[mii_index];
++    core.SetDefault();
++
++    core.SetFacelineType(static_cast<FacelineType>(default_mii.face_type));
++    core.SetFacelineColor(
++        RawData::GetFacelineColorFromVer3(static_cast<u8>(default_mii.face_color)));
++    core.SetFacelineWrinkle(static_cast<FacelineWrinkle>(default_mii.face_wrinkle));
++    core.SetFacelineMake(static_cast<FacelineMake>(default_mii.face_makeup));
++
++    core.SetHairType(static_cast<HairType>(default_mii.hair_type));
++    core.SetHairColor(RawData::GetHairColorFromVer3(static_cast<u8>(default_mii.hair_color)));
++    core.SetHairFlip(static_cast<HairFlip>(default_mii.hair_flip));
++    core.SetEyeType(static_cast<EyeType>(default_mii.eye_type));
++    core.SetEyeColor(RawData::GetEyeColorFromVer3(static_cast<u8>(default_mii.eye_color)));
++    core.SetEyeScale(static_cast<u8>(default_mii.eye_scale));
++    core.SetEyeAspect(static_cast<u8>(default_mii.eye_aspect));
++    core.SetEyeRotate(static_cast<u8>(default_mii.eye_rotate));
++    core.SetEyeX(static_cast<u8>(default_mii.eye_x));
++    core.SetEyeY(static_cast<u8>(default_mii.eye_y));
++
++    core.SetEyebrowType(static_cast<EyebrowType>(default_mii.eyebrow_type));
++    core.SetEyebrowColor(
++        RawData::GetHairColorFromVer3(static_cast<u8>(default_mii.eyebrow_color)));
++    core.SetEyebrowScale(static_cast<u8>(default_mii.eyebrow_scale));
++    core.SetEyebrowAspect(static_cast<u8>(default_mii.eyebrow_aspect));
++    core.SetEyebrowRotate(static_cast<u8>(default_mii.eyebrow_rotate));
++    core.SetEyebrowX(static_cast<u8>(default_mii.eyebrow_x));
++    core.SetEyebrowY(static_cast<u8>(default_mii.eyebrow_y - 3));
++
++    core.SetNoseType(static_cast<NoseType>(default_mii.nose_type));
++    core.SetNoseScale(static_cast<u8>(default_mii.nose_scale));
++    core.SetNoseY(static_cast<u8>(default_mii.nose_y));
++
++    core.SetMouthType(static_cast<MouthType>(default_mii.mouth_type));
++    core.SetMouthColor(
++        RawData::GetMouthColorFromVer3(static_cast<u8>(default_mii.mouth_color)));
++    core.SetMouthScale(static_cast<u8>(default_mii.mouth_scale));
++    core.SetMouthAspect(static_cast<u8>(default_mii.mouth_aspect));
++    core.SetMouthY(static_cast<u8>(default_mii.mouth_y));
++
++    core.SetMustacheType(static_cast<MustacheType>(default_mii.mustache_type));
++    core.SetBeardType(static_cast<BeardType>(default_mii.beard_type));
++    core.SetBeardColor(
++        RawData::GetHairColorFromVer3(static_cast<u8>(default_mii.beard_color)));
++    core.SetMustacheScale(static_cast<u8>(default_mii.mustache_scale));
++    core.SetMustacheY(static_cast<u8>(default_mii.mustache_y));
++
++    core.SetGlassType(static_cast<GlassType>(default_mii.glasses_type));
++    core.SetGlassColor(
++        RawData::GetGlassColorFromVer3(static_cast<u8>(default_mii.glasses_color)));
++    core.SetGlassScale(static_cast<u8>(default_mii.glasses_scale));
++    core.SetGlassY(static_cast<u8>(default_mii.glasses_y));
++
++    core.SetMoleType(static_cast<MoleType>(default_mii.mole_type));
++    core.SetMoleScale(static_cast<u8>(default_mii.mole_scale));
++    core.SetMoleX(static_cast<u8>(default_mii.mole_x));
++    core.SetMoleY(static_cast<u8>(default_mii.mole_y));
++
++    core.SetHeight(static_cast<u8>(default_mii.height));
++    core.SetBuild(static_cast<u8>(default_mii.weight));
++    core.SetGender(static_cast<Gender>(default_mii.gender));
++    core.SetFavoriteColor(static_cast<FavoriteColor>(default_mii.favorite_color));
++    core.SetRegionMove(static_cast<u8>(default_mii.region_move));
++    core.SetFontRegion(static_cast<FontRegion>(default_mii.font_region));
++    core.SetType(static_cast<u8>(default_mii.type));
++    core.SetNickname(default_mii.nickname);
++
++return finish_char_info(core,id);
++}
++struct CharInfoElement {CharInfo info{};u32 source=1;};
++static_assert(sizeof(CharInfoElement)==0x5c);
 +}
 --- /dev/null
 +++ b/runtime/src/native_mii/raw_data.h
@@ -5514,25 +5623,31 @@
      t->writes.push_back(std::move(w));
      t->has_writes.store(true, std::memory_order_release);
  }
-@@ -556,10 +599,32 @@
+@@ -556,10 +599,38 @@
  void TextureWriteTexelsStrided(CPU& c) { write_texels(c, c.x[4], c.x[5]); }
  void TextureFlushTexels(CPU&) {}  // coherent: the writes above are what matters
  
++// Caller holds objects_lock shared or exclusive. Cache keys, not object pointers;
++// every hit rechecks the complete descriptor and the current object generation.
 +uint64_t texture_identity_locked(uint64_t key) {
 +    if(auto found=objects().find(key);found!=objects().end()) {
 +        if(!dynamic_cast<Texture*>(found->second.get()))throw std::invalid_argument("native texture query object type");
 +        return key;
 +    }
-+    // SDK53 permits descriptor copies. Accept a readable copy only while its
-+    // complete published resource identity still names a live native texture.
 +    if(native_guest_span(key,0xb0,1)&&native_device_alive_locked(ld<uint64_t>(key+8))) {
++        auto matches=[key](const Texture& texture){
++            if(ld<uint64_t>(key+0x80)!=texture.gpu||ld<uint64_t>(key+0x10)!=texture.pool||ld<uint64_t>(key+0x18)!=texture.offset||ld<uint64_t>(key+0x60)!=texture.stride)return false;
++            const std::array<uint32_t,13> fields={texture.flags,texture.target,texture.width,texture.height,texture.depth,texture.levels,texture.format,texture.samples,texture.swizzle[0],texture.swizzle[1],texture.swizzle[2],texture.swizzle[3],texture.depth_stencil_mode};
++            if((ld<uint32_t>(key+0x54)&3)!=format_aspect(texture.format))return false;
++            for(size_t i=0;i<fields.size();++i)if(ld<uint32_t>(key+0x20+i*4)!=fields[i])return false;
++            return true;
++        };
++        struct Hit{uint64_t descriptor=0,owner=0,generation=0;};thread_local Hit cache[8];
++        auto& hit=cache[((key>>4)^(key>>12))&7];const auto generation=objects_lock().generation.load(std::memory_order_acquire);
++        if(hit.descriptor==key&&hit.generation==generation){auto found=objects().find(hit.owner);const auto* texture=found==objects().end()?nullptr:dynamic_cast<Texture*>(found->second.get());if(texture&&matches(*texture))return hit.owner;}
 +        for(const auto& [owner,object]:objects()) {
-+            const auto* texture=dynamic_cast<Texture*>(object.get());if(!texture)continue;
-+            if(ld<uint64_t>(key+0x80)!=texture->gpu||ld<uint64_t>(key+0x10)!=texture->pool||ld<uint64_t>(key+0x18)!=texture->offset||ld<uint64_t>(key+0x60)!=texture->stride)continue;
-+            const std::array<uint32_t,13> fields={texture->flags,texture->target,texture->width,texture->height,texture->depth,texture->levels,texture->format,texture->samples,texture->swizzle[0],texture->swizzle[1],texture->swizzle[2],texture->swizzle[3],texture->depth_stencil_mode};
-+            bool match=(ld<uint32_t>(key+0x54)&3)==format_aspect(texture->format);
-+            for(size_t i=0;i<fields.size()&&match;++i)match=ld<uint32_t>(key+0x20+i*4)==fields[i];
-+            if(match){log("nvn: descriptor copy matched live native texture");return owner;}
++            const auto* texture=dynamic_cast<Texture*>(object.get());if(!texture||!matches(*texture))continue;
++            hit={key,owner,generation};static std::atomic<uint64_t> logged=0;if(logged.fetch_add(1,std::memory_order_relaxed)<32)log("nvn: descriptor copy matched live native texture");return owner;
 +        }
 +    }
 +    if(native_guest_span(key,0xb0,1))log("nvn: unresolved texture descriptor guest=%llx device=%llx gpu=%llx pool=%llx target=%u width=%u height=%u format=%u",(unsigned long long)key,(unsigned long long)ld<uint64_t>(key+8),(unsigned long long)ld<uint64_t>(key+0x80),(unsigned long long)ld<uint64_t>(key+0x10),ld<uint32_t>(key+0x24),ld<uint32_t>(key+0x28),ld<uint32_t>(key+0x2c),ld<uint32_t>(key+0x38));
@@ -5543,13 +5658,13 @@
      void fn(CPU& c) {                         \
 -        auto* t = get<Texture>(c.x[0]);       \
 -        c.x[0] = t ? uint64_t(t->field) : 0;  \
-+        std::lock_guard guard(objects_lock()); \
++        std::shared_lock guard(objects_lock()); \
 +        auto* t = static_cast<Texture*>(objects().at(texture_identity_locked(c.x[0])).get()); \
 +        c.x[0] = uint64_t(t->field);          \
      }
  NX_TEXTURE_GETTER(TextureGetWidth, width)
  NX_TEXTURE_GETTER(TextureGetHeight, height)
-@@ -573,6 +638,13 @@
+@@ -573,6 +644,13 @@
  NX_TEXTURE_GETTER(TextureGetMemoryPool, pool)
  NX_TEXTURE_GETTER(TextureGetMemoryOffset, offset)
  NX_TEXTURE_GETTER(TextureGetStorageSize, storage_size)
@@ -5557,13 +5672,13 @@
 +// This backend exposes no additional client-managed NVN ZCull allocation.
 +// https://docs.vulkan.org/refpages/latest/refpages/source/VkMemoryRequirements.html
 +void TextureGetZCullStorageSize(CPU& c) {
-+    std::lock_guard guard(objects_lock());(void)texture_identity_locked(c.x[0]);c.x[0]=0;
++    std::shared_lock guard(objects_lock());(void)texture_identity_locked(c.x[0]);c.x[0]=0;
 +}
 +
  NX_TEXTURE_GETTER(TextureGetDepthStencilMode, depth_stencil_mode)
  #undef NX_TEXTURE_GETTER
  
-@@ -587,22 +659,32 @@
+@@ -587,22 +665,32 @@
      c.x[0] = 1;
  }
  
@@ -5580,7 +5695,7 @@
  
  // nvnTexturePoolRegisterTexture / RegisterImage(pool, int id, const NVNtexture*, const NVNtextureView*)
  void TexturePoolRegister(CPU& c) {
-+    uint64_t texture_key=0;{std::lock_guard guard(objects_lock());if(c.x[2])texture_key=texture_identity_locked(c.x[2]);}
++    uint64_t texture_key=0;{std::shared_lock guard(objects_lock());if(c.x[2])texture_key=texture_identity_locked(c.x[2]);}
 +
      // The view may pick levels or layers (a bloom chain samples one mip of its target) and override the swizzle
      // (a font atlas in R8 is registered with alpha = R).
@@ -5600,7 +5715,7 @@
      if (auto* d = get<DescriptorPool>(c.x[0])) {
          std::lock_guard lk(objects_lock());
          uint32_t id = uint32_t(c.x[1]);
-@@ -612,13 +694,13 @@
+@@ -612,13 +700,13 @@
          if (auto it = d->views.find(id); it != d->views.end()) before.has_view = true, before.view = it->second;
          note_pool_change(c.x[0], id, before);
          uint64_t old = before.texture;
@@ -5618,7 +5733,7 @@
          // A view setting only a base level, first layer or format counts too (it was dropped: level 0 sampled).
          if (v.base_level || v.levels || v.min_layer || v.layers || v.swizzle || v.format)
              d->views[uint32_t(c.x[1])] = v;
-@@ -652,6 +734,19 @@
+@@ -652,6 +740,19 @@
  
  NX_HLE("nvnMemoryPoolInitialize", MemoryPoolInitialize);
  NX_HLE("nvnMemoryPoolFinalize", MemoryPoolFinalize);
@@ -5638,7 +5753,7 @@
  NX_HLE("nvnMemoryPoolMap", MemoryPoolMap);
  NX_HLE("nvnMemoryPoolMapVirtual", MemoryPoolMapVirtual);
  NX_HLE("nvnTextureWriteTexels", TextureWriteTexels);
-@@ -663,6 +758,7 @@
+@@ -663,6 +764,7 @@
  NX_HLE("nvnMemoryPoolFlushMappedRange", MemoryPoolFlushMappedRange);
  NX_HLE("nvnMemoryPoolInvalidateMappedRange", MemoryPoolInvalidateMappedRange);
  NX_HLE("nvnBufferInitialize", BufferInitialize);
@@ -5646,7 +5761,7 @@
  NX_HLE("nvnBufferFinalize", BufferFinalize);
  NX_HLE("nvnBufferMap", BufferMap);
  NX_HLE("nvnBufferGetAddress", BufferGetAddress);
-@@ -685,6 +781,7 @@
+@@ -685,6 +787,7 @@
  NX_HLE("nvnTextureGetMemoryPool", TextureGetMemoryPool);
  NX_HLE("nvnTextureGetMemoryOffset", TextureGetMemoryOffset);
  NX_HLE("nvnTextureGetStorageSize", TextureGetStorageSize);
@@ -5654,7 +5769,7 @@
  NX_HLE("nvnTextureGetDepthStencilMode", TextureGetDepthStencilMode);
  NX_HLE("nvnSamplerPoolInitialize", DescriptorPoolInitialize);
  NX_HLE("nvnTexturePoolInitialize", DescriptorPoolInitialize);
-@@ -703,3 +800,5 @@
+@@ -703,3 +806,5 @@
  NX_HLE("nvnDeviceGetImageHandle", DeviceGetImageHandle);
  
  }  // namespace nx::nvn
@@ -5925,7 +6040,12 @@
      }
 --- a/runtime/src/nvn/nvn_sampler_objects.cpp
 +++ b/runtime/src/nvn/nvn_sampler_objects.cpp
-@@ -10,6 +10,10 @@
+@@ -7,9 +7,15 @@
+ //   GetCompare(s, &mode, &func)      GetBorderColor(s, float[4])  GetMaxAnisotropy(s) -> float
+ //   GetReductionFilter(s) -> enum
+ #include <cstdlib>
++#include <atomic>
++#include <algorithm>
  #include <cstring>
  
  #include "nvn.h"
@@ -5936,7 +6056,7 @@
  
  namespace nx::nvn {
  
-@@ -48,10 +52,23 @@
+@@ -48,10 +54,23 @@
  
  void SamplerInitialize(CPU& c) {  // NVNboolean (NVNsampler*, const NVNsamplerBuilder*)
      uint64_t guest = c.x[0], builder = c.x[1];
@@ -5960,7 +6080,7 @@
  }
  
  void SamplerFinalize(CPU& c) { destroy(c.x[0]); }
-@@ -68,8 +85,10 @@
+@@ -68,8 +87,10 @@
      }
  }
  
@@ -5973,7 +6093,7 @@
  }
  
  void RegisterSamplerBuilder(CPU& c) {  // (NVNsamplerPool*, int id, const NVNsamplerBuilder*)
-@@ -77,10 +96,13 @@
+@@ -77,10 +98,13 @@
      register_info(c.x[0], uint32_t(c.x[1]), info);
  }
  
@@ -5987,11 +6107,11 @@
 +    const auto values=sdk53_sampler_values({reinterpret_cast<const uint8_t*>(guest),0x50});
 +    if(!native_device_alive(values.device))throw std::invalid_argument("native sampler descriptor device is not live");
 +    SamplerInfo info;info.min_filter=values.min;info.mag_filter=values.mag;std::copy(values.wrap.begin(),values.wrap.end(),info.wrap);info.lod_min=values.lod_min;info.lod_max=values.lod_max;info.lod_bias=values.bias;info.compare_mode=values.mode;info.compare_func=values.func;std::copy(values.border.begin(),values.border.end(),info.border);info.max_anisotropy=values.anisotropy;info.reduction=values.reduction;
-+    log("nvn: copied SDK53 sampler decoded compare=%u/%u",info.compare_mode,info.compare_func);return info;
++    static std::atomic<uint64_t> logged=0;if(logged.fetch_add(1,std::memory_order_relaxed)<32)log("nvn: copied SDK53 sampler decoded compare=%u/%u",info.compare_mode,info.compare_func);return info;
  }
  
  void GetMinMagFilter(CPU& c) {
-@@ -119,6 +141,7 @@
+@@ -119,6 +143,7 @@
  
  NX_HLE("nvnSamplerInitialize", SamplerInitialize);
  NX_HLE("nvnSamplerFinalize", SamplerFinalize);
@@ -6774,7 +6894,7 @@
  
  namespace nx {
  
-@@ -24,10 +36,146 @@
+@@ -24,10 +36,154 @@
      s.cmds[1] = [](IpcCtx& c) { c.push_object(parental_control()); return 0u; };  // CreateServiceWithoutInitialize
  }
  
@@ -6890,7 +7010,8 @@
 +ServiceRegistrar r_fsp("fsp-srv",[]{return native_fsp_proxy();});
 +
 +std::shared_ptr<Service> native_mii_database(){
-+    return make("IMiiDatabaseService",[](Service& service){
++    auto defaults=std::make_shared<std::array<mii::CharInfo,6>>();for(unsigned i=0;i<defaults->size();++i){std::array<uint8_t,16> id{};if(BCryptGenRandom(nullptr,id.data(),ULONG(id.size()),BCRYPT_USE_SYSTEM_PREFERRED_RNG)<0)fatal("native Mii preset entropy");(*defaults)[i]=mii::build_default(i,id);}
++    return make("IMiiDatabaseService",[defaults](Service& service){
 +        service.cmds[6]=[](IpcCtx& ctx){
 +            if(ctx.in_size!=12||!ctx.in||!ctx.a.empty()||!ctx.b.empty()||!ctx.x.empty()||!ctx.c.empty()||!ctx.in_copy.empty()||!ctx.in_move.empty()||!ctx.in_objects.empty())return 0xe401u;
 +            const auto age=ctx.arg<uint32_t>(0),gender=ctx.arg<uint32_t>(4),race=ctx.arg<uint32_t>(8);if(age>3||gender>2||race>3)return 0x27eu;
@@ -6900,10 +7021,17 @@
 +            log("mii: native random character generated age=%u gender=%u race=%u",age,gender,race);return 0u;
 +        };
 +        service.cmds[1]=[](IpcCtx& ctx){if(ctx.in_size)return 0xe401u;ctx.push<uint8_t>(0);return 0u;};
-+        for(const uint32_t command:{0u,2u,3u,4u})service.cmds[command]=[command](IpcCtx& ctx){
-+            if(ctx.in_size<4||ctx.in_size>16||(ctx.arg<uint32_t>(0)&~3u))return 0xe401u;
-+            if(command==0)ctx.push<uint8_t>(0);else ctx.push<uint32_t>(0);
-+            log("mii: empty native database query command=%u sources=%u",command,ctx.arg<uint32_t>(0));return 0u;
++        service.cmds[7]=[defaults](IpcCtx& ctx){if(ctx.in_size!=4||!ctx.in||!ctx.a.empty()||!ctx.b.empty()||!ctx.x.empty()||!ctx.c.empty())return 0xe401u;const auto index=ctx.arg<uint32_t>(0);if(index>=defaults->size())return 0x27eu;ctx.push((*defaults)[index]);return 0u;};
++        for(const uint32_t command:{0u,2u,3u,4u})service.cmds[command]=[command,defaults](IpcCtx& ctx){
++            if(ctx.in_size<4||ctx.in_size>16||!ctx.in||(ctx.arg<uint32_t>(0)&~3u)||!ctx.a.empty()||!ctx.x.empty()||!ctx.in_copy.empty()||!ctx.in_move.empty()||!ctx.in_objects.empty())return 0xe401u;
++            if(std::any_of(ctx.in+4,ctx.in+ctx.in_size,[](uint8_t value){return value!=0;}))return 0xe401u;
++            const auto sources=ctx.arg<uint32_t>(0);const uint32_t count=(sources&2)?uint32_t(defaults->size()):0;
++            if(command==0){ctx.push<uint8_t>(0);return 0u;}if(command==2){ctx.push(count);return 0u;}
++            const auto output=ctx.out_buf(0);const size_t stride=command==3?sizeof(mii::CharInfoElement):sizeof(mii::CharInfo);const uint64_t bytes=count*stride;
++            if(output.size<bytes)return 0x47eu;if(bytes&&!nvn::native_guest_span(output.addr,bytes,2))return 0xe401u;
++            std::vector<uint8_t> staged(static_cast<size_t>(bytes));for(unsigned i=0;i<count;++i){std::memcpy(staged.data()+i*stride,&(*defaults)[i],sizeof(mii::CharInfo));if(command==3){const uint32_t source=1;std::memcpy(staged.data()+i*stride+sizeof(mii::CharInfo),&source,4);}}
++            ctx.push(count);ctx.validate_reply=[output,bytes]{return !bytes||nvn::native_guest_span(output.addr,bytes,2);};ctx.commit_reply=[output,staged=std::move(staged)]{if(!staged.empty())std::memcpy(reinterpret_cast<void*>(output.addr),staged.data(),staged.size());};
++            log("mii: native list prepared command=%u sources=%u count=%u",command,sources,count);return 0u;
 +        };
 +    });
 +}
@@ -6925,7 +7053,7 @@
  
  ServiceRegistrar r_lm("lm", [] {
      return make("lm", [](Service& s) {
-@@ -35,9 +183,17 @@
+@@ -35,9 +191,17 @@
      });
  });
  
@@ -8044,7 +8172,7 @@
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,102 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -8056,6 +8184,8 @@
 +#include "nvn/native_raster_policy.h"
 +#include "nvn/nvn_vk.h"
 +#include "nvn/nvn_draw_state.h"
++#include "nvn/sdk53_texture_wire.h"
++#include "native_mii/random.h"
 +namespace nx::nvn {std::recursive_mutex& gpu_lock();GpuImage* ensure_contents(VkCommandBuffer,uint64_t);}
 +#include <iostream>
 +#include <cstdlib>
@@ -8072,7 +8202,9 @@
 + const bool gpu=argc==2&&std::string_view(argv[1])=="--gpu";if(argc>1&&!gpu)throw std::runtime_error("expected --gpu or no arguments");
 + if(gpu){if(_putenv_s("NX_PIPELINED","1"))throw std::runtime_error("fixture pipeline mode setup failed");}
 + unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("native device assertion "+std::to_string(n));};
-+ check(nx::find_symbol("nnMain")==0);nx::memory_init();const auto device=nx::kernel_alloc(7008,16);
++ for(const char* name:{"_ZN2nv20SetGraphicsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_","_ZN2nv28SetGraphicsDevtoolsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_"}){auto setter=nx::hle_lookup(name);check(setter!=nullptr);nx::CPU invalid_allocator{};bool rejected=false;try{setter(invalid_allocator);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
++ check(nx::find_symbol("nnMain")==0);nx::memory_init(); {const auto mii_output=nx::kernel_alloc(6*sizeof(nx::mii::CharInfoElement),16);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);uint32_t creator_key=0;nx::IpcCtx mii_open{};mii_open.cmd=0;mii_open.in=reinterpret_cast<uint8_t*>(&creator_key);mii_open.in_size=4;auto mii_manager=nx::make_service("mii:u");check(mii_manager&&mii_manager->handle(mii_open)==0&&mii_open.out_objects.size()==1);auto database=mii_open.out_objects[0];for(uint32_t sources:{0u,1u,2u,3u}){nx::IpcCtx query{};query.cmd=2;query.in=reinterpret_cast<const uint8_t*>(&sources);query.in_size=4;check(database->handle(query)==0);uint32_t count=99;std::memcpy(&count,query.out.data(),4);check(count==((sources&2)?6u:0u));}uint32_t defaults_source=2;nx::IpcCtx list{};list.cmd=3;list.in=reinterpret_cast<const uint8_t*>(&defaults_source);list.in_size=4;list.b.push_back({mii_output,6*sizeof(nx::mii::CharInfoElement)});std::memset(reinterpret_cast<void*>(mii_output),0xcd,6*sizeof(nx::mii::CharInfoElement));check(database->handle(list)==0);check(nx::ld<uint8_t>(mii_output)==0xcd);check(list.validate_reply&&list.validate_reply());check(bool(list.commit_reply));list.commit_reply();nx::mii::CharInfoElement first{};std::memcpy(&first,reinterpret_cast<void*>(mii_output),sizeof first);check(first.source==1&&first.info.Verify()==nx::mii::ValidationResult::NoErrors);nx::IpcCtx revoked=list;revoked.out.clear();revoked.commit_reply={};revoked.validate_reply={};check(database->handle(revoked)==0);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,1);check(!revoked.validate_reply());nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);nx::IpcCtx short_list{};short_list.cmd=3;short_list.in=reinterpret_cast<const uint8_t*>(&defaults_source);short_list.in_size=4;short_list.b.push_back({mii_output,sizeof(nx::mii::CharInfoElement)});check(database->handle(short_list)==0x47e);uint32_t invalid_source=4;nx::IpcCtx invalid_mii{};invalid_mii.cmd=2;invalid_mii.in=reinterpret_cast<const uint8_t*>(&invalid_source);invalid_mii.in_size=4;check(database->handle(invalid_mii)==0xe401);}
++const auto device=nx::kernel_alloc(7008,16);
 + check(!nx::nvn::initialize_native_device(device,0));
 + nx::vm_set(device,7008,nx::kMemHeap,3); // Authored fixture explicitly admits its storage to the guest-visible bus.
 + check(!nx::nvn::initialize_native_device(0,0));check(!nx::nvn::initialize_native_device(device,1));check(!nx::nvn::native_device_alive(device));check(nx::nvn::vk_device()==VK_NULL_HANDLE);
@@ -8091,7 +8223,7 @@
 + auto fsp=nx::make_service("fsp-srv");nx::IpcCtx unbound_log;unbound_log.cmd=1005;check(fsp->handle(unbound_log)!=0&&unbound_log.out.empty());uint64_t fsp_placeholder=0;nx::IpcCtx bind_fsp;bind_fsp.cmd=1;bind_fsp.in=reinterpret_cast<const uint8_t*>(&fsp_placeholder);bind_fsp.in_size=8;check(fsp->handle(bind_fsp)!=0);bind_fsp.send_pid=true;check(fsp->handle(bind_fsp)==0&&bool(bind_fsp.commit_reply)&&bind_fsp.validate_reply());nx::IpcCtx pending_log;pending_log.cmd=1005;check(fsp->handle(pending_log)!=0);bind_fsp.commit_reply();nx::IpcCtx bound_log;bound_log.cmd=1005;check(fsp->handle(bound_log)==0&&bound_log.out.size()==4);
 + uint64_t missing_archive[2]={3,0x0100000000000809ull};nx::IpcCtx missing_data;missing_data.cmd=202;missing_data.in=reinterpret_cast<const uint8_t*>(missing_archive);missing_data.in_size=16;check(fsp->handle(missing_data)==0x202&&missing_data.out_objects.empty());
 + _putenv_s("NX_MII_ROMFS_IMAGE",NX_AUTHORED_IMAGE_PATH);_putenv_s("NX_MII_ROMFS_SHA256","9ac056b20af5fb961ccf89de921573d4b4b87e0c7a4640f98fcc2fcc6436e3fc");text(text_area+512,"nativeSystem");auto mount_system=nx::hle_lookup("_ZN2nn2fs15MountSystemDataEPKcNS_3ncm12SystemDataIdE");check(mount_system!=nullptr);fs.x[0]=text_area+512;fs.x[1]=0x0100000000000802ull;mount_system(fs);check(fs.x[0]==0);text(text_area+640,"nativeSystem:/dir/data.bin");fs.x[0]=io;fs.x[1]=text_area+640;fs.x[2]=1;file_api("_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci");check(fs.x[0]==0);const auto system_file=nx::ld<uint64_t>(io);fs.x[0]=system_file;fs.x[1]=0;fs.x[2]=io+80;fs.x[3]=6;file_api("_ZN2nn2fs8ReadFileENS0_10FileHandleElPvm");check(fs.x[0]==0&&!std::memcmp(reinterpret_cast<void*>(io+80),"hello!",6));fs.x[0]=system_file;file_api("_ZN2nn2fs9CloseFileENS0_10FileHandleE");_putenv_s("NX_MII_ROMFS_IMAGE","");_putenv_s("NX_MII_ROMFS_SHA256","");
-+ auto mii=nx::make_service("mii:e");uint32_t mii_key=0;nx::IpcCtx mii_open;mii_open.cmd=0;mii_open.in=reinterpret_cast<const uint8_t*>(&mii_key);mii_open.in_size=4;check(mii->handle(mii_open)==0);check(mii_open.out_objects.size()==1&&mii_open.out_objects[0]->name=="IMiiDatabaseService");uint32_t mii_sources=3;nx::IpcCtx empty_miis;empty_miis.cmd=3;empty_miis.in=reinterpret_cast<uint8_t*>(&mii_sources);empty_miis.in_size=4;check(mii_open.out_objects[0]->handle(empty_miis)==0&&empty_miis.out.size()==4);mii_key=2;nx::IpcCtx bad_mii;bad_mii.cmd=0;bad_mii.in=reinterpret_cast<const uint8_t*>(&mii_key);bad_mii.in_size=4;check(mii->handle(bad_mii)!=0&&bad_mii.out_objects.empty());
++ auto mii=nx::make_service("mii:e");uint32_t mii_key=0;nx::IpcCtx mii_open;mii_open.cmd=0;mii_open.in=reinterpret_cast<const uint8_t*>(&mii_key);mii_open.in_size=4;check(mii->handle(mii_open)==0);check(mii_open.out_objects.size()==1&&mii_open.out_objects[0]->name=="IMiiDatabaseService");uint32_t mii_sources=1;nx::IpcCtx empty_miis;empty_miis.cmd=3;empty_miis.in=reinterpret_cast<uint8_t*>(&mii_sources);empty_miis.in_size=4;check(mii_open.out_objects[0]->handle(empty_miis)==0&&empty_miis.out.size()==4);mii_key=2;nx::IpcCtx bad_mii;bad_mii.cmd=0;bad_mii.in=reinterpret_cast<const uint8_t*>(&mii_key);bad_mii.in_size=4;check(mii->handle(bad_mii)!=0&&bad_mii.out_objects.empty());
 + auto account=nx::make_service("acc:u0");nx::IpcCtx manager_request;manager_request.cmd=101;check(account->handle(manager_request)==0&&manager_request.out_objects.size()==1);auto manager=manager_request.out_objects[0];nx::IpcCtx availability;availability.cmd=0;check(manager->handle(availability)==0&&availability.out.size()==1&&availability.out[0]==0);
 + nx::IpcCtx offline;offline.cmd=130;check(manager->handle(offline)!=0&&offline.out.empty());
 + auto applet_service=nx::make_service("appletOE");nx::IpcCtx open_proxy;open_proxy.cmd=0;check(applet_service->handle(open_proxy)==0&&open_proxy.out_objects.size()==1);auto proxy=open_proxy.out_objects[0];nx::IpcCtx common_request;common_request.cmd=0;check(proxy->handle(common_request)==0);auto common=common_request.out_objects[0];nx::IpcCtx self_request;self_request.cmd=1;check(proxy->handle(self_request)==0);auto self=self_request.out_objects[0];
@@ -8123,7 +8255,7 @@
 + commands.x[0]=cb;api("nvnCommandBufferEndRecording");check(commands.x[0]!=0);commands.x[0]=cb;api("nvnCommandBufferGetCommandMemoryUsed");check(commands.x[0]==64);
 + commands.x[0]=cb;api("nvnCommandBufferFinalize");commands.x[0]=pool_key;api("nvnMemoryPoolFinalize");
 + const auto texture_a=nx::kernel_alloc(256,16),texture_b=nx::kernel_alloc(256,16);auto& ta=nx::nvn::make<nx::nvn::Texture>(texture_a);auto& tb=nx::nvn::make<nx::nvn::Texture>(texture_b);ta.pool=tb.pool=0x1234;ta.offset=tb.offset=64;ta.format=tb.format=0x25;ta.width=tb.width=16;ta.height=tb.height=16;ta.depth=tb.depth=1;ta.levels=tb.levels=1;ta.samples=tb.samples=1;
-+ nx::CPU compare{};auto cmp=nx::hle_lookup("nvnTextureCompare");check(cmp!=nullptr);compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==1);tb.width=32;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);tb.width=16;tb.swizzle[3]=0;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);compare.x[0]=texture_a;compare.x[1]=texture_a;cmp(compare);check(compare.x[0]==1);text(text_area+512,"owned texture label");auto label=nx::hle_lookup("nvnTextureSetDebugLabel");check(label!=nullptr);compare.x[0]=texture_a;compare.x[1]=text_area+512;label(compare);check(ta.debug_label=="owned texture label");text(text_area+512,"changed input");check(ta.debug_label=="owned texture label");compare.x[0]=texture_a;compare.x[1]=0;label(compare);check(ta.debug_label.empty());auto zcull=nx::hle_lookup("nvnTextureGetZCullStorageSize");check(zcull!=nullptr);nx::CPU zquery{};zquery.x[0]=texture_a;zquery.x[1]=0x12345678;zcull(zquery);check(zquery.x[0]==0);check(zquery.x[1]==0x12345678);ta.format=0x34;zquery.x[0]=texture_a;zcull(zquery);check(zquery.x[0]==0);const auto copied=nx::kernel_alloc(0xb0,16);nx::vm_set(copied,0xb0,nx::kMemHeap,3);std::memset(reinterpret_cast<void*>(copied),0,0xb0);nx::st<uint64_t>(copied+8,device);nx::st<uint64_t>(copied+0x80,ta.gpu);nx::st<uint64_t>(copied+0x10,ta.pool);nx::st<uint64_t>(copied+0x18,ta.offset);nx::st<uint64_t>(copied+0x60,ta.stride);nx::st<uint32_t>(copied+0x54,nx::nvn::format_aspect(ta.format));const std::array<uint32_t,13> desc={ta.flags,ta.target,ta.width,ta.height,ta.depth,ta.levels,ta.format,ta.samples,ta.swizzle[0],ta.swizzle[1],ta.swizzle[2],ta.swizzle[3],ta.depth_stencil_mode};for(size_t i=0;i<desc.size();++i)nx::st<uint32_t>(copied+0x20+i*4,desc[i]);zquery.x[0]=copied;zcull(zquery);check(zquery.x[0]==0);check(zquery.x[1]==0x12345678);auto copied_width=nx::hle_lookup("nvnTextureGetWidth");check(copied_width!=nullptr);zquery.x[0]=copied;copied_width(zquery);check(zquery.x[0]==ta.width);const auto copied_pool=nx::kernel_alloc(128,16);auto& copied_descriptor_pool=nx::nvn::make<nx::nvn::DescriptorPool>(copied_pool);copied_descriptor_pool.count=4;auto register_texture=nx::hle_lookup("nvnTexturePoolRegisterTexture");check(register_texture!=nullptr);nx::CPU register_cpu{};register_cpu.x[0]=copied_pool;register_cpu.x[1]=1;register_cpu.x[2]=copied;register_texture(register_cpu);check(copied_descriptor_pool.textures.at(1)==texture_a);auto finalize_texture_pool=nx::hle_lookup("nvnTexturePoolFinalize");check(finalize_texture_pool!=nullptr);register_cpu.x[0]=copied_pool;finalize_texture_pool(register_cpu);check(nx::nvn::get<nx::nvn::DescriptorPool>(copied_pool)==nullptr);nx::st<uint32_t>(copied+0x28,ta.width+1);zquery.x[0]=copied;bool copy_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){copy_rejected=true;}check(copy_rejected);nx::st<uint32_t>(copied+0x28,ta.width);for(uint64_t invalid:{uint64_t(0),device}){zquery.x[0]=invalid;bool rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}nx::nvn::destroy(texture_a);zquery.x[0]=texture_a;bool retired_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){retired_rejected=true;}check(retired_rejected);zquery.x[0]=copied;bool retired_copy_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){retired_copy_rejected=true;}check(retired_copy_rejected);nx::nvn::destroy(texture_b);
++ nx::CPU compare{};auto cmp=nx::hle_lookup("nvnTextureCompare");check(cmp!=nullptr);compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==1);tb.width=32;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);tb.width=16;tb.swizzle[3]=0;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);compare.x[0]=texture_a;compare.x[1]=texture_a;cmp(compare);check(compare.x[0]==1);text(text_area+512,"owned texture label");auto label=nx::hle_lookup("nvnTextureSetDebugLabel");check(label!=nullptr);compare.x[0]=texture_a;compare.x[1]=text_area+512;label(compare);check(ta.debug_label=="owned texture label");text(text_area+512,"changed input");check(ta.debug_label=="owned texture label");compare.x[0]=texture_a;compare.x[1]=0;label(compare);check(ta.debug_label.empty());auto zcull=nx::hle_lookup("nvnTextureGetZCullStorageSize");check(zcull!=nullptr);nx::CPU zquery{};zquery.x[0]=texture_a;zquery.x[1]=0x12345678;zcull(zquery);check(zquery.x[0]==0);check(zquery.x[1]==0x12345678);ta.format=0x34;zquery.x[0]=texture_a;zcull(zquery);check(zquery.x[0]==0);const auto copied=nx::kernel_alloc(0xb0,16);nx::vm_set(copied,0xb0,nx::kMemHeap,3);std::memset(reinterpret_cast<void*>(copied),0,0xb0);nx::st<uint64_t>(copied+8,device);nx::st<uint64_t>(copied+0x80,ta.gpu);nx::st<uint64_t>(copied+0x10,ta.pool);nx::st<uint64_t>(copied+0x18,ta.offset);nx::st<uint64_t>(copied+0x60,ta.stride);nx::st<uint32_t>(copied+0x54,nx::nvn::format_aspect(ta.format));const std::array<uint32_t,13> desc={ta.flags,ta.target,ta.width,ta.height,ta.depth,ta.levels,ta.format,ta.samples,ta.swizzle[0],ta.swizzle[1],ta.swizzle[2],ta.swizzle[3],ta.depth_stencil_mode};for(size_t i=0;i<desc.size();++i)nx::st<uint32_t>(copied+0x20+i*4,desc[i]);zquery.x[0]=copied;zcull(zquery);check(zquery.x[0]==0);check(zquery.x[1]==0x12345678);auto copied_width=nx::hle_lookup("nvnTextureGetWidth");check(copied_width!=nullptr);zquery.x[0]=copied;const auto before_read=nx::nvn::objects_lock().generation.load();copied_width(zquery);check(zquery.x[0]==ta.width);check(nx::nvn::objects_lock().generation.load()==before_read);std::array<uint8_t,0xb0> saved_copy{};std::memcpy(saved_copy.data(),reinterpret_cast<void*>(copied),saved_copy.size());tb.width=32;nx::nvn::Sdk53TextureWire other;other.device=device;other.gpu=tb.gpu;other.pool=tb.pool;other.offset=tb.offset;other.stride=tb.stride;other.aspect=nx::nvn::format_aspect(tb.format);other.fields={tb.flags,tb.target,tb.width,tb.height,tb.depth,tb.levels,tb.format,tb.samples,tb.swizzle[0],tb.swizzle[1],tb.swizzle[2],tb.swizzle[3],tb.depth_stencil_mode};const auto other_bytes=nx::nvn::sdk53_texture_wire(other);std::memcpy(reinterpret_cast<void*>(copied),other_bytes.data(),other_bytes.size());zquery.x[0]=copied;copied_width(zquery);check(zquery.x[0]==32);tb.width=16;std::memcpy(reinterpret_cast<void*>(copied),saved_copy.data(),saved_copy.size());zquery.x[0]=copied;copied_width(zquery);check(zquery.x[0]==ta.width);const auto copied_pool=nx::kernel_alloc(128,16);auto& copied_descriptor_pool=nx::nvn::make<nx::nvn::DescriptorPool>(copied_pool);copied_descriptor_pool.count=4;auto register_texture=nx::hle_lookup("nvnTexturePoolRegisterTexture");check(register_texture!=nullptr);nx::CPU register_cpu{};register_cpu.x[0]=copied_pool;register_cpu.x[1]=1;register_cpu.x[2]=copied;register_texture(register_cpu);check(copied_descriptor_pool.textures.at(1)==texture_a);auto finalize_texture_pool=nx::hle_lookup("nvnTexturePoolFinalize");check(finalize_texture_pool!=nullptr);register_cpu.x[0]=copied_pool;finalize_texture_pool(register_cpu);check(nx::nvn::get<nx::nvn::DescriptorPool>(copied_pool)==nullptr);nx::st<uint32_t>(copied+0x28,ta.width+1);zquery.x[0]=copied;bool copy_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){copy_rejected=true;}check(copy_rejected);nx::st<uint32_t>(copied+0x28,ta.width);for(uint64_t invalid:{uint64_t(0),device}){zquery.x[0]=invalid;bool rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}nx::nvn::destroy(texture_a);zquery.x[0]=texture_a;bool retired_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){retired_rejected=true;}check(retired_rejected);zquery.x[0]=copied;bool retired_copy_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){retired_copy_rejected=true;}check(retired_copy_rejected);nx::nvn::destroy(texture_b);
 + const auto volume_key=nx::kernel_alloc(256,16),volume_data=nx::kernel_alloc(256,16),volume_region=nx::kernel_alloc(32,16);nx::vm_set(volume_data,256,nx::kMemHeap,3);nx::vm_set(volume_region,32,nx::kMemHeap,3);
 + auto& volume=nx::nvn::make<nx::nvn::Texture>(volume_key);volume.target=2;volume.width=volume.height=volume.depth=4;volume.levels=1;volume.format=0x25;volume.samples=0;
 + for(unsigned z=0;z<4;++z)for(unsigned y=0;y<4;++y)for(unsigned x=0;x<4;++x){const auto at=volume_data+((z*4+y)*4+x)*4;nx::st<uint8_t>(at,x*17);nx::st<uint8_t>(at+1,y*31);nx::st<uint8_t>(at+2,z*47);nx::st<uint8_t>(at+3,255);}
@@ -8168,6 +8300,13 @@
 +#include <iostream>
 +int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("HID policy assertion");};nx::NativeHidPolicy p;check(p.style(0)==0);p.initialize();check(p.style(0)==1&&p.style(1)==0&&p.style(32)==0);p.styles(0);check(p.style(0)==0);p.styles(1);std::array<uint32_t,1> ids{1};p.supported_ids(ids);check(p.style(0)==0);ids[0]=0;p.supported_ids(ids);check(p.style(0)==1);p.handheld_mode(2);check(p.handheld_mode()==2);p.disconnect(0);check(p.style(0)==0);p.initialize();check(p.style(0)==1);bool bad=false;try{p.handheld_mode(3);}catch(const std::invalid_argument&){bad=true;}check(bad&&p.handheld_mode()==2);ids[0]=99;bad=false;try{p.supported_ids(ids);}catch(const std::invalid_argument&){bad=true;}check(bad&&p.style(0)==1);std::cout<<"native_hid_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
++++ b/tests/native_mii_defaults_test.cpp
+@@ -0,0 +1,4 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "native_mii/random.h"
++#include <iostream>
++int main(){using namespace nx::mii;unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("Mii preset assertion");};for(unsigned i=0;i<6;++i){std::array<uint8_t,16> id{};id[0]=uint8_t(i+1);const auto info=build_default(i,id);check(info.Verify()==ValidationResult::NoErrors);check(info.gender==Gender(RawData::DefaultMii[i].gender));check(info.height==RawData::DefaultMii[i].height&&info.build==RawData::DefaultMii[i].weight);check(info.name.data==RawData::DefaultMii[i].nickname.data);}bool rejected=false;try{build_default(6,{});}catch(const std::invalid_argument&){rejected=true;}check(rejected);std::cout<<"Mii preset checks="<<checks<<" PASS\n";}
+--- /dev/null
 +++ b/tests/native_mii_random_test.cpp
 @@ -0,0 +1,6 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -8191,6 +8330,34 @@
 +#include <iostream>
 +#include <stdexcept>
 +int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("sampled profile assertion");};for(unsigned format:{0x25u,0x4bu,0x79u,0x95u,0xau})check(native_sampled_2d_float_compatible(1,1,1,format));for(unsigned format:{0u,3u,4u,0x27u,0x31u,0x32u,0x33u,0x3eu,0x51u,0xffffffffu})check(!native_sampled_2d_float_compatible(1,1,1,format));for(unsigned target:{0u,2u,3u,4u,5u,6u,7u,8u,9u,0xffffffffu})check(!native_sampled_2d_float_compatible(target,1,1,0x25));check(!native_sampled_2d_float_compatible(1,2,1,0x25));check(!native_sampled_2d_float_compatible(1,1,4,0x25));check(native_sampled_2d_float_compatible(1,1,0,0x25));check(native_sampled_cube_float_compatible(8,16,16,1,0x25));check(native_sampled_cube_float_compatible(8,16,16,0,0x4b));check(!native_sampled_cube_float_compatible(1,16,16,1,0x25));check(!native_sampled_cube_float_compatible(8,16,8,1,0x25));check(!native_sampled_cube_float_compatible(8,0,0,1,0x25));check(!native_sampled_cube_float_compatible(8,16,16,4,0x25));check(!native_sampled_cube_float_compatible(8,16,16,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_array_shadow_compatible(4,4,1,format,0,1,4));check(!native_sampled_array_shadow_compatible(1,4,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,0,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,4,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x25,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,1,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,0,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,0));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,9));check(native_sampled_shadow_compatible(false,1,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,4,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,4,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x25,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x34,0,0,4));check(native_sampled_array_float_compatible(4,3,1,0x25));check(!native_sampled_array_float_compatible(4,0,1,0x25));check(!native_sampled_array_float_compatible(1,3,1,0x25));check(native_sampled_cube_array_float_compatible(9,16,16,12,1,0x25));check(native_sampled_cube_array_float_compatible(8,16,16,6,1,0x25));check(!native_sampled_cube_array_float_compatible(8,16,16,12,1,0x25));check(!native_sampled_cube_array_float_compatible(8,16,16,6,4,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,7,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,8,12,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,4,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_depth_float_compatible(false,1,1,1,format,0,0));check(native_sampled_depth_float_compatible(true,4,6,1,0x34,0,0));check(!native_sampled_depth_float_compatible(false,1,1,1,0x34,0,1));check(!native_sampled_depth_float_compatible(false,1,1,1,0x34,1,0));check(!native_sampled_depth_float_compatible(false,1,1,4,0x34,0,0));check(!native_sampled_depth_float_compatible(false,8,6,1,0x34,0,0));check(!native_sampled_depth_float_compatible(false,1,1,1,0x25,0,0));check(!native_sampled_depth_float_compatible(true,4,0,1,0x34,0,0));std::cout<<"sampled profile checks="<<checks<<" PASS\n";}
+--- /dev/null
++++ b/tests/native_sdk_mii_probe.cpp
+@@ -0,0 +1,25 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Optional owner-input probe. Executes compiled SDK verification, not title entry.
++#include <nx/runtime.h>
++#include "kernel.h"
++#include "compiled_callback.h"
++#include "native_mii/random.h"
++#include <iostream>
++#include <map>
++#include <cstring>
++extern const nx::ModuleInfo nx_module_main,nx_module_sdk,nx_module_subsdk0;
++int main(int argc,char** argv){try{
++ if(argc!=2)throw std::invalid_argument("supply matching private analysis image directory");
++ nx::memory_init();const nx::ModuleInfo* modules[]={&nx_module_main,&nx_module_sdk,&nx_module_subsdk0};nx::load_modules(modules,3,argv[1]);
++ const auto verifier=nx::find_symbol("_ZNK2nn3mii6detail11CharInfoRaw6VerifyEv");if(!nx::compiled_callback_target(verifier)||verifier>=nx::kThunkBase)throw std::runtime_error("compiled SDK Mii verifier unavailable");
++ const auto constructor=nx::find_symbol("_ZN2nn3mii21ParamCharInfoAccessorC1ERKNS0_8CharInfoE"),accessor_valid=nx::find_symbol("_ZNK2nn3mii21ParamCharInfoAccessor7IsValidEv");if(!nx::compiled_callback_target(constructor)||!nx::compiled_callback_target(accessor_valid))throw std::runtime_error("compiled parameter accessor unavailable");const auto accessor=nx::kernel_alloc(0x100,16);nx::vm_set(accessor,0x100,nx::kMemHeap,3);
++ const auto storage=nx::kernel_alloc(sizeof(nx::mii::CharInfo),16),stack=nx::kernel_alloc(0x10000,16);nx::vm_set(storage,sizeof(nx::mii::CharInfo),nx::kMemHeap,3);nx::vm_set(stack,0x10000,nx::kMemHeap,3);
++ auto verify=[&](const nx::mii::CharInfo& info){std::memcpy(reinterpret_cast<void*>(storage),&info,sizeof info);nx::CPU cpu{};cpu.x[0]=storage;cpu.x[31]=stack+0x10000;nx::call(cpu,verifier);return uint32_t(cpu.x[0]);};
++ unsigned total=0,accepted=0,param_accepted=0;std::map<uint32_t,unsigned> rejected;std::array<uint8_t,16> id{};id[0]=1;
++ for(unsigned age=0;age<4;++age)for(unsigned gender=0;gender<3;++gender)for(unsigned race=0;race<4;++race)for(uint64_t seed=0;seed<128;++seed){auto info=nx::mii::build_random(age,gender,race,seed,id);const auto code=verify(info);++total;if(code)++rejected[code];else ++accepted;nx::CPU parameter{};parameter.x[0]=accessor;parameter.x[1]=storage;parameter.x[31]=stack+0x10000;nx::call(parameter,constructor);parameter.x[0]=accessor;nx::call(parameter,accessor_valid);if(parameter.x[0]&1)++param_accepted;}
++ unsigned defaults_accepted=0;for(unsigned index=0;index<6;++index){auto info=nx::mii::build_default(index,id);const auto raw=verify(info);nx::CPU parameter{};parameter.x[0]=accessor;parameter.x[1]=storage;parameter.x[31]=stack+0x10000;nx::call(parameter,constructor);parameter.x[0]=accessor;nx::call(parameter,accessor_valid);if(raw==0&&(parameter.x[0]&1))++defaults_accepted;}
++ auto bad=nx::mii::build_random(0,0,0,0,id);bad.gender=nx::mii::Gender(3);const bool invalid_rejected=verify(bad)!=0;
++ std::cout<<"compiled_sdk_mii total="<<total<<" accepted="<<accepted<<" parameter_accessor_accepted="<<param_accepted<<" defaults_accepted="<<defaults_accepted<<" invalid_rejected="<<invalid_rejected<<" title_entry_executed=0 GPU_initialized=0\n";
++ for(const auto& [code,count]:rejected)std::cout<<"SDK validation code="<<code<<" rejected="<<count<<"\n";
++ return accepted==total&&param_accepted==total&&defaults_accepted==6&&invalid_rejected?0:1;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/native_texture_layers_test.cpp
 @@ -0,0 +1,5 @@

@@ -9,10 +9,10 @@ The isolated Windows target uses MIT-licensed SuperMarioWonderRecomp revision
 main/subsdk0/SDK form three static libraries and a local standalone executable.
 The Vulkan dispatch table is regenerated for the already installed headers.
 
-Thirty-three CPU/component suites pass, including SDK 53 texture/sampler
+Thirty-four CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 163-check GPU fixture creates and drains a real device and queue on
+A separate 188-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,
@@ -58,7 +58,9 @@ The optional system-data adapter reads the owner's existing Mii archive through
 an identity-pinned read-only image. Its local extraction verified the NCA section
 hash and 357 IVFC blocks; neither system contents nor keys are published. Native
 system mounts and ordinary file calls now use the same image reader. The local
-avatar database is empty. Temporary random-character generation uses a standalone
+user avatar database is empty. Requests that include the built-in default source
+now return its six canonical presets instead of an empty list. Temporary
+random-character generation uses a standalone
 adaptation of the existing Mii algorithm and tables, with retained attribution.
 Its regression checks 6,144 generated characters across descriptor combinations
 and rejects invalid descriptors (24,580 checks). Database mutation and other
@@ -116,10 +118,28 @@ binding advances with its original mode/function. Copied texture getters and
 pool registration resolve the complete descriptor against a live native resource;
 pool finalization retires its owned snapshots. Regression checks cover copied
 queries/registration, malformed descriptors, pool bounds and retired identities.
-The latest bounded run loads title-menu artwork and `MovieMenu.mp4`, then reaches
-its 120-second limit without a new fatal error. A longer diagnostic is checking
-the remaining wait and black output. Missing required resources still fail;
+Longer runs advance beyond 512 native presents while loading menu assets, then
+previously crashed on a null Mii-model object. Complete presented-texture readbacks remain
+black; a file interrupted by the crash is excluded from image verification. Missing required resources still fail;
 no fallback has been added for the earlier missing material binding.
+
+Read-only copied-descriptor queries now use shared locks and an eight-entry
+per-thread identity cache. Every hit rechecks the descriptor and object generation;
+changed and retired identities still fail. Graphics allocator registration now
+validates callback targets and executes the inspected compiled SDK setter instead
+of discarding the callbacks. Deeper graphics initialization still needs review.
+
+A separate owner-input CPU probe runs generated Mii data through the actual
+compiled SDK raw verifier and parameter-accessor constructor/check. Both accept
+all 6,144 authored descriptor/seed combinations, and an invalid control is
+rejected. It does not run title entry or initialize a GPU. This rules out the
+tested generated character layout as the cause of the current model failure;
+an owned-process hardware trace then identified an all-zero game-time character
+record. The default-source query had incorrectly returned an empty list. It now
+returns six validated preset records with source tags and staged buffer writes;
+the fresh native startup log confirms a count of six. All six also pass both
+compiled SDK checks. Model initialization and visible rendering still need
+end-to-end verification.
 
 Missing required shader translations and unknown calls remain visible failures.
 Shader/draw/present coverage, GPU upload/layout correctness, allocator callback

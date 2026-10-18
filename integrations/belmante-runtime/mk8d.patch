@@ -788,16 +788,17 @@
  #include <memory>
  #include <mutex>
  #include <thread>
-@@ -10,6 +12,8 @@
+@@ -10,6 +12,9 @@
  
  #include "kernel.h"
  #include "platform.h"
 +#include "vi_state.h"
 +#include "compiled_callback.h"
++#include "nvn/native_guest_span.h"
  
  namespace nx {
  
-@@ -28,27 +32,29 @@
+@@ -28,30 +33,39 @@
  
  namespace {
  
@@ -822,13 +823,10 @@
 -    c.x[0] = 0;
 +    const auto layer=native_vi::create_layer(c.x[1]);st<uint64_t>(c.x[0],layer);c.x[0]=0;
 +    log("vi: owned layer created");
- }
++}
 +void GetNativeWindow(CPU& c){st<uint64_t>(c.x[0],uint64_t(native_vi::native_window(c.x[1])));c.x[0]=0;}
 +void SetLayerScalingMode(CPU& c){native_vi::set_scaling(c.x[0],uint32_t(c.x[1]));log("vi: ScaleToWindow applied");c.x[0]=0;}
- 
--void GetNativeWindow(CPU& c) {  // (void** out, Layer*)
--    st<uint64_t>(c.x[0], uint64_t(plat::create_window()));
--    c.x[0] = 0;
++
 +void nv_set_allocator(CPU& c) {
 +    for(unsigned i=0;i<3;++i)if(!compiled_callback_target(c.x[i]))throw std::invalid_argument("native graphics allocator callback is not compiled");
 +    const char* current=hle_current_name();if(!current)throw std::invalid_argument("native graphics allocator entry name");const std::string name=current;
@@ -838,8 +836,23 @@
 +    call(c,target);log("nv: compiled graphics allocator callbacks registered via %s",name.c_str());
  }
  
- void nv_noop(CPU&) {}
-@@ -70,6 +76,7 @@
+-void GetNativeWindow(CPU& c) {  // (void** out, Layer*)
+-    st<uint64_t>(c.x[0], uint64_t(plat::create_window()));
+-    c.x[0] = 0;
++void nv_initialize_graphics(CPU& c) {
++    if(!c.x[0]||!c.x[1]||!nvn::native_guest_span(c.x[0],c.x[1],3))throw std::invalid_argument("native graphics initialization work buffer");
++    const auto target=find_symbol("_ZN2nv18InitializeGraphicsEPvm");
++    if(!compiled_callback_target(target)||target>=kThunkBase)throw std::invalid_argument("native graphics initializer SDK target unavailable");
++    log("nv: entering compiled graphics initializer work-buffer bytes=%llu",(unsigned long long)c.x[1]);
++    call(c,target);
++    log("nv: compiled graphics initializer returned");
+ }
+-
+-void nv_noop(CPU&) {}
+ 
+ // The display's vsync: a kernel event a host thread signals every 1/60 s. The game gets it as an nn::os
+ // SystemEvent (AttachSystemEvent with our read/write handles, auto clear: each wait consumes one vsync).
+@@ -70,6 +84,7 @@
  }
  
  void GetDisplayVsyncEvent(CPU& c) {  // (os::SystemEventType*, Display*)
@@ -847,7 +860,7 @@
      auto r = std::make_shared<KEvent>(), w = std::make_shared<KEvent>();
      r->state = w->state = g_vsync;
      uint32_t hr = handle_add(r), hw = handle_add(w);
-@@ -86,13 +93,14 @@
+@@ -86,13 +101,14 @@
  
  }  // namespace
  
@@ -860,9 +873,10 @@
  NX_HLE("_ZN2nn2vi20GetDisplayVsyncEventEPNS_2os15SystemEventTypeEPNS0_7DisplayE", GetDisplayVsyncEvent);
 -NX_HLE("_ZN2nv20SetGraphicsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_", nv_noop);
 -NX_HLE("_ZN2nv28SetGraphicsDevtoolsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_", nv_noop);
+-NX_HLE("_ZN2nv18InitializeGraphicsEPvm", nv_noop);
 +NX_HLE("_ZN2nv20SetGraphicsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_", nv_set_allocator);
 +NX_HLE("_ZN2nv28SetGraphicsDevtoolsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_", nv_set_allocator);
- NX_HLE("_ZN2nv18InitializeGraphicsEPvm", nv_noop);
++NX_HLE("_ZN2nv18InitializeGraphicsEPvm", nv_initialize_graphics);
  
  }  // namespace nx
 --- a/runtime/src/ipc.cpp
@@ -895,7 +909,7 @@
      std::lock_guard lk(g_ipc);
      auto sess = std::dynamic_pointer_cast<KSession>(handle_get(handle));
      if (!sess) {
-@@ -101,7 +100,7 @@
+@@ -101,10 +100,11 @@
      size_t p = 2;
      if (special) {
          uint32_t sh = w[p++];
@@ -903,8 +917,13 @@
 +        bool pid = sh & 1;ctx.send_pid=pid;
          uint32_t ncopy = (sh >> 1) & 0xF, nmove = (sh >> 5) & 0xF;
          if (pid) {
-             ctx.pid = w[p] | (uint64_t(w[p + 1]) << 32);
-@@ -150,6 +149,7 @@
+-            ctx.pid = w[p] | (uint64_t(w[p + 1]) << 32);
++            // HIPC inserts the sending process identity; client placeholder bytes are not authority.
++            ctx.pid = current_process()->id;
+             p += 2;
+         }
+         for (uint32_t i = 0; i < ncopy; i++) ctx.in_copy.push_back(w[p++]);
+@@ -150,6 +150,7 @@
          ctx.in_size = ndata * 4;
          if (g_trace) log("ipc: tipc %s cmd %u", sess->svc->name.c_str(), ctx.cmd);
          uint32_t rc = sess->svc->handle(ctx);
@@ -912,7 +931,7 @@
          for (auto& o : ctx.out_objects) ctx.out_move.push_back(new_session_handle(o));
          std::memset(w, 0, 0x100);
          bool has_special = !ctx.out_copy.empty() || !ctx.out_move.empty();
-@@ -163,6 +163,7 @@
+@@ -163,6 +164,7 @@
          std::memcpy(&w[q + 1], ctx.out.data(), ctx.out.size());
          w[0] = ctx.type;
          w[1] = uint32_t(1 + (ctx.out.size() + 3) / 4) | (has_special ? 0x80000000u : 0);
@@ -920,7 +939,7 @@
          return 0;
      }
      // Raw data: aligned to 16 bytes from the message start.
-@@ -171,11 +172,15 @@
+@@ -171,11 +173,15 @@
          log("ipc: request type %u on %s (handle %x, domain %d, raw word %08x)", ctx.type, sess->svc->name.c_str(),
              handle, int(sess->domain), ld<uint32_t>(raw));
      std::shared_ptr<Service> target = sess->svc;
@@ -937,7 +956,7 @@
          domain_obj = ld<uint32_t>(raw + 4);
          for (uint32_t i = 0; i < nobj; i++) ctx.in_objects.push_back(ld<uint32_t>(raw + 16 + dsize + 4 * i));
          raw += 16;
-@@ -194,7 +199,10 @@
+@@ -194,7 +200,10 @@
          uint32_t magic = ld<uint32_t>(raw);
          ctx.cmd = ld<uint32_t>(raw + 8);
          ctx.in = reinterpret_cast<const uint8_t*>(raw + 16);
@@ -949,7 +968,7 @@
          if (magic != kSFCI) {
              log("ipc: %s bad magic %08x (data_start %zu, ndata %u)", target->name.c_str(), magic, data_start, ndata);
              for (int k = 0; k < 16; k++) log("   w[%d] = %08x", k, w[k]);
-@@ -232,6 +240,7 @@
+@@ -232,6 +241,7 @@
          rc = target->handle(ctx);
      }
  
@@ -957,7 +976,7 @@
      {
          // Interfaces returned: domain objects, or new sessions moved to the client.
          std::vector<uint32_t> out_obj_ids;
-@@ -273,6 +282,7 @@
+@@ -273,6 +283,7 @@
          uint32_t words = uint32_t((end - (buf + dstart * 4)) / 4) + 4;
          w[0] = 0;
          w[1] = words | (has_special ? 0x80000000u : 0);
@@ -997,7 +1016,44 @@
  // A small Horizon kernel: handles, threads, synchronization (mutex/condvar/address arbitration), events,
  // memory and GetInfo. Services (IPC) live in ipc.cpp.
  #include <algorithm>
-@@ -678,7 +679,7 @@
+@@ -43,6 +44,11 @@
+ 
+ using namespace kstate;
+ 
++std::shared_ptr<KProcess> current_process() {
++    static const auto process = std::make_shared<KProcess>(plat::current_process_id());
++    return process;
++}
++
+ uint32_t handle_add(std::shared_ptr<KObject> o) {
+     std::lock_guard lk(g_k);
+     uint32_t h = g_next_handle++;
+@@ -53,6 +59,7 @@
+ std::shared_ptr<KObject> handle_get(uint32_t h) {
+     std::lock_guard lk(g_k);
+     if (h == kPseudoCurrentThread && t_self) return t_self->self.lock();
++    if (h == 0xffff8001u) return current_process();
+     auto it = g_handles.find(h);
+     return it == g_handles.end() ? nullptr : it->second;
+ }
+@@ -616,9 +623,13 @@
+         case 0x22:  // SendSyncRequestWithUserBuffer(buf, size, handle)
+             rc = ipc_request(c, uint32_t(c.x[2]), c.x[0], c.x[1]);
+             break;
+-        case 0x24:  // GetProcessId
+-            c.x[1] = 0x51;
+-            break;
++        case 0x24: { // GetProcessId: resolve a process/thread capability, not an arbitrary handle.
++            const auto object=handle_get(uint32_t(c.x[1]));
++            auto process=std::dynamic_pointer_cast<KProcess>(object);
++            if(!process&&std::dynamic_pointer_cast<KThread>(object))process=current_process();
++            if(!process){rc=0xe401;c.x[1]=0;}else c.x[1]=process->id;
++            break;
++        }
+         case 0x25: {  // GetThreadId(handle) -> id
+             auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[1])));
+             c.x[1] = t ? t->id : 0;
+@@ -678,7 +689,7 @@
              rc = unmap_transfer_memory(uint32_t(c.x[0]), c.x[1], c.x[2]);
              break;
          default:
@@ -1006,7 +1062,7 @@
                  (unsigned long long)c.x[0], (unsigned long long)c.x[1], (unsigned long long)c.x[2]);
              rc = 0;
      }
-@@ -720,6 +721,7 @@
+@@ -720,6 +731,7 @@
  }
  
  void svc(CPU& c, uint32_t imm, uint64_t pc) {
@@ -1016,7 +1072,20 @@
      svc_impl(c, imm, pc);
 --- a/runtime/src/kernel.h
 +++ b/runtime/src/kernel.h
-@@ -40,7 +40,7 @@
+@@ -15,6 +15,12 @@
+     virtual bool signaled() const { return false; }
+     virtual void consume() {}
+ };
++
++struct KProcess : KObject {
++    const uint64_t id;
++    explicit KProcess(uint64_t process_id) : id(process_id) {}
++};
++std::shared_ptr<KProcess> current_process();
+ 
+ struct KThread : KObject {
+     std::weak_ptr<KThread> self;
+@@ -40,7 +46,7 @@
  };
  
  struct EventState {
@@ -6981,6 +7050,46 @@
 + return {u64(0),u64(0x10),u64(0x18),int32_t(u32(8)),int32_t(u32(0x20)+1u)};
 +}
 +}
+--- a/runtime/src/platform.h
++++ b/runtime/src/platform.h
+@@ -21,6 +21,7 @@
+ void sleep_ns(int64_t ns);
+ void yield();
+ void set_thread_name(const char* name);
++uint64_t current_process_id(); // the owned host process id
+ int64_t current_thread_id();  // the host OS thread id
+ // Samples the given threads (thread CPU time, 1 kHz) for `seconds`: host pc, a few host frames and the guest lr
+ // (read through guest_lr[k], the thread's x30). Writes one line per sample to `path`:
+--- a/runtime/src/platform_android.cpp
++++ b/runtime/src/platform_android.cpp
+@@ -133,6 +133,7 @@
+     for (int k = 0; k < 64; k++) asm volatile("yield" ::: "memory");
+ }
+ void set_thread_name(const char* name) { pthread_setname_np(pthread_self(), name); }
++uint64_t current_process_id() { return uint64_t(getpid()); }
+ int64_t current_thread_id() { return gettid(); }
+ 
+ // ---- sampling profiler (simpleperf is not always allowed on retail phones) ------------------------------------
+--- a/runtime/src/platform_linux.cpp
++++ b/runtime/src/platform_linux.cpp
+@@ -168,6 +168,7 @@
+     pthread_setname_np(pthread_self(), n);
+ }
+ 
++uint64_t current_process_id() { return uint64_t(getpid()); }
+ int64_t current_thread_id() { return int64_t(syscall(SYS_gettid)); }
+ 
+ bool profile(const int64_t*, const uint64_t* const*, size_t, int, const std::string&) { return false; }  // use perf
+--- a/runtime/src/platform_mac.cpp
++++ b/runtime/src/platform_mac.cpp
+@@ -177,6 +177,7 @@
+ }
+ void set_thread_name(const char* name) { pthread_setname_np(name); }  // Darwin: the calling thread only
+ 
++uint64_t current_process_id() { return uint64_t(getpid()); }
+ int64_t current_thread_id() {
+     uint64_t tid = 0;
+     pthread_threadid_np(nullptr, &tid);
 --- a/runtime/src/platform_win.cpp
 +++ b/runtime/src/platform_win.cpp
 @@ -22,6 +22,8 @@
@@ -7001,7 +7110,15 @@
  void sleep_ns(int64_t ns) { std::this_thread::sleep_for(std::chrono::nanoseconds(ns)); }
  void yield() { SwitchToThread(); }
  void set_thread_name(const char*) {}
-@@ -148,9 +150,10 @@
+@@ -78,6 +80,7 @@
+     const char* v = std::getenv(env.c_str());
+     return v ? v : "";
+ }
++uint64_t current_process_id() { return uint64_t(GetCurrentProcessId()); }
+ int64_t current_thread_id() { return int64_t(GetCurrentThreadId()); }
+ bool profile(const int64_t*, const uint64_t* const*, size_t, int, const std::string&) { return false; }
+ 
+@@ -148,9 +151,10 @@
  
  static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM w, LPARAM l) {
      switch (msg) {
@@ -7014,7 +7131,7 @@
          case WM_KEYDOWN:
              if (w == VK_F11) toggle_fullscreen(h);
              break;
-@@ -188,10 +191,11 @@
+@@ -188,10 +192,11 @@
      int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2, y = (sh - h) / 2;
      // NX_HEADLESS: created hidden (the surface still needs a window), never brought to the front.
      const DWORD style = headless() ? (kWindowed & ~WS_VISIBLE) : kWindowed;
@@ -7028,7 +7145,7 @@
      *ready = true;
      MSG m;
      while (GetMessageW(&m, nullptr, 0, 0) > 0) {
-@@ -462,7 +466,7 @@
+@@ -462,7 +467,7 @@
      return EXCEPTION_CONTINUE_SEARCH;
  }
  
@@ -7310,7 +7427,7 @@
  
  namespace nx {
  
-@@ -24,10 +36,168 @@
+@@ -24,10 +36,218 @@
      s.cmds[1] = [](IpcCtx& c) { c.push_object(parental_control()); return 0u; };  // CreateServiceWithoutInitialize
  }
  
@@ -7395,6 +7512,56 @@
 +    });
 +}
 +ServiceRegistrar r_prepo("prepo:u",[]{return native_play_reports();});
++// A native driver session retains the real process and transferred work-area capabilities.
++// Device opens and device commands remain unsupported until their native backends exist.
++ServiceRegistrar r_nvdrv("nvdrv",[]{
++    struct State {std::mutex lock;bool initialized=false;std::shared_ptr<KProcess> process;std::shared_ptr<KTransferMemory> work;uint64_t aruid=0;bool firmware_policy_set=false,firmware_margin=false;};
++    auto state=std::make_shared<State>();
++    return make("NativeDriverSession",[state](Service& service){
++        service.cmds[13]=[state](IpcCtx& ctx){
++            if(ctx.in_size!=8||!ctx.in||ctx.arg<uint64_t>(0)>1||ctx.send_pid||ctx.pid||!ctx.in_copy.empty()||!ctx.in_move.empty()||!ctx.a.empty()||!ctx.b.empty()||!ctx.x.empty()||!ctx.c.empty()||!ctx.in_objects.empty())return 0xe401u;
++            auto reservation=std::make_shared<std::unique_lock<std::mutex>>(state->lock);
++            if(!state->initialized||!state->aruid||state->process!=current_process())return 0xe401u;
++            const bool enabled=ctx.arg<uint64_t>(0)!=0;
++            ctx.validate_reply=[reservation,state]{return reservation->owns_lock()&&state->initialized&&state->process==current_process()&&nvn::native_guest_span(state->work->addr,state->work->size,3);};
++            ctx.commit_reply=[reservation,state,enabled]{state->firmware_margin=enabled;state->firmware_policy_set=true;reservation->unlock();log("nvdrv: native allocation policy committed firmware-margin=%u",unsigned(enabled));};return 0u;
++        };
++        service.cmds[8]=[state](IpcCtx& ctx){
++            if(ctx.in_size!=8||!ctx.in||!ctx.send_pid||ctx.pid!=current_process()->id||!ctx.in_copy.empty()||!ctx.in_move.empty()||!ctx.a.empty()||!ctx.b.empty()||!ctx.x.empty()||!ctx.c.empty()||!ctx.in_objects.empty())return 0xe401u;
++            auto reservation=std::make_shared<std::unique_lock<std::mutex>>(state->lock);
++            if(!state->initialized){ctx.push<uint32_t>(3);return 0u;}
++            const auto aruid=ctx.arg<uint64_t>(0);
++            // Native WindowController::GetAppletResourceUserId returns this owned host process id.
++            if(state->process!=current_process()||aruid!=state->process->id){ctx.push<uint32_t>(4);return 0u;}
++            ctx.push<uint32_t>(0);
++            ctx.validate_reply=[reservation,state]{return reservation->owns_lock()&&state->initialized&&state->process==current_process()&&nvn::native_guest_span(state->work->addr,state->work->size,3);};
++            ctx.commit_reply=[reservation,state,aruid]{state->aruid=aruid;reservation->unlock();log("nvdrv: native resource user bound aruid=%llu",(unsigned long long)aruid);};return 0u;
++        };
++        service.cmds[0]=[state](IpcCtx& ctx)->uint32_t{
++            std::lock_guard guard(state->lock);
++            if(!state->initialized||!state->aruid||!state->firmware_policy_set){ctx.push<int32_t>(-1);ctx.push<uint32_t>(3);return 0u;}
++            const auto path=ctx.in_buf(0);
++            if(ctx.in_size||path.size==0||path.size>256||!nvn::native_guest_span(path.addr,path.size,1))return 0xe401u;
++            std::string name(reinterpret_cast<const char*>(path.addr),size_t(path.size));const auto zero=name.find('\0');if(zero!=std::string::npos)name.resize(zero);
++            log("nvdrv: requested native device %s firmware-margin=%u",name.c_str(),unsigned(state->firmware_margin));fatal("native driver device backend is not implemented: %s",name.c_str());
++        };
++        service.cmds[3]=[state](IpcCtx& ctx){
++            if(ctx.in_size!=4||!ctx.in||ctx.in_copy.size()!=2||!ctx.in_move.empty()||ctx.send_pid||ctx.pid||!ctx.a.empty()||!ctx.b.empty()||!ctx.x.empty()||!ctx.c.empty()||!ctx.in_objects.empty())return 0xe401u;
++            // Serialize preparation through reply/commit. Dropping the request releases the reservation.
++            auto reservation=std::make_shared<std::unique_lock<std::mutex>>(state->lock);
++            if(state->initialized){ctx.push<uint32_t>(8);return 0u;}
++            auto process=std::dynamic_pointer_cast<KProcess>(handle_get(ctx.in_copy[0]));
++            auto work=std::dynamic_pointer_cast<KTransferMemory>(handle_get(ctx.in_copy[1]));
++            const uint64_t size=ctx.arg<uint32_t>(0);
++            if(process!=current_process()||!work||!size||(size&4095)||work->size!=size||(work->addr&4095)||!nvn::native_guest_span(work->addr,size,3)){ctx.push<uint32_t>(4);return 0u;}
++            const auto address=work->addr;
++            ctx.push<uint32_t>(0);
++            ctx.validate_reply=[reservation,process,work,address,size]{return reservation->owns_lock()&&process==current_process()&&work->addr==address&&work->size==size&&nvn::native_guest_span(address,size,3);};
++            ctx.commit_reply=[reservation,state,process,work]{state->process=process;state->work=work;state->initialized=true;reservation->unlock();log("nvdrv: native client initialized process=%llu retained-work-bytes=%llu",(unsigned long long)process->id,(unsigned long long)work->size);};
++            return 0u;
++        };
++    });
++});
 +
 +std::shared_ptr<Service> native_fsp_proxy() {
 +    struct State{std::mutex lock;uint32_t process=0;std::shared_ptr<NativeReadonlyStorage> mii;};auto state=std::make_shared<State>();
@@ -7483,7 +7650,7 @@
  
  ServiceRegistrar r_lm("lm", [] {
      return make("lm", [](Service& s) {
-@@ -35,9 +205,17 @@
+@@ -35,9 +255,17 @@
      });
  });
  
@@ -8472,7 +8639,7 @@
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/ipc_domain_test.cpp
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,37 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "ipc.h"
 +#include <array>
@@ -8480,6 +8647,7 @@
 +#include <stdexcept>
 +namespace {std::map<uint32_t,std::shared_ptr<nx::KObject>> handles;uint32_t next=1;}
 +namespace nx {
++std::shared_ptr<KProcess> current_process(){static auto process=std::make_shared<KProcess>(0x1234);return process;}
 +bool g_trace=false;void log(const char*,...){}[[noreturn]]void fatal(const char*,...){throw std::runtime_error("fatal");}
 +uint32_t handle_add(std::shared_ptr<KObject> h){auto id=next++;handles.emplace(id,std::move(h));return id;}
 +std::shared_ptr<KObject> handle_get(uint32_t id){auto it=handles.find(id);return it==handles.end()?nullptr:it->second;}
@@ -8495,8 +8663,10 @@
 + service->cmds[11]=[&](nx::IpcCtx& c){c.validate_reply=[]{return false;};c.commit_reply=[&]{++commits;};return 0u;};
 + service->cmds[12]=[&](nx::IpcCtx& c){c.commit_reply=[&]{++commits;};return 0xe401u;};
 + service->cmds[13]=[&](nx::IpcCtx& c){check(c.in_size==8);check(c.arg<uint64_t>(0)==0x123456789abcdef0ull);return 0u;};
++ service->cmds[14]=[&](nx::IpcCtx& c){check(c.send_pid&&c.pid==nx::current_process()->id);check(c.in_size==0);return 0u;};
 + nx::register_service("authored",[&]{return service;});uint64_t handle=0;check(nx::ipc_connect("authored",&handle)==0);
 + auto request=[&]{return nx::ipc_request(cpu,handle,reinterpret_cast<uint64_t>(words.data()),sizeof(words));};
++ words[0]=4;words[1]=8u|0x80000000u;words[2]=1;words[3]=0xdeadbeef;words[4]=0xfeedface;words[8]=0x49434653;words[10]=14;check(request()==0);words.fill(0);
 + words[0]=5;words[1]=8;words[4]=0x49434653;check(request()==0);auto object=words[8];check(object==1);
 + auto domain=[&](unsigned cmd,unsigned size=16){words.fill(0xa5a5a5a5);words[0]=4;words[1]=14;words[2]=words[3]=0;words[4]=1|(size<<16);words[5]=object;words[6]=words[7]=0;words[8]=0x49434653;words[9]=0;words[10]=cmd;words[11]=0;};
 + domain(10);check(request()==0);check(commits==1&&reply_seen);
@@ -8602,7 +8772,7 @@
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,191 @@
+@@ -0,0 +1,216 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -8678,6 +8848,31 @@
 + for(unsigned test=0;test<5;++test){nx::IpcCtx bad{};bad.cmd=5;bad.in=bytes.data();bad.in_size=bytes.size();if(test==0)bad.in_size=88;if(test==1)bad.in=nullptr;if(test==2)bad.b.push_back({1,88});if(test==3)bad.in_move.push_back(1);if(test==4)bad.send_pid=true;check(database->handle(bad)==0xe401u&&bad.out.empty()&&!bad.commit_reply);}
 + nx::IpcCtx index{};index.cmd=21;index.in=bytes.data();index.in_size=88;const auto unchanged=bytes;check(database->handle(index)==0x87eu);check(index.out.empty()&&!index.commit_reply&&bytes==unchanged);index.in=malformed.data();check(database->handle(index)==0xc87eu);index.in=bytes.data();index.in_size=84;check(database->handle(index)==0xe401u);index.in_size=88;index.in_copy.push_back(1);check(database->handle(index)==0xe401u);
 + nx::IpcCtx count{};count.cmd=2;count.in=reinterpret_cast<uint8_t*>(&source);count.in_size=4;check(database->handle(count)==0&&count.arg<uint32_t>(0)==1);uint32_t users=99;std::memcpy(&users,count.out.data(),4);check(users==0);
++ }
++ {
++ auto initialize=nx::hle_lookup("_ZN2nv18InitializeGraphicsEPvm");check(initialize!=nullptr);nx::CPU args{};bool invalid=false;try{initialize(args);}catch(const std::invalid_argument&){invalid=true;}check(invalid);
++ const auto work=nx::kernel_alloc(4096,4096);nx::vm_set(work,4096,nx::kMemHeap,3);args.x[0]=work;args.x[1]=4096;bool no_sdk=false;try{initialize(args);}catch(const std::invalid_argument&){no_sdk=true;}check(no_sdk);nx::vm_set(work,4096,nx::kMemHeap,1);bool readonly=false;try{initialize(args);}catch(const std::invalid_argument&){readonly=true;}check(readonly);
++ }
++ {
++ auto process=nx::current_process();check(process&&process->id==nx::plat::current_process_id());check(nx::handle_get(0xffff8001u)==process);
++ nx::CPU query{};query.x[1]=0xffff8001u;nx::svc(query,0x24,0);check(query.x[0]==0&&query.x[1]==process->id);query.x[1]=0;nx::svc(query,0x24,0);check(query.x[0]==0xe401&&query.x[1]==0);
++ const auto process_handle=nx::handle_add(process);query.x[1]=process_handle;nx::svc(query,0x24,0);check(query.x[0]==0&&query.x[1]==process->id);
++ const auto area=nx::kernel_alloc(4096,4096);nx::vm_set(area,4096,nx::kMemHeap,3);auto work=std::make_shared<nx::KTransferMemory>();work->addr=area;work->size=4096;std::weak_ptr<nx::KTransferMemory> weak=work;const auto memory_handle=nx::handle_add(work);
++ auto driver=nx::make_service("nvdrv");check(bool(driver));uint32_t size=4096;
++ uint64_t aruid=process->id;{nx::IpcCtx early{};early.cmd=8;early.in=reinterpret_cast<uint8_t*>(&aruid);early.in_size=8;early.send_pid=true;early.pid=process->id;check(driver->handle(early)==0&&!early.commit_reply);uint32_t result=0;std::memcpy(&result,early.out.data(),4);check(result==3);}
++
++ auto request=[&]{nx::IpcCtx ctx{};ctx.cmd=3;ctx.in=reinterpret_cast<uint8_t*>(&size);ctx.in_size=4;ctx.in_copy={process_handle,memory_handle};return ctx;};
++ {auto bad=request();bad.in_copy[0]=memory_handle;check(driver->handle(bad)==0&&bad.out.size()==4&&!bad.commit_reply);uint32_t result=0;std::memcpy(&result,bad.out.data(),4);check(result==4);}
++ {auto bad=request();bad.in_copy.pop_back();check(driver->handle(bad)==0xe401&&!bad.commit_reply);}
++ {size=8192;auto bad=request();check(driver->handle(bad)==0&&!bad.commit_reply);uint32_t result=0;std::memcpy(&result,bad.out.data(),4);check(result==4);size=4096;}
++ {auto dropped=request();check(driver->handle(dropped)==0&&bool(dropped.commit_reply));check(dropped.validate_reply&&dropped.validate_reply());}
++ {auto init=request();check(driver->handle(init)==0&&bool(init.commit_reply));check(init.validate_reply&&init.validate_reply());nx::handle_close(memory_handle);work.reset();check(!weak.expired());init.commit_reply();}
++ check(!weak.expired());{auto duplicate=request();check(driver->handle(duplicate)==0&&!duplicate.commit_reply);uint32_t result=0;std::memcpy(&result,duplicate.out.data(),4);check(result==8);}
++ {nx::IpcCtx bind{};bind.cmd=8;bind.in=reinterpret_cast<uint8_t*>(&aruid);bind.in_size=8;bind.send_pid=true;bind.pid=process->id;check(driver->handle(bind)==0&&bool(bind.commit_reply));check(bind.validate_reply&&bind.validate_reply());bind.commit_reply();}
++ {uint64_t foreign=process->id+1;nx::IpcCtx bad{};bad.cmd=8;bad.in=reinterpret_cast<uint8_t*>(&foreign);bad.in_size=8;bad.send_pid=true;bad.pid=process->id;check(driver->handle(bad)==0&&!bad.commit_reply);uint32_t result=0;std::memcpy(&result,bad.out.data(),4);check(result==4);bad.in=reinterpret_cast<uint8_t*>(&aruid);bad.pid=foreign;bad.out.clear();check(driver->handle(bad)==0xe401&&!bad.commit_reply);bad.pid=process->id;bad.send_pid=false;check(driver->handle(bad)==0xe401&&!bad.commit_reply);}
++ {uint64_t enabled=1;nx::IpcCtx config{};config.cmd=13;config.in=reinterpret_cast<uint8_t*>(&enabled);config.in_size=8;check(driver->handle(config)==0&&bool(config.commit_reply));check(config.out.empty()&&config.out_copy.empty()&&config.out_move.empty());check(config.validate_reply&&config.validate_reply());config.commit_reply();}
++ {uint64_t bad_value=2;nx::IpcCtx bad{};bad.cmd=13;bad.in=reinterpret_cast<uint8_t*>(&bad_value);bad.in_size=8;check(driver->handle(bad)==0xe401&&!bad.commit_reply);bad_value=1;bad.in_size=4;check(driver->handle(bad)==0xe401&&!bad.commit_reply);}
++ driver.reset();check(weak.expired());nx::handle_close(process_handle);check(nx::handle_get(0xffff8001u)==process);
 + }
 + if(gpu){check(nx::nvn::initialize_native_device(device,0));check(nx::nvn::native_device_alive(device));check(nx::nvn::vk_device()!=VK_NULL_HANDLE);check(nx::nvn::native_window_origin()==0);nx::nvn::set_native_origin(device,1);check(nx::nvn::native_window_origin()==1);const auto output=nx::kernel_alloc(4,16);nx::vm_set(output,4,nx::kMemHeap,3);nx::st<uint32_t>(output,0xdeadbeef);nx::CPU query{};query.x[0]=device;query.x[1]=59;query.x[2]=output;auto getter=nx::hle_lookup("nvnDeviceGetInteger");check(getter!=nullptr);getter(query);check(nx::ld<uint32_t>(output)==0);
 + for(uint32_t property:{40u,50u,59u,66u,67u,68u,69u,71u,72u,73u,74u,75u,76u,87u,97u}){query.x[0]=device;query.x[1]=property;getter(query);check(nx::ld<uint32_t>(output)==0);}

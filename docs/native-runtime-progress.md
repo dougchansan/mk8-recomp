@@ -12,7 +12,7 @@ The Vulkan dispatch table is regenerated for the already installed headers.
 Thirty-five CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 277-check GPU fixture creates and drains a real device and queue on
+A separate 315-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,
@@ -127,7 +127,7 @@ Read-only copied-descriptor queries now use shared locks and an eight-entry
 per-thread identity cache. Every hit rechecks the descriptor and object generation;
 changed and retired identities still fail. Graphics allocator registration now
 validates callback targets and executes the inspected compiled SDK setter instead
-of discarding the callbacks. Deeper graphics initialization still needs review.
+of discarding the callbacks. The missing graphics initialization is addressed by the native driver-client work below.
 
 A separate owner-input CPU probe runs generated Mii data through the actual
 compiled SDK raw verifier and parameter-accessor constructor/check. Both accept
@@ -206,7 +206,8 @@ The application termination-result setter now validates and stages its opaque
 result, while explicit host errors retain their own code. The setter itself does
 not terminate the process. The inspected SDK wrapper and
 [AM command table](https://switchbrew.org/wiki/AM_services#IApplicationFunctions)
-identify this operation; its actual game-time value is being probed.
+identify this operation. The game reports `0x2a2` (userland assertion) before
+the original SDK aborts on its missing graphics-initialization precondition.
 
 Reopening the game's own saved profile exposed Mii UpdateLatest. Its captured
 SDK53 request contains an 88-byte character record followed by a 32-bit source
@@ -230,6 +231,23 @@ saved-profile startup has passed the earlier registration exception and returned
 to the title screen. Its game-generated report increments the saved startup count
 from one to two. Main-menu/race continuation is still being tested. Full resource ownership
 and rendering equivalence remain separate, unfinished work.
+
+The original abort message states that `nv::InitializeGraphics` is required.
+Its inherited no-op has been replaced by a checked call to the statically compiled
+SDK initializer. A native driver client now validates and retains the owned process
+and the game's real 16 MiB transfer-memory work area after reply commit. It also
+binds the native applet resource-user identity and records the requested allocation
+margin policy for device setup. Abandoned preparation releases its reservation;
+closing the caller's work-memory handle does not retire the service's reference.
+
+The process pseudo-handle now resolves to a typed object carrying the host process
+ID. GetProcessId validates process/thread capabilities, and HIPC supplies the owned
+sender PID rather than trusting packet placeholder bytes. An authored packet test
+rejects PID spoofing. The actual SDK initializer now returns and native title
+rendering continues; all 35 suites and 315 GPU/component checks pass. The fresh
+probe is identifying the first device needed by the video path. Native device-open
+and video-decode backends remain unfinished and do not return fabricated FDs.
+Recording an allocation policy does not establish firmware-memory allocation.
 
 Missing required shader translations and unknown calls remain visible failures.
 Shader/draw/present coverage, GPU upload/layout correctness, allocator callback

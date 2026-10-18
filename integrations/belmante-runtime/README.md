@@ -6,13 +6,13 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 35 CPU/component suites and a 213-check native
+Windows integration now passes 35 CPU/component suites and a 218-check native
 GPU fixture on an RX 9070 XT. Actual MK8D startup reaches its owned window,
 Vulkan device/queue, three presentation textures, command-buffer setup, native
 save mounts and first texture upload. Copied texture/sampler descriptors now
 compare using the inspected SDK 53 layout. The inspected 2D packaged texture layout and shared debug-label storage are
 integrated. With the offline graphics/compute cache and verified local Mii system data,
-startup starts the SDK53 software audio thread, loads sound banks, native system fonts, UI and RaceCommon assets, and serves the pinned application display-version metadata before continuing into further RaceCommon resources. Native temporary Mii generation is integrated with the original algorithm/table attribution and no emulator runtime dependency. Native draw and present calls are logged, but captured presented textures are black. No rendered game image or playable result is established.
+startup starts the SDK53 software audio thread, loads sound banks, native system fonts, UI and RaceCommon assets, and serves the pinned application display-version metadata before continuing into further RaceCommon resources. Native temporary Mii generation is integrated with the original algorithm/table attribution and no emulator runtime dependency. Native presented-texture readback now shows the MK8 Deluxe startup logo after resolving copied render-target descriptors. Menu/race playability and full rendering correctness remain unverified.
 
 The adaptation adds an MK8D target, loads and initializes main/subsdk0/sdk,
 uses an existing checked LZ4 implementation without installing a package, and

@@ -5226,10 +5226,40 @@
      }
      list->epoch = current_epoch();
      g_ends++;
-@@ -343,6 +396,34 @@
-         log("nvn: SetViewport with a negative size: %d %d %d %d", cmd.i[0], cmd.i[1], cmd.i[2], cmd.i[3]);
- }
+@@ -303,10 +356,24 @@
  
+ void SetRenderTargets(CPU& c) {
+     Cmd cmd{Cmd::SetRenderTargets};
+-    uint32_t n = std::min<uint32_t>(uint32_t(c.x[1]), 8);
++    const uint32_t n = uint32_t(c.x[1]);
++    if (!command_buffer_recording_thread(c.x[0]) || n > 8 ||
++        (n && !native_guest_span(c.x[2], uint64_t(n) * 8, 1)))
++        throw std::invalid_argument("native render-target command arguments");
+     cmd.n = n;
+-    for (uint32_t k = 0; k < n && c.x[2]; k++) cmd.a[k] = ld<uint64_t>(c.x[2] + 8 * k);
+-    cmd.a[8] = c.x[4];  // depth/stencil
++    {
++        std::shared_lock guard(objects_lock());
++        auto resolve = [](uint64_t descriptor) {
++            if (!descriptor) return uint64_t(0);
++            const auto owner = native_texture_identity_locked(descriptor);
++            static std::atomic<uint64_t> copies{0};
++            if (owner != descriptor && copies.fetch_add(1, std::memory_order_relaxed) < 16)
++                log("nvn: copied render-target descriptor resolved to native texture");
++            return owner;
++        };
++        for (uint32_t k = 0; k < n; ++k) cmd.a[k] = resolve(ld<uint64_t>(c.x[2] + 8 * k));
++        cmd.a[8] = resolve(c.x[4]);  // depth/stencil
++    }
+     // The views pick the level and layer rendered to (a bloom chain renders each mip of one texture in turn).
+     TargetViews tv;
+     for (uint32_t k = 0; k < n && c.x[3]; k++) {
+@@ -341,6 +408,34 @@
+     static std::atomic<int> logged{0};
+     if ((cmd.i[3] < 0 || cmd.i[2] < 0) && logged++ < 10)
+         log("nvn: SetViewport with a negative size: %d %d %d %d", cmd.i[0], cmd.i[1], cmd.i[2], cmd.i[3]);
++}
++
 +void ClearTexture(CPU& c) {
 +    auto* buffer=get<CommandBuffer>(c.x[0]);if(!buffer)throw std::invalid_argument("native texture clear command buffer");
 +    {std::lock_guard lock(buffer->lock);if(!buffer->recording_cpu||buffer->recording_thread!=std::this_thread::get_id())throw std::invalid_argument("native texture clear requires active recording");}
@@ -5256,12 +5286,10 @@
 +    {std::lock_guard lock(buffer->lock);if(!buffer->recording_cpu||buffer->recording_thread!=std::this_thread::get_id())throw std::invalid_argument("native line width requires active recording");}
 +    const float width=c.v[0].f32[0];if(width!=1.0f)throw std::invalid_argument("native raster pipeline supports unit line width");
 +    Cmd command{Cmd::SetLineWidth};command.f[0]=width;record(c.x[0],command);
-+}
-+
+ }
+ 
  void SetScissor(CPU& c) {
-     Cmd cmd{Cmd::SetScissor};
-     for (int k = 0; k < 4; k++) cmd.i[k] = int32_t(c.x[1 + k]);
-@@ -371,6 +452,7 @@
+@@ -371,6 +466,7 @@
          g_no_cb++;
          return;
      }
@@ -5269,7 +5297,7 @@
      std::lock_guard lk(cb->lock);
      if (blob) {
          cmd.blob = uint32_t(cb->recording->blobs.size());
-@@ -381,6 +463,8 @@
+@@ -381,6 +477,8 @@
  }
  
  // A handle's list for the traces, without marking it used (which would keep it from being dropped).
@@ -5278,7 +5306,7 @@
  std::shared_ptr<CmdList> peek_list(uint64_t handle) {
      std::lock_guard lk(g_handles_lock);
      auto it = g_handles.find(handle);
-@@ -507,6 +591,9 @@
+@@ -507,6 +605,9 @@
  NX_HLE("nvnCommandBufferClearDepthStencil", ClearDepthStencil);
  NX_HLE("nvnCommandBufferSetViewport", SetViewport);
  NX_HLE("nvnCommandBufferSetScissor", SetScissor);
@@ -5288,7 +5316,7 @@
  NX_HLE("nvnCommandBufferCallCommands", CallCommands);
  NX_HLE("nvnCommandBufferAddCommandMemory", AddCommandMemory);
  NX_HLE("nvnCommandBufferAddControlMemory", AddControlMemory);
-@@ -518,3 +605,10 @@
+@@ -518,3 +619,10 @@
  NX_HLE("nvnCommandBufferGetControlMemoryFree", (memory_query<false, 2>));
  
  }  // namespace nx::nvn
@@ -8427,7 +8455,7 @@
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,152 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -8547,6 +8575,36 @@
 + const auto sampler_key=nx::kernel_alloc(0x60,16),sampler_out=nx::kernel_alloc(8,16),sampler_pool=nx::kernel_alloc(128,16);nx::vm_set(sampler_key,0x60,nx::kMemHeap,3);nx::vm_set(sampler_out,8,nx::kMemHeap,3);std::memset(reinterpret_cast<void*>(sampler_key),0,0x60);nx::st<uint64_t>(sampler_key+8,device);nx::st<uint32_t>(sampler_key+0x10,1);nx::st<uint32_t>(sampler_key+0x14,1);nx::st<float>(sampler_key+0x28,16);nx::st<uint32_t>(sampler_key+0x30,1);nx::st<uint32_t>(sampler_key+0x34,4);nx::st<float>(sampler_key+0x48,1);nx::CPU sampler_cpu{};sampler_cpu.x[0]=sampler_key;sampler_cpu.x[1]=sampler_out;sampler_cpu.x[2]=sampler_out+4;auto sampler_compare=nx::hle_lookup("nvnSamplerGetCompare");check(sampler_compare!=nullptr);sampler_compare(sampler_cpu);check(nx::ld<uint32_t>(sampler_out)==1&&nx::ld<uint32_t>(sampler_out+4)==4);auto& sampler_descriptor_pool=nx::nvn::make<nx::nvn::DescriptorPool>(sampler_pool);sampler_descriptor_pool.count=4;auto register_sampler=nx::hle_lookup("nvnSamplerPoolRegisterSampler");check(register_sampler!=nullptr);sampler_cpu.x[0]=sampler_pool;sampler_cpu.x[1]=1;sampler_cpu.x[2]=sampler_key;register_sampler(sampler_cpu);check(sampler_descriptor_pool.samplers.at(1).compare_mode==1&&sampler_descriptor_pool.samplers.at(1).compare_func==4);sampler_cpu.x[1]=4;bool sampler_range=false;try{register_sampler(sampler_cpu);}catch(const std::invalid_argument&){sampler_range=true;}check(sampler_range);nx::st<uint64_t>(sampler_key+8,0);sampler_cpu.x[0]=sampler_key;sampler_cpu.x[1]=sampler_out;sampler_cpu.x[2]=sampler_out+4;bool sampler_device=false;try{sampler_compare(sampler_cpu);}catch(const std::invalid_argument&){sampler_device=true;}check(sampler_device);nx::nvn::destroy(sampler_pool);
 + const auto clear_key=nx::kernel_alloc(256,16),clear_data=nx::kernel_alloc(128,16),clear_region=nx::kernel_alloc(24,16),clear_color=nx::kernel_alloc(16,16),clear_cb=nx::kernel_alloc(256,16),clear_pool=nx::kernel_alloc(128,16),clear_commands=nx::kernel_alloc(4096,16),clear_control=nx::kernel_alloc(4096,16);for(auto [address,bytes]:{std::pair{clear_cb,256ull},std::pair{clear_data,128ull},std::pair{clear_region,24ull},std::pair{clear_color,16ull},std::pair{clear_commands,4096ull},std::pair{clear_control,4096ull}})nx::vm_set(address,bytes,nx::kMemHeap,3);auto& clear_texture=nx::nvn::make<nx::nvn::Texture>(clear_key);clear_texture.target=4;clear_texture.width=clear_texture.height=4;clear_texture.depth=2;clear_texture.levels=1;clear_texture.format=0x25;clear_texture.samples=0;for(unsigned i=0;i<32;++i){nx::st<uint32_t>(clear_data+i*4,0xffff0000u);}for(unsigned i=0;i<6;++i)nx::st<int32_t>(clear_region+i*4,i<3?0:i==5?2:4);nx::CPU clear_upload{};clear_upload.x[0]=clear_key;clear_upload.x[2]=clear_region;clear_upload.x[3]=clear_data;write_volume(clear_upload);nx::st<int32_t>(clear_region+8,1);nx::st<int32_t>(clear_region+20,1);for(unsigned i=0;i<4;++i)nx::st<float>(clear_color+i*4,i==1?0.0f:1.0f);auto& clear_memory_pool=nx::nvn::make<nx::nvn::MemoryPool>(clear_pool);clear_memory_pool.memory=clear_commands;clear_memory_pool.size=4096;clear_memory_pool.gpu=nx::nvn::gpu_alloc(4096);commands.x[0]=clear_cb;commands.x[1]=device;api("nvnCommandBufferInitialize");check(commands.x[0]==1);commands.x[0]=clear_cb;commands.x[1]=clear_pool;commands.x[2]=0;commands.x[3]=4096;api("nvnCommandBufferAddCommandMemory");commands.x[0]=clear_cb;commands.x[1]=clear_control;commands.x[2]=4096;api("nvnCommandBufferAddControlMemory");commands.x[0]=clear_cb;api("nvnCommandBufferBeginRecording");auto prepare_clear=[&](uint32_t mask){commands.x[0]=clear_cb;commands.x[1]=clear_key;commands.x[2]=0;commands.x[3]=clear_region;commands.x[4]=clear_color;commands.x[5]=mask;};prepare_clear(7);bool clear_mask=false;try{api("nvnCommandBufferClearTexture");}catch(const std::invalid_argument&){clear_mask=true;}check(clear_mask);nx::st<int32_t>(clear_region,1);prepare_clear(15);bool clear_partial=false;try{api("nvnCommandBufferClearTexture");}catch(const std::invalid_argument&){clear_partial=true;}check(clear_partial);nx::st<int32_t>(clear_region,0);prepare_clear(15);api("nvnCommandBufferClearTexture");const auto recorded_sync=nx::kernel_alloc(128,16);commands.x[0]=recorded_sync;commands.x[1]=device;api("nvnSyncInitialize");check(commands.x[0]==1);commands.x[0]=recorded_sync;commands.x[1]=0;api("nvnSyncWait");check(commands.x[0]==3);for(unsigned invalid=0;invalid<3;++invalid){commands.x[0]=clear_cb;commands.x[1]=invalid==0?0:recorded_sync;commands.x[2]=invalid==1?2:0;commands.x[3]=invalid==2?2:0;bool rejected=false;try{api("nvnCommandBufferFenceSync");}catch(const std::invalid_argument&){rejected=true;}check(rejected);}commands.x[0]=clear_cb;commands.x[1]=recorded_sync;commands.x[2]=0;commands.x[3]=0;api("nvnCommandBufferFenceSync");commands.x[0]=recorded_sync;commands.x[1]=0;api("nvnSyncWait");check(commands.x[0]==3);commands.x[0]=clear_cb;api("nvnCommandBufferEndRecording");const auto clear_handle=commands.x[0];auto clear_list=nx::nvn::command_list(commands.x[0]);check(bool(clear_list));{std::lock_guard lock(nx::nvn::gpu_lock());auto command=nx::nvn::frame_begin(false);nx::nvn::Targets targets{};nx::nvn::replay_list(command,targets,*clear_list,0);auto* image=nx::nvn::image_of(clear_key);check(image&&image->rendered&&image->layers==2);auto readback=nx::nvn::upload_alloc(128,16);nx::nvn::transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);VkBufferImageCopy region{};region.bufferOffset=readback.offset;region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,2};region.imageExtent={4,4,1};nx::vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&region);VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=readback.buffer;barrier.offset=readback.offset;barrier.size=128;nx::vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);bool pixels=true;for(unsigned i=0;i<32;++i){uint32_t pixel;std::memcpy(&pixel,readback.ptr+i*4,4);pixels&=pixel==(i<16?0xffff0000u:0xffff00ffu);}if(!pixels){std::cerr<<"clear readback mismatch; recorded commands="<<clear_list->cmds.size()<<" op="<<unsigned(clear_list->cmds[0].op)<<" mask="<<clear_list->cmds[0].mask<<" color="<<clear_list->cmds[0].f[0]<<','<<clear_list->cmds[0].f[1]<<','<<clear_list->cmds[0].f[2]<<','<<clear_list->cmds[0].f[3]<<"\n";for(unsigned i=0;i<32;++i){uint32_t pixel;std::memcpy(&pixel,readback.ptr+i*4,4);std::cerr<<i<<':'<<std::hex<<pixel<<std::dec<<' ';}std::cerr<<"\n";}check(pixels);}const auto submit_handles=nx::kernel_alloc(8,16);nx::vm_set(submit_handles,8,nx::kMemHeap,3);nx::st<uint64_t>(submit_handles,clear_handle);const auto fence_queue=nx::kernel_alloc(256,16);nx::vm_set(fence_queue,256,nx::kMemHeap,3);nx::st<uint32_t>(builder+8,1);queue_call.x[0]=fence_queue;queue_call.x[1]=builder;queue_init(queue_call);check(queue_call.x[0]==1);commands.x[0]=fence_queue;commands.x[1]=1;commands.x[2]=submit_handles;api("nvnQueueSubmitCommands");commands.x[0]=recorded_sync;commands.x[1]=1'000'000'000ull;api("nvnSyncWait");check(commands.x[0]==0||commands.x[0]==1);commands.x[0]=recorded_sync;commands.x[1]=0;api("nvnSyncWait");check(commands.x[0]==0);commands.x[0]=recorded_sync;api("nvnSyncFinalize");queue_call.x[0]=fence_queue;queue_final(queue_call);commands.x[0]=clear_cb;api("nvnCommandBufferFinalize");commands.x[0]=clear_pool;api("nvnMemoryPoolFinalize");nx::nvn::destroy(clear_key);
 + const auto srgb_key=nx::kernel_alloc(256,16),srgb_data=nx::kernel_alloc(64,16),srgb_region=nx::kernel_alloc(24,16);nx::vm_set(srgb_data,64,nx::kMemHeap,3);nx::vm_set(srgb_region,24,nx::kMemHeap,3);auto& srgb_texture=nx::nvn::make<nx::nvn::Texture>(srgb_key);srgb_texture.target=1;srgb_texture.width=srgb_texture.height=4;srgb_texture.depth=1;srgb_texture.levels=1;srgb_texture.format=0x38;srgb_texture.samples=0;for(unsigned i=0;i<16;++i)nx::st<uint32_t>(srgb_data+i*4,0xffffffffu);for(unsigned i=0;i<6;++i)nx::st<int32_t>(srgb_region+i*4,i<3?0:i==5?1:4);nx::CPU srgb_upload{};srgb_upload.x[0]=srgb_key;srgb_upload.x[2]=srgb_region;srgb_upload.x[3]=srgb_data;write_volume(srgb_upload);nx::nvn::Cmd srgb_clear{nx::nvn::Cmd::ClearTexture};srgb_clear.a[0]=srgb_key;srgb_clear.mask=15;nx::nvn::TextureClearInfo srgb_info;srgb_info.view.format=0x25;srgb_info.region={0,0,0,4,4,1};nx::nvn::CmdList srgb_list;srgb_list.blobs.emplace_back(sizeof srgb_info);std::memcpy(srgb_list.blobs.back().data(),&srgb_info,sizeof srgb_info);srgb_list.cmds.push_back(srgb_clear);{std::lock_guard lock(nx::nvn::gpu_lock());auto command=nx::nvn::frame_begin(false);nx::nvn::Targets targets{};nx::nvn::replay_list(command,targets,srgb_list,0);auto* image=nx::nvn::image_of(srgb_key);check(image&&image->format==VK_FORMAT_R8G8B8A8_SRGB);auto readback=nx::nvn::upload_alloc(64,16);nx::nvn::transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);VkBufferImageCopy region{};region.bufferOffset=readback.offset;region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};region.imageExtent={4,4,1};nx::vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&region);VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=readback.buffer;barrier.offset=readback.offset;barrier.size=64;nx::vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);bool zero=true;for(unsigned i=0;i<64;++i)zero&=readback.ptr[i]==0;check(zero);}nx::nvn::destroy(srgb_key);
++
++ // Clear through a copied render-target descriptor and read the canonical native image.
++ {
++ const auto target=nx::kernel_alloc(256,16), copy=nx::kernel_alloc(0xb0,16), bindings=nx::kernel_alloc(8,16);
++ const auto command_key=nx::kernel_alloc(256,16), memory_key=nx::kernel_alloc(128,16);
++ const auto command_data=nx::kernel_alloc(4096,16), control_data=nx::kernel_alloc(4096,16), color=nx::kernel_alloc(16,16);
++ for(auto [address,size]:{std::pair{copy,0xb0ull},std::pair{bindings,8ull},std::pair{command_key,256ull},std::pair{command_data,4096ull},std::pair{control_data,4096ull},std::pair{color,16ull}})nx::vm_set(address,size,nx::kMemHeap,3);
++ auto& texture=nx::nvn::make<nx::nvn::Texture>(target);texture.target=1;texture.width=texture.height=4;texture.depth=texture.levels=1;texture.format=0x25;
++ nx::nvn::Sdk53TextureWire wire;wire.device=device;wire.aspect=nx::nvn::format_aspect(texture.format);wire.fields={texture.flags,texture.target,texture.width,texture.height,texture.depth,texture.levels,texture.format,texture.samples,texture.swizzle[0],texture.swizzle[1],texture.swizzle[2],texture.swizzle[3],texture.depth_stencil_mode};const auto wire_bytes=nx::nvn::sdk53_texture_wire(wire);std::memcpy(reinterpret_cast<void*>(copy),wire_bytes.data(),wire_bytes.size());nx::st<uint64_t>(bindings,copy);
++ auto& memory=nx::nvn::make<nx::nvn::MemoryPool>(memory_key);memory.memory=command_data;memory.size=4096;memory.gpu=nx::nvn::gpu_alloc(4096);
++ commands.x[0]=command_key;commands.x[1]=device;api("nvnCommandBufferInitialize");check(commands.x[0]==1);
++ commands.x[0]=command_key;commands.x[1]=memory_key;commands.x[2]=0;commands.x[3]=4096;api("nvnCommandBufferAddCommandMemory");
++ commands.x[0]=command_key;commands.x[1]=control_data;commands.x[2]=4096;api("nvnCommandBufferAddControlMemory");
++ commands.x[0]=command_key;api("nvnCommandBufferBeginRecording");
++ commands.x[0]=command_key;commands.x[1]=1;commands.x[2]=bindings;commands.x[3]=commands.x[4]=commands.x[5]=0;api("nvnCommandBufferSetRenderTargets");
++ for(unsigned i=0;i<4;++i)nx::st<float>(color+i*4,i==0||i==3?1.0f:0.0f);
++ commands.x[0]=command_key;commands.x[1]=0;commands.x[2]=color;commands.x[3]=15;api("nvnCommandBufferClearColor");
++ commands.x[0]=command_key;api("nvnCommandBufferEndRecording");auto list=nx::nvn::command_list(commands.x[0]);check(bool(list));
++ check(nx::nvn::get<nx::nvn::Texture>(list->cmds.front().a[0])!=nullptr);
++ {
++ std::lock_guard lock(nx::nvn::gpu_lock());auto command=nx::nvn::frame_begin(false);nx::nvn::clears_begin_submit();nx::nvn::Targets targets{};nx::nvn::replay_list(command,targets,*list,0);nx::nvn::draw_end_rendering(command);nx::nvn::clears_flush(command);
++ auto* image=nx::nvn::image_of(target);check(image&&image->image);
++ auto readback=nx::nvn::upload_alloc(64,16);nx::nvn::transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
++ VkBufferImageCopy region{};region.bufferOffset=readback.offset;region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};region.imageExtent={4,4,1};nx::vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&region);
++ VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=readback.buffer;barrier.offset=readback.offset;barrier.size=64;nx::vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);
++ nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++ bool red=true;for(unsigned i=0;i<16;++i){uint32_t pixel;std::memcpy(&pixel,readback.ptr+i*4,4);red&=pixel==0xff0000ffu;}check(red);
++ }
++ commands.x[0]=command_key;api("nvnCommandBufferFinalize");commands.x[0]=memory_key;api("nvnMemoryPoolFinalize");nx::nvn::destroy(target);
++ }
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

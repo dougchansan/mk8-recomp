@@ -12,7 +12,7 @@ The Vulkan dispatch table is regenerated for the already installed headers.
 Thirty-five CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 213-check GPU fixture creates and drains a real device and queue on
+A separate 218-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,
@@ -38,7 +38,7 @@ setup and stop at checked shader/resource compatibility boundaries. There is sti
 
 The [offline shader diagnostic](../integrations/belmante-runtime/offline/README.md)
 uses the existing shader-only compiler libraries. Thirteen authored parser/profile
-cases pass. The cache contains 4,325 pretranslated graphics/compute shader stages from inspected startup
+cases pass. The cache contains 4,487 pretranslated graphics/compute shader stages from inspected startup
 assets, with Vulkan module acceptance and no pipeline/draw credit. Explicit
 profiles cover normalized 2D/cube/array float sampling and depth comparisons on 2D or
 array textures; live bindings must match before upload/draw. Cubemap storage uses
@@ -119,7 +119,7 @@ pool registration resolve the complete descriptor against a live native resource
 pool finalization retires its owned snapshots. Regression checks cover copied
 queries/registration, malformed descriptors, pool bounds and retired identities.
 Longer runs advance beyond 512 native presents while loading menu assets, then
-previously crashed on a null Mii-model object. Complete presented-texture readbacks remain
+previously crashed on a null Mii-model object. Those earlier presented-texture readbacks were
 black; a file interrupted by the crash is excluded from image verification. Missing required resources still fail;
 no fallback has been added for the earlier missing material binding.
 
@@ -173,6 +173,19 @@ The fresh title run passes the previous HDR binding failure and continues throug
 Luigi/kart loading into Peach resources, then stops at another missing offline
 shader after 258.5 seconds. All 15 complete presented readbacks remain black;
 there is still no verified game image.
+
+Render-target recording now resolves copied color/depth descriptors to native
+texture identities, using the same checked descriptor lookup as sampled resources.
+Previously a copied target's raw pointer survived recording but could not resolve
+to a backend image. An authored regression fails before the fix; the corrected
+recorded clear verifies all 64 bytes of a red RGBA8 native target readback.
+Command recording, attachment counts and descriptor-array bounds are checked.
+The actual-title probe now resolves copied render targets and produces a complete
+1920x1080 presented-texture readback showing the MK8 Deluxe startup logo. Root
+inspection confirms a native startup image; menu/race playability and pixel
+equivalence are still unverified. The additional
+162 driver-family offline shader stages translate and pass native module creation;
+module acceptance alone does not establish rendering correctness.
 
 Missing required shader translations and unknown calls remain visible failures.
 Shader/draw/present coverage, GPU upload/layout correctness, allocator callback

@@ -9,35 +9,43 @@ The isolated Windows target uses MIT-licensed SuperMarioWonderRecomp revision
 main/subsdk0/SDK form three static libraries and a local standalone executable.
 The Vulkan dispatch table is regenerated for the already installed headers.
 
-Thirteen CPU/component suites pass: native device admission, VI object/scaling
-state, module initializer metadata, the existing verified parental-control policy
-through its new adapter, native focus park/resume, domain IPC, window ownership,
-loader symbols, read-only RomFS, GPU selection, tiling, ASTC and memory guard.
-A separate twelve-check GPU fixture creates a real device on the RX 9070 XT,
-rejects duplicate initialization and drains/finalizes it without guest execution.
-The real image's 1,122 directories, 6,597 files and eight native sample reads match
-an independent parser; those sample reads are adapter verification.
+Twenty-one CPU/component suites pass, including SDK 53 texture/sampler
+comparison, focus and exit policies, HID/touch configuration, save-file I/O,
+parental-control adaptation, loader, IPC, RomFS and native device admission.
+A separate 91-check GPU fixture creates and drains a real device and queue on
+an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
+configuration without loading guest modules. The real image's 1,122 directories,
+6,597 files and eight native sample reads match an independent parser.
 
-The actual game now enters `nnMain`, mounts its content image, creates an owned
-native display/layer, applies ScaleToWindow and calls `nvnDeviceInitialize`.
-That call validates the SDK 53.105 builder, creates a real Vulkan device and
-returns success. Original compiled SDK getters deliver API-version properties
-0 and 1. The next unsupported call is `nvnDeviceSetWindowOriginMode`. The owned
-window does not activate or change the foreground; the process exits normally
-at the unsupported boundary. No native game frame or playable result is credited.
+Actual MK8D startup enters `nnMain`, mounts its content, creates an owned native
+window and Vulkan device, initializes its queue and three presentation textures,
+acquires a texture and configures command buffers. It mounts CommonSave/UserSave,
+finds the Ghost directories, and creates and commits its user data file. Texture
+cache setup now handles copied texture and sampler descriptors and reaches the
+first texture upload. Pool and buffer labels are stored with their native objects. Startup now stops
+at the first missing required offline SPIR-V translation. There is still no native game frame or playable result.
 
-The adaptation replaces unmapped VI placeholders with mapped owned objects,
-reads DT_INIT from each module instead of assuming Wonder's initializer address,
-and reuses the existing native parental contexts with separate restricted ports.
-Device memory must pass logical and actual Windows permission checks before GPU
-creation. Missing required shader translations and unknown calls remain visible
-failures. Hardware-dependent device properties, remaining SDK differences,
-allocator callback semantics and inherited handlers still require integration.
+The owned window does not activate or change the foreground. Fresh startup
+processes stop at explicit unsupported calls and close without a timeout. These
+observations establish startup progress, not correct rendering or full gameplay.
+
+The adaptation reads DT_INIT from each module, reuses the existing native
+parental contexts with separate restricted ports, derives supported capabilities
+from Vulkan, and implements the inspected SDK 53.105 builder/descriptor layouts.
+Native queue ownership, command-memory callback dispatch, scratch reservations,
+focus/exit subscriptions, desktop input configuration and durable basic save-file
+writes are integrated. Tests cover descriptor changes, ignored fields, signed
+zero and NaN comparison, and basic save write/close/reopen behavior.
+
+Missing required shader translations and unknown calls remain visible failures.
+Shader/draw/present coverage, GPU upload/layout correctness, allocator callback
+semantics, synchronization, complete input/audio and save/restart through gameplay
+remain open. Some inherited handlers are placeholders or still need semantic
+review; reaching a later boundary does not validate those handlers.
 
 This runtime has a different memory/dispatch model and does not inherit the old
 guarded runtime's ownership or floating-point verification. All prior candidates
-and the partial atomic storage-read successor remain retained. The native frame,
-shader, audio, input, save/restart and full-game gates remain open.
+and the partial atomic storage-read successor remain retained.
 
 See the [integration recipe](../integrations/belmante-runtime/README.md).
 Game code, generated modules, metadata, assets and binaries remain local.

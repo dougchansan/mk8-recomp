@@ -6,11 +6,12 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes thirteen CPU/component suites and a twelve-check
-native GPU device fixture on an RX 9070 XT. Actual MK8D startup enters `nnMain`,
-mounts its content image, creates an owned layer, applies ScaleToWindow and creates
-a real Vulkan device through `nvnDeviceInitialize`. Its next unsupported call is
-`nvnDeviceSetWindowOriginMode`. No native game frame is established.
+Windows integration now passes 21 CPU/component suites and a 91-check native
+GPU fixture on an RX 9070 XT. Actual MK8D startup reaches its owned window,
+Vulkan device/queue, three presentation textures, command-buffer setup, native
+save mounts and first texture upload. Copied texture/sampler descriptors now
+compare using the inspected SDK 53 layout. The next startup stop is the first missing required offline SPIR-V
+translation. No native game frame is established.
 
 The adaptation adds an MK8D target, loads and initializes main/subsdk0/sdk,
 uses an existing checked LZ4 implementation without installing a package, and
@@ -25,9 +26,10 @@ Unknown imports, unknown IPC services/commands, unhandled SVCs and NVN tracing
 stubs stop execution. Other upstream handlers still need semantic review. Missing required offline
 shader translations now stop execution instead of publishing an incomplete program.
 The builder adapter explicitly supports the inspected SDK API 53.105 and reads
-constant device properties from its compiled getter; hardware-dependent properties
-remain explicit unsupported cases. Other SDK ABI details, object behavior, shader
-coverage, audio and input are not established for MK8D. The generated function
+constant device properties from its compiled getter. Implemented hardware limits
+come from Vulkan; optional unsupported features are not advertised. Other SDK ABI
+details, object behavior, shader coverage and complete audio/input remain open.
+Basic native save-file persistence is tested; gameplay save/restart is unproved. The generated function
 reports do not prove complete instruction coverage or correct execution. This
 experimental runtime has a different memory/dispatch model from the existing
 guarded runtime; it does not inherit that runtime's ownership verification.

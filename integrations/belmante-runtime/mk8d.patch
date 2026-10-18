@@ -1,9 +1,33 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -36,6 +36,37 @@
+@@ -36,6 +36,61 @@
  option(NX_TESTS "Build the standalone unit tests" OFF)
  if(NX_TESTS AND NOT ANDROID)
      enable_testing()
++    add_executable(sdk53_sampler_descriptor_test tests/sdk53_sampler_descriptor_test.cpp)
++    target_include_directories(sdk53_sampler_descriptor_test PRIVATE runtime/src)
++    add_test(NAME sdk53_sampler_descriptor COMMAND sdk53_sampler_descriptor_test)
++    add_executable(sdk53_texture_descriptor_test tests/sdk53_texture_descriptor_test.cpp)
++    target_include_directories(sdk53_texture_descriptor_test PRIVATE runtime/src)
++    add_test(NAME sdk53_texture_descriptor COMMAND sdk53_texture_descriptor_test)
++    add_executable(native_exit_policy_test tests/native_exit_policy_test.cpp)
++    target_include_directories(native_exit_policy_test PRIVATE runtime/src)
++    add_test(NAME native_exit_policy COMMAND native_exit_policy_test)
++    add_executable(native_touch_policy_test tests/native_touch_policy_test.cpp)
++    target_include_directories(native_touch_policy_test PRIVATE runtime/src)
++    add_test(NAME native_touch_policy COMMAND native_touch_policy_test)
++    add_executable(native_hid_policy_test tests/native_hid_policy_test.cpp)
++    target_include_directories(native_hid_policy_test PRIVATE runtime/src)
++    add_test(NAME native_hid_policy COMMAND native_hid_policy_test)
++    add_executable(sdk53_window_builder_test tests/sdk53_window_builder_test.cpp)
++    target_include_directories(sdk53_window_builder_test PRIVATE runtime/src)
++    add_test(NAME sdk53_window_builder COMMAND sdk53_window_builder_test)
++    add_executable(sdk53_texture_builder_test tests/sdk53_texture_builder_test.cpp)
++    target_include_directories(sdk53_texture_builder_test PRIVATE runtime/src)
++    add_test(NAME sdk53_texture_builder COMMAND sdk53_texture_builder_test)
++    add_executable(texture_format_test tests/texture_format_test.cpp)
++    target_include_directories(texture_format_test PRIVATE runtime/src)
++    add_test(NAME texture_format COMMAND texture_format_test)
 +    add_executable(vi_state_test tests/vi_state_test.cpp runtime/src/vi_state.cpp)
 +    target_include_directories(vi_state_test PRIVATE runtime/include runtime/src)
 +    add_test(NAME vi_state COMMAND vi_state_test)
@@ -38,7 +62,7 @@
      add_executable(gpu_pick_test tests/gpu_pick_test.cpp runtime/src/nvn/nvn_gpu_pick.cpp)
      target_compile_definitions(gpu_pick_test PRIVATE NX_GPU_PICK_STANDALONE)
      target_include_directories(gpu_pick_test PRIVATE runtime/src/nvn)
-@@ -67,7 +98,14 @@
+@@ -67,7 +122,14 @@
      return()
  endif()
  
@@ -54,7 +78,7 @@
      file(GLOB src CONFIGURE_DEPENDS "${NX_GEN_DIR}/${mod}/*.cpp")
      add_library(game_${mod} STATIC ${src})
      target_include_directories(game_${mod} PRIVATE runtime/include "${NX_GEN_DIR}/${mod}")
-@@ -84,8 +122,10 @@
+@@ -84,8 +146,10 @@
          target_compile_options(game_${mod} PRIVATE -O2 -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
      endif()
  endforeach()
@@ -65,7 +89,7 @@
      runtime/src/main.cpp
      runtime/src/sampler.cpp
      runtime/src/loader.cpp
-@@ -93,6 +133,12 @@
+@@ -93,6 +157,12 @@
      runtime/src/kernel.cpp
      runtime/src/kernel_watch.cpp
      runtime/src/ipc.cpp
@@ -78,7 +102,7 @@
      runtime/src/svc_am.cpp
      runtime/src/svc_set.cpp
      runtime/src/svc_misc.cpp
-@@ -101,6 +147,7 @@
+@@ -101,6 +171,7 @@
      runtime/src/hle_fs.cpp
      runtime/src/svc_account.cpp
      runtime/src/hle_ro.cpp
@@ -86,7 +110,7 @@
      runtime/src/hle_vi.cpp
      runtime/src/hle_hid.cpp
      runtime/src/hle_net.cpp
-@@ -185,7 +232,7 @@
+@@ -185,7 +256,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -95,7 +119,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +243,7 @@
+@@ -196,7 +267,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -104,7 +128,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,16 +255,35 @@
+@@ -208,16 +279,35 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -213,6 +237,13 @@
      bss_size = struct.unpack_from("<I", raw, 0x3C)[0]
      data_end = segs[2][0] + len(segs[2][1])
 --- /dev/null
++++ b/runtime/src/compiled_callback.h
+@@ -0,0 +1,4 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++namespace nx {bool compiled_callback_target(uint64_t);}
+--- /dev/null
 +++ b/runtime/src/entry_win.cpp
 @@ -0,0 +1,3 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -229,10 +260,11 @@
  
  namespace fs = std::filesystem;
  
-@@ -66,10 +68,13 @@
+@@ -66,10 +68,14 @@
  struct File {
      FILE* f;
      std::string path;
++    bool writable=false;
 +    std::shared_ptr<RomfsImage> image;
 +    RomfsImage::Entry image_entry{};
 +    File(std::shared_ptr<RomfsImage> backing,RomfsImage::Entry entry,std::string p):f(nullptr),path(std::move(p)),image(std::move(backing)),image_entry(entry){}
@@ -244,7 +276,7 @@
  };
  std::map<uint64_t, std::shared_ptr<File>> g_files;
  
-@@ -94,7 +99,8 @@
+@@ -94,7 +100,8 @@
      return nullptr;
  }
  struct Dir {
@@ -254,21 +286,29 @@
      size_t pos = 0;
  };
  std::map<uint64_t, Dir> g_dirs;
-@@ -120,8 +126,20 @@
-     return it->second / fs::u8path(rest);
- }
- 
+@@ -117,11 +124,25 @@
+     if (it == g_mounts.end()) return {};
+     std::string rest = guest.substr(colon + 1);
+     while (!rest.empty() && (rest[0] == '/' || rest[0] == '\\')) rest.erase(0, 1);
+-    return it->second / fs::u8path(rest);
+-}
+-
++    const auto relative=fs::u8path(rest).lexically_normal();if(relative.is_absolute()||relative.has_root_name())return {};for(const auto& part:relative)if(part=="..")return {};
++    return (it->second / relative).lexically_normal();
++}
++
 +std::shared_ptr<RomfsImage> romfs_image() {
 + static const auto image=[]()->std::shared_ptr<RomfsImage>{const char* path=std::getenv("NX_ROMFS_IMAGE");return path?std::make_shared<RomfsImage>(fs::u8path(path)):nullptr;}();
 + return image;
 +}
 +std::optional<std::string> romfs_relative(const fs::path& p) {
 + if(!romfs_image() || p.empty())return {};
-+ auto rel=p.lexically_relative(data_root()/"extract"/"romfs");
++ auto rel=p.lexically_normal().lexically_relative((data_root()/"extract"/"romfs").lexically_normal());
 + if(rel.empty()||rel.is_absolute())return {};
 + for(const auto& part:rel)if(part=="..")return {};
 + auto generic=rel.generic_u8string();
-+ return rel=="."?std::string{}:std::string(generic.begin(),generic.end());
++ std::string name(generic.begin(),generic.end());while(!name.empty()&&name.back()=='/')name.pop_back();
++ return name=="."?std::string{}:name;
 +}
  void mount(const std::string& name, const fs::path& p) {
 -    fs::create_directories(p);
@@ -276,7 +316,31 @@
      g_mounts[name] = p;
      log("fs: mounted %s: -> %s", name.c_str(), p.string().c_str());
  }
-@@ -208,6 +226,11 @@
+@@ -146,6 +167,23 @@
+     std::string name = cstr(c.x[0]);
+     mount(name, data_root() / "user" / "save");
+     c.x[0] = kOk;
++}
++
++void MountDeviceSaveData(CPU& c){
++ std::lock_guard guard(g_fs);const auto name=cstr(c.x[0]);if(name.empty()||name.size()>15||name.find_first_of("/\\:")!=std::string::npos)throw std::invalid_argument("native save mount name");
++ mount(name,data_root()/"user"/"device-save");log("fs: native device save mounted");c.x[0]=kOk;
++}
++void CommitDeviceSaveData(CPU& c){
++ std::lock_guard guard(g_fs);const auto name=cstr(c.x[0]);if(!g_mounts.contains(name)){c.x[0]=kTargetNotFound;return;}
++ for(const auto& [id,file]:g_files)if(file->writable&&file->path.starts_with(name+":")){
++  if(std::fflush(file->f))throw std::runtime_error("native save flush failed");
++#ifdef _WIN32
++  if(_commit(_fileno(file->f)))throw std::runtime_error("native save durability flush failed");
++#else
++  if(fsync(fileno(file->f)))throw std::runtime_error("native save durability flush failed");
++#endif
++ }
++ log("fs: native save commit flushed mount=%s",name.c_str());c.x[0]=kOk;
+ }
+ 
+ void Unmount(CPU& c) {
+@@ -208,6 +246,11 @@
  void GetEntryType(CPU& c) {  // (DirectoryEntryType* out, path)
      std::lock_guard lk(g_fs);
      fs::path p = resolve(cstr(c.x[1]));
@@ -288,7 +352,7 @@
      if (find_virtual(p)) {
          st<uint32_t>(c.x[0], 1);
          c.x[0] = kOk;
-@@ -227,6 +250,14 @@
+@@ -227,6 +270,14 @@
      std::string guest = cstr(c.x[1]);
      fs::path p = resolve(guest);
      int mode = int(c.x[2]);
@@ -303,7 +367,29 @@
      if (const std::string* v = find_virtual(p)) {  // served from memory, through a temporary file
          FILE* f = std::tmpfile();
          if (!f) {
-@@ -282,6 +313,7 @@
+@@ -259,6 +310,7 @@
+     }
+     uint64_t h = g_next++;
+     g_files[h] = std::make_shared<File>(f, guest);
++    g_files[h]->writable=(mode&2)!=0;
+     st<uint64_t>(c.x[0], h);
+     note_open("OpenFile", guest, "ok");
+     if (trace_fs()) log("fs: OpenFile(%s, %d) -> %llu", guest.c_str(), mode, (unsigned long long)h);
+@@ -273,6 +325,13 @@
+ 
+ void CloseFile(CPU& c) {
+     std::lock_guard lk(g_fs);
++    if(auto it=g_files.find(c.x[0]);it!=g_files.end()&&it->second->writable){if(std::fflush(it->second->f))throw std::runtime_error("native close flush failed");
++#ifdef _WIN32
++        if(_commit(_fileno(it->second->f)))throw std::runtime_error("native close durability flush failed");
++#else
++        if(fsync(fileno(it->second->f)))throw std::runtime_error("native close durability flush failed");
++#endif
++    }
+     g_files.erase(c.x[0]);
+ }
+ 
+@@ -282,6 +341,7 @@
          c.x[0] = kTargetNotFound;
          return;
      }
@@ -311,7 +397,7 @@
      std::lock_guard lk(g_fs);  // the FILE position is shared with writers
      FILE* f = file->f;
      int64_t cur = plat::ftell64(f);
-@@ -294,7 +326,8 @@
+@@ -294,7 +354,8 @@
  
  uint64_t read_at(const File& file, int64_t off, uint64_t buf, uint64_t size) {
      uint64_t t0 = plat::monotonic_ns();
@@ -321,7 +407,7 @@
      uint64_t ms = (plat::monotonic_ns() - t0) / 1'000'000;
      if (g_trace) log("fs: read %s at %lld size %llu -> %llu", file.path.c_str(), (long long)off, (unsigned long long)size,
                       (unsigned long long)n);
-@@ -337,6 +370,7 @@
+@@ -337,6 +398,7 @@
          c.x[0] = kTargetNotFound;
          return;
      }
@@ -329,7 +415,7 @@
      std::lock_guard lk(g_fs);
      plat::fseek64(file->f, int64_t(c.x[1]), SEEK_SET);
      fwrite(reinterpret_cast<const void*>(c.x[2]), 1, c.x[3], file->f);
-@@ -347,7 +381,7 @@
+@@ -347,7 +409,7 @@
  void FlushFile(CPU& c) {
      if (auto file = open_file(c.x[0])) {
          std::lock_guard lk(g_fs);
@@ -338,7 +424,7 @@
      }
      c.x[0] = kOk;
  }
-@@ -359,7 +393,9 @@
+@@ -359,7 +421,9 @@
      fs::path p = resolve(cstr(c.x[1]));
      int mode = int(c.x[2]);
      std::error_code ec;
@@ -349,7 +435,7 @@
      note_open("OpenDirectory", cstr(c.x[1]), found ? "ok" : "not found");
      if (trace_fs()) log("fs: OpenDirectory(%s, %d)%s", cstr(c.x[1]).c_str(), mode, found ? "" : " not found");
      if (!found) {
-@@ -367,9 +403,15 @@
+@@ -367,9 +431,15 @@
          return;
      }
      Dir d;
@@ -368,7 +454,7 @@
      }
      uint64_t h = g_next++;
      g_dirs[h] = std::move(d);
-@@ -519,6 +561,11 @@
+@@ -519,6 +589,11 @@
  }
  
  std::string read_game_file(const std::string& relative_to_romfs) {
@@ -380,6 +466,98 @@
      FILE* f = plat::fopen_utf8(utf8(data_root() / "extract" / "romfs" / fs::u8path(relative_to_romfs)), "rb");
      if (!f) return {};
      std::string s;
+@@ -530,3 +605,6 @@
+ }
+ 
+ }  // namespace nx
++
++NX_HLE("_ZN2nn2fs19MountDeviceSaveDataEPKc",nx::MountDeviceSaveData);
++NX_HLE("_ZN2nn2fs14CommitSaveDataEPKc",nx::CommitDeviceSaveData);
+--- a/runtime/src/hle_hid.cpp
++++ b/runtime/src/hle_hid.cpp
+@@ -13,6 +13,9 @@
+ #include <nx/runtime.h>
+ 
+ #include "platform.h"
++#include "native_hid_policy.h"
++#include "native_touch_policy.h"
++#include "nvn/native_guest_span.h"
+ 
+ namespace nx {
+ 
+@@ -21,6 +24,7 @@
+ using namespace plat;
+ 
+ constexpr uint32_t kStyleFullKey = 1u << 0;
++NativeHidPolicy native_policy;NativeTouchPolicy native_touch;
+ uint64_t g_sampling = 0;
+ 
+ // Scripted input for automated runs: NX_INPUT="3300:A,3900:A,4200:Down" holds the button for 8 frames from the
+@@ -85,7 +89,7 @@
+         std::lock_guard lk(m);
+         if (seen.insert({id, hle_current_name()}).second) log("hid: reads id %#x via %s", id, hle_current_name());
+     }
+-    if (id != 0) return;  // only player 1 is connected
++    if (!native_policy.style(id)) return;
+     PadState p = read();
+     static bool pressed = false;
+     if (p.buttons && !pressed) log("hid: first buttons %llx", (unsigned long long)p.buttons), pressed = true;
+@@ -173,8 +177,19 @@
+ void GetNpadStyleSet(CPU& c) {
+     static int logged = 0;
+     if (logged++ < 4) log("hid: GetNpadStyleSet id %#x", ld<uint32_t>(c.x[0]));
+-    c.x[0] = ld<uint32_t>(c.x[0]) == 0 ? kStyleFullKey : 0;
+-}
++    c.x[0] = native_policy.style(ld<uint32_t>(c.x[0]));
++}
++
++void InitializeNativeTouch(CPU& c){native_touch.initialize();log("hid: native desktop touch provider initialized (no contacts)");c.x[0]=0;}
++void GetNativeTouchStates(CPU& c){const auto capacity=int32_t(c.x[1]);if(capacity<0||capacity>16)fatal("native touch history count");if(!capacity){c.x[0]=0;return;}if(!nvn::native_guest_span(c.x[0],NativeTouchPolicy::StateBytes,2))fatal("native touch output is not writable");c.x[0]=native_touch.states({reinterpret_cast<uint8_t*>(c.x[0]),NativeTouchPolicy::StateBytes},unsigned(capacity));}
++
++void InitializeNativeNpad(CPU& c){native_policy.initialize();log("hid: native desktop npad initialized");c.x[0]=0;}
++void SetNativeStyles(CPU& c){native_policy.styles(uint32_t(c.x[0]));c.x[0]=0;}
++void SetNativeIds(CPU& c){const auto count=c.x[1];if(count>10)fatal("native npad ID count");std::vector<uint32_t> ids;for(uint64_t i=0;i<count;++i)ids.push_back(ld<uint32_t>(c.x[0]+i*4));native_policy.supported_ids(ids);c.x[0]=0;}
++void SetNativeHandheld(CPU& c){native_policy.handheld_mode(uint32_t(c.x[0]));log("hid: desktop handheld activation policy=%u",native_policy.handheld_mode());c.x[0]=0;}
++void GetNativeHandheld(CPU& c){c.x[0]=native_policy.handheld_mode();}
++void SetNativeHold(CPU& c){native_policy.joy_hold(uint32_t(c.x[0]));c.x[0]=0;}
++void DisconnectNativeNpad(CPU& c){native_policy.disconnect(ld<uint32_t>(c.x[0]));c.x[0]=0;}
+ 
+ void BindNpadStyleSetUpdateEvent(CPU& c) {  // (const u32& id, SystemEventType*, EventClearMode)
+     uint64_t create = find_symbol("_ZN2nn2os17CreateSystemEventEPNS0_15SystemEventTypeENS0_14EventClearModeEb");
+@@ -204,10 +219,10 @@
+ 
+ }  // namespace
+ 
+-NX_HLE("_ZN2nn3hid14InitializeNpadEv", noop);
+-NX_HLE("_ZN2nn3hid24SetSupportedNpadStyleSetENS_4util10BitFlagSetILi32ENS0_12NpadStyleTagEEE", noop);
+-NX_HLE("_ZN2nn3hid18SetNpadJoyHoldTypeENS0_15NpadJoyHoldTypeE", noop);
+-NX_HLE("_ZN2nn3hid22SetSupportedNpadIdTypeEPKjm", noop);
++NX_HLE("_ZN2nn3hid14InitializeNpadEv", InitializeNativeNpad);
++NX_HLE("_ZN2nn3hid24SetSupportedNpadStyleSetENS_4util10BitFlagSetILi32ENS0_12NpadStyleTagEEE", SetNativeStyles);
++NX_HLE("_ZN2nn3hid18SetNpadJoyHoldTypeENS0_15NpadJoyHoldTypeE", SetNativeHold);
++NX_HLE("_ZN2nn3hid22SetSupportedNpadIdTypeEPKjm", SetNativeIds);
+ NX_HLE("_ZN2nn3hid27BindNpadStyleSetUpdateEventERKjPNS_2os15SystemEventTypeENS3_14EventClearModeE", BindNpadStyleSetUpdateEvent);
+ NX_HLE("_ZN2nn3hid15GetNpadStyleSetERKj", GetNpadStyleSet);
+ NX_HLE("_ZN2nn3hid12GetNpadStateEPNS0_16NpadFullKeyStateERKj", GetNpadState);
+@@ -227,7 +242,7 @@
+ NX_HLE("_ZN2nn3hid14GetMouseStatesEPNS0_10MouseStateEi", GetMouseStates);
+ NX_HLE("_ZN2nn3hid18InitializeKeyboardEv", noop);
+ NX_HLE("_ZN2nn3hid16GetKeyboardStateEPNS0_13KeyboardStateE", GetKeyboardState);
+-NX_HLE("_ZN2nn3hid14DisconnectNpadERKj", noop);
++NX_HLE("_ZN2nn3hid14DisconnectNpadERKj", DisconnectNativeNpad);
+ NX_HLE("_ZN2nn3hid18SwapNpadAssignmentERKjS2_", noop);
+ NX_HLE("_ZN2nn3hid30SetNpadJoyAssignmentModeSingleERKj", noop);
+ NX_HLE("_ZN2nn3hid21StartLrAssignmentModeEv", noop);
+@@ -240,3 +255,9 @@
+ NX_HLE("_ZN2nn3hid22GetSixAxisSensorStatesEPNS0_18SixAxisSensorStateEiRKNS0_19SixAxisSensorHandleE", zero);
+ 
+ }  // namespace nx
++
++NX_HLE("_ZN2nn3hid29SetNpadHandheldActivationModeENS0_26NpadHandheldActivationModeE",nx::SetNativeHandheld);
++NX_HLE("_ZN2nn3hid29GetNpadHandheldActivationModeEv",nx::GetNativeHandheld);
++
++NX_HLE("_ZN2nn3hid21InitializeTouchScreenEv",nx::InitializeNativeTouch);
++NX_HLE("_ZN2nn3hid20GetTouchScreenStatesILm16EEEiPNS0_16TouchScreenStateIXT_EEEi",nx::GetNativeTouchStates);
 --- a/runtime/src/hle_vi.cpp
 +++ b/runtime/src/hle_vi.cpp
 @@ -10,6 +10,7 @@
@@ -593,6 +771,17 @@
      if (!t_svc_role || !svc_profile_on()) return svc_impl(c, imm, pc);
      uint64_t t0 = plat::monotonic_ns();
      svc_impl(c, imm, pc);
+--- a/runtime/src/kernel.h
++++ b/runtime/src/kernel.h
+@@ -40,7 +40,7 @@
+ };
+ 
+ struct EventState {
+-    bool signaled = false;
++    std::atomic<bool> signaled{false};
+ };
+ 
+ struct KEvent : KObject {
 --- a/runtime/src/loader.cpp
 +++ b/runtime/src/loader.cpp
 @@ -11,6 +11,7 @@
@@ -614,15 +803,21 @@
  }
  
  uint64_t hle_address_or(const char* name, HleFn fallback) {
-@@ -161,6 +162,7 @@
+@@ -160,7 +161,13 @@
+ FastModule g_fast[4];
  size_t g_fast_count = 0;
  
++bool compiled_callback_target(uint64_t target){
++ if(auto* module=module_at(target)){const auto off=target-module->base;return !(off&3)&&off<module->info->text_size&&module->table[off/4];}
++ const auto off=target-kThunkBase;return off<kThunkSize&&!(off&15)&&off/16<g_thunks.size()&&g_thunks[off/16].fn;
++}
++
  void call(CPU& c, uint64_t t) {
 +    mk8_focus_gate();
      for (size_t k = 0; k < g_fast_count; k++) {
          const FastModule& m = g_fast[k];
          uint64_t off = t - m.base;
-@@ -270,8 +272,8 @@
+@@ -270,8 +277,8 @@
              }
              if (!target && !s.imported) target = lm.base + s.value;
              if (!target) {
@@ -720,7 +915,7 @@
      reserve(kStackBase, kStackSize, "stack");
 --- /dev/null
 +++ b/runtime/src/mk8_focus_policy.cpp
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,51 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "mk8_focus_policy.h"
 +#include "platform.h"
@@ -732,7 +927,7 @@
 +#include <algorithm>
 +namespace nx {
 +namespace {
-+std::mutex lock;HWND display{};uint64_t generation{};bool configured=false,out_of_focus=false;
++std::mutex lock;HWND display{};uint64_t generation{};bool configured=false,out_of_focus=false,notify=false,background=false,suspend=true;uint8_t logical_focus=1;std::function<void()> notification;
 +std::atomic<bool> enabled=false;
 +bool live(){DWORD process=0;return display&&IsWindow(display)&&GetWindowThreadProcessId(display,&process)&&process==GetCurrentProcessId()&&generation==plat::window_generation();}
 +}
@@ -740,38 +935,52 @@
 +uint32_t mk8_prepare_focus(IpcCtx& c){
 + if(!c.a.empty()||!c.b.empty()||!c.x.empty()||!c.c.empty()||!c.in_copy.empty()||!c.in_move.empty()||!c.in_objects.empty()||c.pid)return 0xe401;
 + if(c.cmd==13){
-+  if((c.in_size!=3&&c.in_size!=4)||!c.in||c.in[0]!=0||c.in[1]!=0||c.in[2]!=1||(c.in_size==4&&c.in[3]!=0))
++  if((c.in_size!=3&&c.in_size!=4)||!c.in||c.in[0]>1||c.in[1]>1||c.in[2]>1||(c.in_size==4&&c.in[3]!=0))
 +   fatal("unsupported MK8D focus configuration");
 + }else if(c.cmd==16){
 +  if((c.in_size!=1&&c.in_size!=4)||!c.in||c.in[0]>1||std::any_of(c.in+1,c.in+c.in_size,[](uint8_t b){return b!=0;}))return 0xe401;
 + }else fatal("unsupported focus command");
 + {std::lock_guard guard(lock);if(!live())return 0xe401;}
-+ const auto command=c.cmd;const bool value=command==16&&c.in[0];
++ const auto command=c.cmd;const bool value=command==16&&c.in[0];const bool next_notify=command==13&&c.in[0],next_background=command==13&&c.in[1],next_suspend=command==13&&c.in[2];
 + c.validate_reply=[]{std::lock_guard guard(lock);return live();};
-+ c.commit_reply=[command,value]{std::lock_guard guard(lock);if(!live())fatal("display lost after focus response write");if(command==13){configured=true;enabled.store(true,std::memory_order_release);}else out_of_focus=value;log("am: native focus policy committed command=%u suspend_hidden=1 suspend_out_of_focus=%u",command,unsigned(out_of_focus));};
++ c.commit_reply=[command,value,next_notify,next_background,next_suspend]{std::function<void()> signal;{
++  std::lock_guard guard(lock);if(!live())fatal("display lost after focus response write");if(command==13){configured=true;notify=next_notify;background=next_background;suspend=next_suspend;enabled.store(true,std::memory_order_release);if(notify)signal=notification;}else out_of_focus=value;
++  log("am: native focus policy committed command=%u notify=%u background=%u suspend=%u out_of_focus=%u",command,unsigned(notify),unsigned(background),unsigned(suspend),unsigned(out_of_focus));
++ }if(signal)signal();};
 + return 0;
 +}
-+Mk8FocusSnapshot mk8_focus_snapshot(){std::lock_guard guard(lock);return {configured,false,false,true,out_of_focus};}
++Mk8FocusSnapshot mk8_focus_snapshot(){std::lock_guard guard(lock);return {configured,notify,background,suspend,out_of_focus};}
++void mk8_focus_notification(std::function<void()> callback){std::lock_guard guard(lock);notification=std::move(callback);}
++void mk8_observe_display(){std::function<void()> signal;{
++ std::lock_guard guard(lock);if(!display||!live())return;const uint8_t next=IsWindowVisible(display)&&!IsIconic(display)?1:2;
++ if(next!=logical_focus){logical_focus=next;if(notify)signal=notification;}
++ }if(signal)signal();
++}
++uint8_t mk8_logical_focus(){mk8_observe_display();std::lock_guard guard(lock);return logical_focus;}
 +void mk8_focus_gate(){
 + if(!enabled.load(std::memory_order_acquire))return;
-+ for(;;){
-+  bool park;
-+  {std::lock_guard guard(lock);if(!live())fatal("owned native display closed");park=!IsWindowVisible(display)||IsIconic(display)||(out_of_focus&&GetForegroundWindow()!=display);}
-+  if(!park)return;
-+  Sleep(5); // UI runs on its separate native thread; never activate a foreign window.
-+ }
++ for(;;){mk8_observe_display();bool park;{
++  std::lock_guard guard(lock);if(!live())fatal("owned native display closed");
++  // SingleApplication display selection is independent of raw Windows foreground.
++  // A visible owned display runs without activating it. Hidden/minimized state is observable.
++  park=!background&&logical_focus!=1&&(suspend||out_of_focus);
++ }if(!park)return;Sleep(5);}
 +}
 +}
 --- /dev/null
 +++ b/runtime/src/mk8_focus_policy.h
-@@ -0,0 +1,10 @@
+@@ -0,0 +1,14 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include "ipc.h"
++#include <functional>
 +namespace nx {
 +void mk8_bind_display(void* window,uint64_t generation);
 +uint32_t mk8_prepare_focus(IpcCtx&);
 +void mk8_focus_gate();
++void mk8_observe_display();
++uint8_t mk8_logical_focus();
++void mk8_focus_notification(std::function<void()>);
 +struct Mk8FocusSnapshot{bool configured;bool notify;bool background;bool suspend;bool out_of_focus;};
 +Mk8FocusSnapshot mk8_focus_snapshot();
 +}
@@ -908,6 +1117,67 @@
 +#include <nx/module.h>
 +namespace nx {uint64_t module_init_offset(const ModuleInfo&);}
 --- /dev/null
++++ b/runtime/src/native_exit_policy.h
+@@ -0,0 +1,14 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <mutex>
++namespace nx {
++class NativeExitPolicy{
++ mutable std::mutex mutex;bool locked=false,requested=false;
++public:
++ bool lock_exit(){std::lock_guard guard(mutex);if(requested)return true;locked=true;return false;}
++ bool unlock_exit(){std::lock_guard guard(mutex);locked=false;return requested;}
++ bool request_close(){std::lock_guard guard(mutex);requested=true;return !locked;}
++ bool is_locked()const{std::lock_guard guard(mutex);return locked;}
++};
++inline NativeExitPolicy& native_exit_policy(){static NativeExitPolicy value;return value;}
++}
+--- /dev/null
++++ b/runtime/src/native_hid_policy.h
+@@ -0,0 +1,21 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++#include <mutex>
++#include <set>
++#include <span>
++#include <stdexcept>
++namespace nx {
++class NativeHidPolicy{
++ mutable std::mutex lock;bool initialized=false,disconnected=false;uint32_t supported=1,handheld=0,hold=0;std::set<uint32_t> ids{0};
++public:
++ void initialize(){std::lock_guard guard(lock);initialized=true;disconnected=false;}
++ void styles(uint32_t value){std::lock_guard guard(lock);supported=value;}
++ void supported_ids(std::span<const uint32_t> value){if(value.size()>10)throw std::invalid_argument("native controller ID count");std::set<uint32_t> next;for(auto id:value){if(id>7&&id!=32)throw std::invalid_argument("native controller ID");next.insert(id);}std::lock_guard guard(lock);ids=std::move(next);}
++ void handheld_mode(uint32_t value){if(value>2)throw std::invalid_argument("native handheld activation mode");std::lock_guard guard(lock);handheld=value;}
++ uint32_t handheld_mode()const{std::lock_guard guard(lock);return handheld;}
++ void joy_hold(uint32_t value){if(value>1)throw std::invalid_argument("native Joy-Con hold mode");std::lock_guard guard(lock);hold=value;}
++ void disconnect(uint32_t id){std::lock_guard guard(lock);if(id==0)disconnected=true;}
++ uint32_t style(uint32_t id)const{std::lock_guard guard(lock);return initialized&&!disconnected&&id==0&&ids.contains(id)&&(supported&1)?1:0;}
++};
++}
+--- /dev/null
++++ b/runtime/src/native_touch_policy.h
+@@ -0,0 +1,17 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// The desktop provider exposes no touch contacts; it still supplies real state/history semantics.
++#pragma once
++#include <cstdint>
++#include <cstring>
++#include <mutex>
++#include <span>
++#include <stdexcept>
++namespace nx {
++class NativeTouchPolicy{
++ std::mutex lock;bool initialized=false;uint64_t sampling=0;
++public:
++ static constexpr size_t StateBytes=16+16*40;
++ void initialize(){std::lock_guard guard(lock);initialized=true;}
++ unsigned states(std::span<uint8_t> output,unsigned capacity){std::lock_guard guard(lock);if(!initialized||!capacity)return 0;if(output.size()<StateBytes)throw std::invalid_argument("native touchscreen output extent");if(sampling==UINT64_MAX)throw std::overflow_error("native touch sampling exhausted");std::memset(output.data(),0,StateBytes);const auto next=++sampling;std::memcpy(output.data(),&next,8);return 1;}
++};
++}
+--- /dev/null
 +++ b/runtime/src/nvn/native_device.h
 @@ -0,0 +1,8 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -918,27 +1188,280 @@
 +bool initialize_native_device(uint64_t,uint32_t flags);
 +void finalize_native_device(uint64_t);
 +}
+--- /dev/null
++++ b/runtime/src/nvn/native_guest_span.h
+@@ -0,0 +1,4 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++namespace nx::nvn {bool native_guest_span(uint64_t,uint64_t,uint32_t);}
+--- /dev/null
++++ b/runtime/src/nvn/native_raster_policy.h
+@@ -0,0 +1,4 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++namespace nx::nvn {void set_native_origin(uint64_t,uint32_t);uint32_t native_window_origin();}
+--- /dev/null
++++ b/runtime/src/nvn/native_texture_format.h
+@@ -0,0 +1,32 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// NVN storage facts, independent of any SDK image address or Vulkan substitutions.
++#pragma once
++#include <array>
++#include <cstdint>
++#include <stdexcept>
++namespace nx::nvn {
++struct NativeTextureBlock{uint32_t block_w=1,block_h=1,bytes=0;};
++inline NativeTextureBlock native_texture_block(uint32_t format){
++ NativeTextureBlock f;
++ if(format>=0x41&&format<=0x50){f.block_w=f.block_h=4;f.bytes=(format==0x41||format==0x42||format==0x45||format==0x46||format==0x49||format==0x4a)?8:16;return f;}
++ if(format>=0x79&&format<=0x94){constexpr std::array<std::array<uint32_t,2>,14> dims={{{4,4},{5,4},{5,5},{6,5},{6,6},{8,5},{8,6},{8,8},{10,5},{10,6},{10,8},{10,10},{12,10},{12,12}}};const auto& d=dims[(format-0x79)%14];return {d[0],d[1],16};}
++ if(format>=1&&format<=4)f.bytes=1;
++ else if(format<=9&&format>=5)f.bytes=2;
++ else if(format<=0xc&&format>=0xa)f.bytes=4;
++ else if(format<=0x10&&format>=0xd)f.bytes=2;
++ else if(format<=0x15&&format>=0x11)f.bytes=4;
++ else if(format<=0x18&&format>=0x16)f.bytes=8;
++ else if(format<=0x1c&&format>=0x19)f.bytes=3;
++ else if(format<=0x21&&format>=0x1d)f.bytes=6;
++ else if(format<=0x24&&format>=0x22)f.bytes=12;
++ else if(format<=0x28&&format>=0x25)f.bytes=4;
++ else if(format<=0x2d&&format>=0x29)f.bytes=8;
++ else if(format<=0x30&&format>=0x2e)f.bytes=16;
++ else if(format==0x31)f.bytes=1;
++ else if(format==0x32||(format>=0x39&&format<=0x3c)||(format>=0x95&&format<=0x98))f.bytes=2;
++ else if(format==0x36)f.bytes=8;
++ else if((format>=0x33&&format<=0x38)||(format>=0x3d&&format<=0x40)||(format>=0x99&&format<=0x9c))f.bytes=4;
++ else throw std::invalid_argument("unsupported NVN texture storage format");
++ return f;
++}
++}
+--- a/runtime/src/nvn/nvn_cmd.cpp
++++ b/runtime/src/nvn/nvn_cmd.cpp
+@@ -16,6 +16,11 @@
+ #include <map>
+ 
+ #include "nvn.h"
++#include "native_device.h"
++#include "native_guest_span.h"
++#include "compiled_callback.h"
++#include <thread>
++#include <stdexcept>
+ #include "nvn_shaders.h"
+ 
+ namespace nx::nvn {
+@@ -32,6 +37,9 @@
+     // at the free ones (to add memory in time), so usage grows with the commands recorded, survives EndRecording
+     // and BeginRecording like the real memory does, and is given back only when memory is added. It never reaches
+     // the total.
++    uint64_t scratch_pool=0,scratch_offset=0,scratch_size=0;
++    uint64_t callback=0,callback_data=0;
++    CPU* recording_cpu=nullptr;std::thread::id recording_thread{};bool callback_active=false;
+     uint64_t command_size = 0, control_size = 0;
+     uint64_t command_base = 0, control_base = 0;  // usage before this recording
+     uint64_t command_memory = 0;                  // the memory added last: its GPU address (see AddCommandMemory)
+@@ -40,9 +48,41 @@
+ 
+ constexpr uint64_t kCommandBytes = 16, kControlBytes = 4;  // per recorded command
+ 
+-uint64_t used(uint64_t size, uint64_t base, size_t cmds, uint64_t per) {
+-    return std::min(base + cmds * per, size > 64 ? size - 64 : 0);
+-}
++uint64_t used(uint64_t size,uint64_t base,size_t cmds,uint64_t per){
++ if(cmds>UINT64_MAX/per||base>size||uint64_t(cmds)*per>size-base)throw std::runtime_error("native command arena exhausted");
++ return base+uint64_t(cmds)*per;
++}
++
++void ensure_capacity(uint64_t guest,size_t extra,CPU* caller=nullptr){
++ for(unsigned attempt=0;attempt<3;++attempt){
++  auto* cb=get<CommandBuffer>(guest);if(!cb)fatal("native command buffer is invalid");uint64_t callback=0,data=0,event=0,minimum=0;CPU* cpu=nullptr;
++  {std::lock_guard guard(cb->lock);const auto n=cb->recording->cmds.size()+extra;if(n>UINT64_MAX/kCommandBytes)fatal("native command count overflow");
++   const auto command_need=uint64_t(n)*kCommandBytes,control_need=uint64_t(n)*kControlBytes;
++   if(cb->command_base<=cb->command_size&&command_need<=cb->command_size-cb->command_base&&cb->control_base<=cb->control_size&&control_need<=cb->control_size-cb->control_base)return;
++   event=(cb->command_base>cb->command_size||command_need>cb->command_size-cb->command_base)?0:1;minimum=event?control_need:command_need;
++   callback=cb->callback;data=cb->callback_data;cpu=caller?caller:cb->recording_cpu;
++   if(!callback||!cpu||cb->callback_active||cb->recording_thread!=std::this_thread::get_id())fatal("native command memory cannot be replenished");cb->callback_active=true;
++  }
++  guest_call(*cpu,callback,{guest,event,minimum,data});
++  {std::lock_guard guard(cb->lock);if(get<CommandBuffer>(guest)!=cb)fatal("command buffer changed during callback");cb->callback_active=false;}
++ }
++ fatal("native command memory callback did not supply required capacity");
++}
++
++void SetShaderScratchMemory(CPU& c){
++ auto* cb=get<CommandBuffer>(c.x[0]);if(!cb)throw std::invalid_argument("scratch binding requires a native command buffer");
++ const auto pool_key=c.x[1],offset=c.x[2],bytes=c.x[3];
++ if(pool_key||offset||bytes){auto* pool=get<MemoryPool>(pool_key);if(!pool||offset>pool->size||bytes>pool->size-offset||(offset&4095)||(bytes&4095))throw std::invalid_argument("native shader scratch binding extent/alignment");}
++ std::lock_guard guard(cb->lock);cb->scratch_pool=pool_key;cb->scratch_offset=offset;cb->scratch_size=bytes;
++ // NVN's opaque application reservation is retained; SPIR-V execution uses
++ // the native Vulkan driver's private shader-spill allocation.
++ log("nvn: native shader scratch reservation bound bytes=%llu",(unsigned long long)bytes);
++}
++
++void SetMemoryCallback(CPU& c){auto* cb=get<CommandBuffer>(c.x[0]);if(!cb||(c.x[1]&&!compiled_callback_target(c.x[1])))fatal("invalid compiled command memory callback");std::lock_guard guard(cb->lock);cb->callback=c.x[1];log("nvn: command memory callback registered");}
++void SetMemoryCallbackData(CPU& c){auto* cb=get<CommandBuffer>(c.x[0]);if(!cb)fatal("invalid native command buffer");std::lock_guard guard(cb->lock);cb->callback_data=c.x[1];}
++void GetMemoryCallback(CPU& c){auto* cb=get<CommandBuffer>(c.x[0]);if(!cb)fatal("invalid native command buffer");std::lock_guard guard(cb->lock);c.x[0]=cb->callback;}
++void GetMemoryCallbackData(CPU& c){auto* cb=get<CommandBuffer>(c.x[0]);if(!cb)fatal("invalid native command buffer");std::lock_guard guard(cb->lock);c.x[0]=cb->callback_data;}
+ 
+ // A handle lives as long as its command memory: on the GPU a list is valid until the game records over the memory it
+ // used, so a newer list recorded over the same bytes (our usage estimate, command_base) drops the older ones. Engines
+@@ -135,6 +175,7 @@
+ 
+ 
+ void CommandBufferInitialize(CPU& c) {  // NVNboolean (NVNcommandBuffer*, NVNdevice*)
++    if(!native_device_alive(c.x[1])||!native_guest_span(c.x[0],8,3)){c.x[0]=0;return;}
+     make<CommandBuffer>(c.x[0]);
+     c.x[0] = 1;
+ }
+@@ -145,12 +186,15 @@
+     if (auto* cb = get<CommandBuffer>(c.x[0])) {
+         std::lock_guard lk(cb->lock);
+         cb->recording = std::make_shared<CmdList>();
++        cb->recording_cpu=&c;cb->recording_thread=std::this_thread::get_id();
+     }
+ }
+ 
+ void AddCommandMemory(CPU& c) {  // (cmd, const NVNmemoryPool*, ptrdiff_t offset, size_t size)
+     if (auto* cb = get<CommandBuffer>(c.x[0])) {
+         std::lock_guard lk(cb->lock);
++        if(!cb->recording->cmds.empty())fatal("native multi-arena recording is not integrated");
++        const auto* pool=get<MemoryPool>(c.x[1]);if(!pool||c.x[2]>pool->size||c.x[3]>pool->size-c.x[2])fatal("native command arena exceeds memory pool");
+         cb->command_size = c.x[3];
+         cb->command_base = 0;
+         cb->command_memory = command_memory_address(c.x[1], c.x[2]);
+@@ -161,6 +205,8 @@
+ void AddControlMemory(CPU& c) {  // (cmd, void* memory, size_t size)
+     if (auto* cb = get<CommandBuffer>(c.x[0])) {
+         std::lock_guard lk(cb->lock);
++        if(!cb->recording->cmds.empty())fatal("native multi-arena recording is not integrated");
++        if(!native_guest_span(c.x[1],c.x[2],3))fatal("native control arena is not writable");
+         cb->control_size = c.x[2];
+         cb->control_base = 0;
+     }
+@@ -193,6 +239,7 @@
+ }
+ 
+ void CommandBufferEndRecording(CPU& c) {  // NVNcommandHandle
++    ensure_capacity(c.x[0],1,&c);
+     std::shared_ptr<CmdList> list = std::make_shared<CmdList>();
+     uint64_t start = 0, end = 0, pool = 0;
+     const uint64_t cb_guest = c.x[0];
+@@ -204,7 +251,7 @@
+         cb->command_base = used(cb->command_size, cb->command_base, n, kCommandBytes);
+         end = std::max(cb->command_memory + cb->command_base, start + 1);
+         cb->control_base = used(cb->control_size, cb->control_base, n, kControlBytes);
+-        list.swap(cb->recording);
++        list.swap(cb->recording);cb->recording_cpu=nullptr;
+     }
+     list->epoch = current_epoch();
+     g_ends++;
+@@ -371,6 +418,7 @@
+         g_no_cb++;
+         return;
+     }
++    ensure_capacity(guest,2); // Reserve the command and its eventual end marker.
+     std::lock_guard lk(cb->lock);
+     if (blob) {
+         cmd.blob = uint32_t(cb->recording->blobs.size());
+@@ -518,3 +566,10 @@
+ NX_HLE("nvnCommandBufferGetControlMemoryFree", (memory_query<false, 2>));
+ 
+ }  // namespace nx::nvn
++
++NX_HLE("nvnCommandBufferSetMemoryCallback",nx::nvn::SetMemoryCallback);
++NX_HLE("nvnCommandBufferSetMemoryCallbackData",nx::nvn::SetMemoryCallbackData);
++NX_HLE("nvnCommandBufferGetMemoryCallback",nx::nvn::GetMemoryCallback);
++NX_HLE("nvnCommandBufferGetMemoryCallbackData",nx::nvn::GetMemoryCallbackData);
++
++NX_HLE("nvnCommandBufferSetShaderScratchMemory",nx::nvn::SetShaderScratchMemory);
 --- a/runtime/src/nvn/nvn_device.cpp
 +++ b/runtime/src/nvn/nvn_device.cpp
-@@ -1,129 +1,52 @@
+@@ -1,129 +1,78 @@
 -// NVN device (docs/NVN.md, phases N2-N3). Values come from what the game checks and from the SDK's own NVN driver
 -// (recompiled in sdk; NX_NVN_REAL=1 records where each of its procs lives, see nvn_trace.cpp).
 -#include <map>
--
--#include <nx/runtime.h>
--
--namespace nx {
--
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +// Native device admission; SDK constants are queried from compiled SDK getters.
 +#include "nvn_vk.h"
 +#include "native_device.h"
++#include "native_raster_policy.h"
 +#define WIN32_LEAN_AND_MEAN
 +#define NOMINMAX
 +#include <windows.h>
 +#include <algorithm>
++#include <stdexcept>
 +namespace nx::nvn {
- namespace {
++VkPhysicalDevice vk_physical();
++namespace {
++std::atomic<uint64_t> current_device=0;
++struct Device final:Object{std::atomic<uint32_t> origin=0;std::atomic<bool> ready=false;VkDevice backend=VK_NULL_HANDLE;};
++bool span_valid(uint64_t address,uint64_t bytes,uint32_t permissions){
++ if(!address||address>=(1ull<<39)||bytes>(1ull<<39)-address)return false;
++ for(uint64_t cursor=address;cursor<address+bytes;){auto v=vm_query(cursor);if(cursor<v.addr||cursor-v.addr>=v.size||(v.perm&permissions)!=permissions)return false;MEMORY_BASIC_INFORMATION info{};if(!VirtualQuery(reinterpret_cast<void*>(cursor),&info,sizeof(info))||info.State!=MEM_COMMIT||(info.Protect&(PAGE_GUARD|PAGE_NOACCESS)))return false;
++  if((permissions&2)&&!(info.Protect&(PAGE_READWRITE|PAGE_WRITECOPY|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY)))return false;
++  const auto end=std::min<uint64_t>(v.addr+v.size,reinterpret_cast<uint64_t>(info.BaseAddress)+info.RegionSize);if(end<=cursor)return false;cursor=std::min(end,address+bytes);
++ }return true;
++}
++}
++bool native_guest_span(uint64_t address,uint64_t bytes,uint32_t permissions){return span_valid(address,bytes,permissions);}
++bool native_device_alive(uint64_t key){auto* d=get<Device>(key);return d&&d->ready.load(std::memory_order_acquire);}
++bool initialize_native_device(uint64_t key,uint32_t flags){
++ if(flags||!span_valid(key,7008,3))return false;
++ auto owned=std::make_unique<Device>();auto* identity=owned.get();
++ {std::lock_guard guard(objects_lock());if(objects().contains(key))return false;for(const auto& [k,v]:objects())if(dynamic_cast<Device*>(v.get()))return false;objects().emplace(key,std::move(owned));}
++ if(!initialize_backend()||!vk_device())fatal("native Vulkan device admission failed; process must stop");
++ {std::lock_guard guard(objects_lock());const auto it=objects().find(key);if(it==objects().end()||it->second.get()!=identity)fatal("native device publication identity changed");identity->backend=vk_device();identity->ready.store(true,std::memory_order_release);current_device.store(key,std::memory_order_release);}
++ log("nvn: native device initialized guest=%llx flags=%u",(unsigned long long)key,flags);return true;
++}
++void finalize_native_device(uint64_t key){
++ if(!native_device_alive(key))fatal("native device finalize requires live identity");worker_finish();
++ {std::lock_guard guard(gpu_lock());if(!vk::p_vkDeviceWaitIdle||vk::p_vkDeviceWaitIdle(vk_device())!=VK_SUCCESS)fatal("native device drain failed");}
++ auto* device=get<Device>(key);if(!device)fatal("native device identity lost while draining");device->ready.store(false,std::memory_order_release);current_device.store(0,std::memory_order_release);destroy(key);log("nvn: native device finalized");
++}
++void set_native_origin(uint64_t key,uint32_t mode){auto* device=get<Device>(key);if(!device||!device->ready.load()||mode!=1)throw std::invalid_argument("native raster supports a live device and upper-left origin only");device->origin.store(mode,std::memory_order_release);log("nvn: native window origin mode=%u",mode);}
++uint32_t native_window_origin(){auto* device=get<Device>(current_device.load(std::memory_order_acquire));return device&&device->ready.load()?device->origin.load(std::memory_order_acquire):0;}
++namespace {
++void DeviceSetOrigin(CPU& c){set_native_origin(c.x[0],uint32_t(c.x[1]));}
++void DeviceGetOrigin(CPU& c){if(!native_device_alive(c.x[0]))fatal("native origin getter requires live device");c.x[0]=native_window_origin();}
++void DeviceInitialize(CPU& c){const auto key=c.x[0],builder=c.x[1];if(!span_valid(builder,16,1)){c.x[0]=0;return;}const auto getter=real_proc(c,"nvnDeviceGetInteger");if(!getter)fatal("SDK integer getter is missing");const auto tmp=scratch(c,8);
++ guest_call(c,getter,{0,0,tmp});guest_call(c,getter,{0,1,tmp+4});const auto major=ld<uint32_t>(tmp),minor=ld<uint32_t>(tmp+4);
++ if(major!=53||minor!=105)fatal("unsupported MK8D native builder ABI %u.%u",major,minor);
++ // SDK53.105's own SetDefaults zeroes16bytes and SetFlags stores u32 at +0.
++ const auto flags=ld<uint32_t>(builder);log("nvn: admitted SDK builder ABI %u.%u",major,minor);log("nvn: native device request guest=%llx builder=%llx flags=%u",(unsigned long long)key,(unsigned long long)builder,flags);c.x[0]=initialize_native_device(key,flags)?1:0;}
++void DeviceFinalize(CPU& c){finalize_native_device(c.x[0]);}
++void DeviceGetInteger(CPU& c){
++ const auto pname=uint32_t(c.x[1]);if(c.x[0]&&!native_device_alive(c.x[0]))fatal("native device property requires live device");
++ if(!span_valid(c.x[2],4,2))fatal("native device property output is not writable");
++ // Report implemented native features, not the console driver's feature mask.
++ uint32_t value=0;bool native=true;
++ switch(pname){
++ case 40:case 50:case 59:case 66:case 67:case 68:case 69:case 71:case 72:case 73:case 74:case 75:case 76:case 87:case 97:value=0;break;
++ case 41:{if(!native_device_alive(c.x[0]))fatal("native format query requires live device");VkFormatProperties format{};vk::p_vkGetPhysicalDeviceFormatProperties(vk_physical(),VK_FORMAT_S8_UINT,&format);const auto need=VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT|VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;value=(format.optimalTilingFeatures&need)==need;break;}
++ case 42:value=1;break; // Native ASTC decoder supplies Vulkan RGBA8 uploads.
++ case 23:case 24:case 55:value=1;break; // Compatibility reservation unit; SPIR-V/driver owns actual shader spill storage.
++ case 56:value=256;break; // Native linear-layout alignment.
++ case 58:value=65536;break; // Native virtual-pool address allocation granularity.
++ case 45:case 61:case 62:case 63:case 64:case 65:{if(!native_device_alive(c.x[0]))fatal("native limit query requires live device");VkPhysicalDeviceProperties properties{};vk::p_vkGetPhysicalDeviceProperties(vk_physical(),&properties);const auto& limits=properties.limits;
++  switch(pname){case 45:value=limits.maxImageArrayLayers;break;case 61:case 65:value=limits.maxImageDimension2D;break;case 62:value=limits.maxTexelBufferElements;break;case 63:value=limits.maxImageDimension3D;break;case 64:value=limits.maxImageDimensionCube;break;}break;}
++ case 43:fatal("native L2 cache size is not exposed by this backend");
++ default:native=false;break;
++ }
++ if(native){if(!native_device_alive(c.x[0]))fatal("native device capability requires live device");st<uint32_t>(c.x[2],value);log("nvn: native property %u value=%u",pname,value);return;}
++ if(pname>97)fatal("unsupported SDK device property %u",pname);
++ driver(c,"nvnDeviceGetInteger",{0,pname,c.x[2]});log("nvn: SDK property %u delivered",pname);
++}
++}
++}
++NX_HLE("nvnDeviceInitialize",nx::nvn::DeviceInitialize);
++NX_HLE("nvnDeviceFinalize",nx::nvn::DeviceFinalize);
++NX_HLE("nvnDeviceGetInteger",nx::nvn::DeviceGetInteger);
+ 
+-#include <nx/runtime.h>
+-
+-namespace nx {
+-
+-namespace {
 -
 -// nvnDeviceGetInteger(const NVNdevice*, NVNdeviceInfo pname, int* value).
 -// Read out of the SDK 16.2 driver (sdk+451090: a jump table over pname 0..0x62, constants inline or from a second
@@ -1052,54 +1575,178 @@
 -    auto it = kDeviceInfo.find(pname);
 -    if (it == kDeviceInfo.end()) log("nvn: nvnDeviceGetInteger(%u) unknown -> 0 (lr %s)", pname, describe(c.x[30]).c_str());
 -    if (c.x[2]) st<int32_t>(c.x[2], it == kDeviceInfo.end() ? 0 : it->second);
-+struct Device final:Object{std::atomic<bool> ready=false;VkDevice backend=VK_NULL_HANDLE;};
-+bool span_valid(uint64_t address,uint64_t bytes,uint32_t permissions){
-+ if(!address||address>=(1ull<<39)||bytes>(1ull<<39)-address)return false;
-+ for(uint64_t cursor=address;cursor<address+bytes;){auto v=vm_query(cursor);if(cursor<v.addr||cursor-v.addr>=v.size||(v.perm&permissions)!=permissions)return false;MEMORY_BASIC_INFORMATION info{};if(!VirtualQuery(reinterpret_cast<void*>(cursor),&info,sizeof(info))||info.State!=MEM_COMMIT||(info.Protect&(PAGE_GUARD|PAGE_NOACCESS)))return false;
-+  if((permissions&2)&&!(info.Protect&(PAGE_READWRITE|PAGE_WRITECOPY|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY)))return false;
-+  const auto end=std::min<uint64_t>(v.addr+v.size,reinterpret_cast<uint64_t>(info.BaseAddress)+info.RegionSize);if(end<=cursor)return false;cursor=std::min(end,address+bytes);
-+ }return true;
- }
+-}
 -
 -}  // namespace
 -
 -NX_HLE("nvnDeviceGetInteger", nvnDeviceGetInteger);
 -
 -}  // namespace nx
++NX_HLE("nvnDeviceSetWindowOriginMode",nx::nvn::DeviceSetOrigin);
++NX_HLE("nvnDeviceGetWindowOriginMode",nx::nvn::DeviceGetOrigin);
+--- a/runtime/src/nvn/nvn_draw.cpp
++++ b/runtime/src/nvn/nvn_draw.cpp
+@@ -12,6 +12,7 @@
+ #include <set>
+ 
+ #include "nvn_draw_state.h"
++#include "native_raster_policy.h"
+ #include "nvn_ultrawide.h"
+ #include "platform.h"
+ 
+@@ -256,6 +257,7 @@
+ }
+ 
+ bool draw(VkCommandBuffer cb, const Targets& t, uint32_t mode, bool indexed, const Cmd& c) {
++    if(native_window_origin()!=1)fatal("native draw requires configured upper-left origin");
+     g_stats.total++;
+     if (g_state.rasterizer_discard || !g_state.render_enable) return false;  // nothing reaches the targets
+     const auto* shaders = program_shaders(g_state.program);
+--- a/runtime/src/nvn/nvn_objects.cpp
++++ b/runtime/src/nvn/nvn_objects.cpp
+@@ -2,6 +2,7 @@
+ // sampler pools. Signatures come from the game's call sites (nvn_trace.txt); builder state is read back
+ // through the SDK driver's getters (nvn.h). The Vulkan side hangs off these objects.
+ #include <algorithm>
++#include <tuple>
+ #include <atomic>
+ #include <cstdlib>
+ #include <cstring>
+@@ -9,6 +10,9 @@
+ #include <set>
+ 
+ #include "nvn.h"
++#include "sdk53_texture_builder.h"
++#include "sdk53_texture_descriptor.h"
++#include "native_guest_span.h"
+ #include "nvn_ultrawide.h"
+ #include "platform.h"
+ 
+@@ -97,10 +101,12 @@
+ 
+ // ---- memory pools -----------------------------------------------------------------------------------------------
+ 
++struct LabeledMemoryPool : MemoryPool { std::string debug_label; };
++
+ // NVNboolean nvnMemoryPoolInitialize(NVNmemoryPool*, const NVNmemoryPoolBuilder*)
+ void MemoryPoolInitialize(CPU& c) {
+     uint64_t guest = c.x[0], builder = c.x[1];
+-    auto& p = make<MemoryPool>(guest);
++    auto& p = make<LabeledMemoryPool>(guest);
+     p.memory = driver(c, "nvnMemoryPoolBuilderGetMemory", {builder});
+     p.size = driver(c, "nvnMemoryPoolBuilderGetSize", {builder});
+     p.flags = uint32_t(driver(c, "nvnMemoryPoolBuilderGetFlags", {builder}));
+@@ -111,6 +117,27 @@
+             (unsigned long long)p.memory, (unsigned long long)p.size, p.flags, (unsigned long long)p.gpu);
+     c.x[0] = 1;
+ }
++
++template<class T> void SetDebugLabel(CPU& c) {
++    std::string label;
++    if (c.x[1]) {
++        for (uint64_t offset = 0;; ++offset) {
++            if (offset >= 4096 || !native_guest_span(c.x[1] + offset, 1, 1))
++                fatal("native debug label is unreadable or too long");
++            const char ch = ld<char>(c.x[1] + offset);
++            if (!ch) break;
++            label += ch;
++        }
++    }
++    std::lock_guard guard(objects_lock());
++    auto it = objects().find(c.x[0]);
++    auto* pool = it == objects().end() ? nullptr : dynamic_cast<T*>(it->second.get());
++    if (!pool) fatal("debug label requires a matching live native object");
++    pool->debug_label = std::move(label);
++    log("nvn: native object %llx label=%s", static_cast<unsigned long long>(c.x[0]), pool->debug_label.c_str());
 +}
-+bool native_device_alive(uint64_t key){auto* d=get<Device>(key);return d&&d->ready.load(std::memory_order_acquire);}
-+bool initialize_native_device(uint64_t key,uint32_t flags){
-+ if(flags||!span_valid(key,7008,3))return false;
-+ auto owned=std::make_unique<Device>();auto* identity=owned.get();
-+ {std::lock_guard guard(objects_lock());if(objects().contains(key))return false;for(const auto& [k,v]:objects())if(dynamic_cast<Device*>(v.get()))return false;objects().emplace(key,std::move(owned));}
-+ if(!initialize_backend()||!vk_device())fatal("native Vulkan device admission failed; process must stop");
-+ {std::lock_guard guard(objects_lock());const auto it=objects().find(key);if(it==objects().end()||it->second.get()!=identity)fatal("native device publication identity changed");identity->backend=vk_device();identity->ready.store(true,std::memory_order_release);}
-+ log("nvn: native device initialized guest=%llx flags=%u",(unsigned long long)key,flags);return true;
++
++void MemoryPoolSetDebugLabel(CPU& c) { SetDebugLabel<LabeledMemoryPool>(c); }
+ 
+ void MemoryPoolFinalize(CPU& c) {
+     wait_submits_so_far(kWaitInvalidate);  // a submit replayed on another thread may still read it
+@@ -201,10 +228,13 @@
+ // ---- buffers ----------------------------------------------------------------------------------------------------
+ 
+ struct Buffer : Object {
++    std::string debug_label;
+     uint64_t pool = 0;  // guest NVNmemoryPool*
+     uint64_t offset = 0, size = 0;
+     uint64_t memory = 0, gpu = 0;
+ };
++
++void BufferSetDebugLabel(CPU& c) { SetDebugLabel<Buffer>(c); }
+ 
+ void BufferInitialize(CPU& c) {  // NVNboolean (NVNbuffer*, const NVNbufferBuilder*)
+     uint64_t guest = c.x[0], builder = c.x[1];
+@@ -305,19 +335,10 @@
+         std::lock_guard lk(objects_lock());
+         pool_textures()[t.pool].insert(guest);
+     }
+-    // Packaged (BNTX) textures were tiled offline with a block height often one step below the default
+-    // (docs/nvn/TILING.md). The layout the builder returns does not carry it (it reads 1 for every texture in
+-    // Wonder), so it only says "packaged", and the block height is the fit that matches every BNTX texture in the
+-    // game: the smallest power of two >= rows * 3 / 32, at most 16 GOBs.
+-    uint64_t layout = driver(c, "nvnTextureBuilderGetPackagedTextureLayout", {builder});
+-    if (layout >= kModuleBase && layout < kKernelBase + kKernelSize) layout = ld<uint64_t>(layout);
+-    if (layout) {
+-        uint32_t bw = 1, bh = 1, bytes = 0;
+-        format_block(t.format, bw, bh, bytes);
+-        uint32_t rows = (t.height + bh - 1) / bh, h = 1;
+-        while (h * 32 < rows * 3 && h < 16) h <<= 1;
+-        t.block_height_gobs = h;
+-    }
++    // SDK53 has no GetPackagedTextureLayout procedure. Its actual setter
++    // encodes presence at +0x58; do not call a nonexistent newer-SDK getter.
++    if(sdk53_texture_is_packaged({reinterpret_cast<const uint8_t*>(builder),0x5a}))
++        fatal("SDK53 packaged texture layout requires native integration");
+ 
+     // Swizzle: single-channel textures are often read through it (a font atlas in R8 read as alpha = R); without
+     // it Vulkan returns alpha 1 and the text shaders covered the screen.
+@@ -336,6 +357,10 @@
+             "swizzle %u%u%u%u", (unsigned long long)guest, (unsigned long long)t.memory, t.target, t.format, t.width, t.height, t.depth, t.levels,
+             t.samples, t.flags, (unsigned long long)t.storage_size, t.block_height_gobs, t.swizzle[0], t.swizzle[1],
+             t.swizzle[2], t.swizzle[3]);
++    if(!native_guest_span(guest,0x68,3))fatal("native texture descriptor storage is not writable");
++    st<uint64_t>(guest,ld<uint64_t>(builder));st<uint64_t>(guest+8,t.gpu);st<uint64_t>(guest+0x10,t.pool);st<uint64_t>(guest+0x18,t.offset);
++    st<uint32_t>(guest+0x20,t.flags);st<uint32_t>(guest+0x24,t.target);st<uint32_t>(guest+0x28,t.width);st<uint32_t>(guest+0x2c,t.height);st<uint32_t>(guest+0x30,t.depth);st<uint32_t>(guest+0x34,t.levels);st<uint32_t>(guest+0x38,t.format);st<uint32_t>(guest+0x3c,t.samples);
++    for(unsigned i=0;i<4;++i)st<uint32_t>(guest+0x40+i*4,t.swizzle[i]);st<uint32_t>(guest+0x50,t.depth_stencil_mode);st<uint32_t>(guest+0x54,0);st<uint64_t>(guest+0x60,t.stride);
+     if (!old) {
+         std::lock_guard lk(objects_lock());
+         note_replaced(guest);
+@@ -415,6 +440,11 @@
+     }
+ }
+ 
++void TextureCompare(CPU& c){
++ std::lock_guard guard(objects_lock());const auto a=objects().find(c.x[0]),b=objects().find(c.x[1]);const auto* x=a==objects().end()?nullptr:dynamic_cast<Texture*>(a->second.get());const auto* y=b==objects().end()?nullptr:dynamic_cast<Texture*>(b->second.get());if(!x||!y){if(!native_guest_span(c.x[0],0x55,1)||!native_guest_span(c.x[1],0x55,1))fatal("texture comparison descriptor is unreadable");c.x[0]=sdk53_texture_descriptors_equal({reinterpret_cast<const uint8_t*>(c.x[0]),0x55},{reinterpret_cast<const uint8_t*>(c.x[1]),0x55});return;}
++ c.x[0]=std::tie(x->pool,x->offset,x->target,x->format,x->flags,x->levels,x->samples,x->width,x->height,x->depth,x->stride,x->depth_stencil_mode)==std::tie(y->pool,y->offset,y->target,y->format,y->flags,y->levels,y->samples,y->width,y->height,y->depth,y->stride,y->depth_stencil_mode)&&std::memcmp(x->swizzle,y->swizzle,4)==0;
 +}
-+void finalize_native_device(uint64_t key){
-+ if(!native_device_alive(key))fatal("native device finalize requires live identity");worker_finish();
-+ {std::lock_guard guard(gpu_lock());if(!vk::p_vkDeviceWaitIdle||vk::p_vkDeviceWaitIdle(vk_device())!=VK_SUCCESS)fatal("native device drain failed");}
-+ auto* device=get<Device>(key);if(!device)fatal("native device identity lost while draining");device->ready.store(false,std::memory_order_release);destroy(key);log("nvn: native device finalized");
-+}
-+namespace {
-+void DeviceInitialize(CPU& c){const auto key=c.x[0],builder=c.x[1];if(!span_valid(builder,16,1)){c.x[0]=0;return;}const auto getter=real_proc(c,"nvnDeviceGetInteger");if(!getter)fatal("SDK integer getter is missing");const auto tmp=scratch(c,8);
-+ guest_call(c,getter,{0,0,tmp});guest_call(c,getter,{0,1,tmp+4});const auto major=ld<uint32_t>(tmp),minor=ld<uint32_t>(tmp+4);
-+ if(major!=53||minor!=105)fatal("unsupported MK8D native builder ABI %u.%u",major,minor);
-+ // SDK53.105's own SetDefaults zeroes16bytes and SetFlags stores u32 at +0.
-+ const auto flags=ld<uint32_t>(builder);log("nvn: admitted SDK builder ABI %u.%u",major,minor);log("nvn: native device request guest=%llx builder=%llx flags=%u",(unsigned long long)key,(unsigned long long)builder,flags);c.x[0]=initialize_native_device(key,flags)?1:0;}
-+void DeviceFinalize(CPU& c){finalize_native_device(c.x[0]);}
-+void DeviceGetInteger(CPU& c){
-+ const auto pname=uint32_t(c.x[1]);if(c.x[0]&&!native_device_alive(c.x[0]))fatal("native device property requires live device");
-+ if(!span_valid(c.x[2],4,2))fatal("native device property output is not writable");
-+ if(pname>97)fatal("unsupported SDK device property %u",pname);
-+ switch(pname){case 23:case 24:case 43:case 45:case 55:case 56:case 58:case 59:case 61:case 62:case 63:case 64:case 65:fatal("native hardware-dependent device property %u is not integrated",pname);default:break;}
-+ driver(c,"nvnDeviceGetInteger",{0,pname,c.x[2]});log("nvn: SDK property %u delivered",pname);
-+}
-+}
-+}
-+NX_HLE("nvnDeviceInitialize",nx::nvn::DeviceInitialize);
-+NX_HLE("nvnDeviceFinalize",nx::nvn::DeviceFinalize);
-+NX_HLE("nvnDeviceGetInteger",nx::nvn::DeviceGetInteger);
++
+ void TextureFinalize(CPU& c) {
+     auto guard = reinit_guard();
+     uint64_t guest = c.x[0];
+@@ -652,6 +682,7 @@
+ 
+ NX_HLE("nvnMemoryPoolInitialize", MemoryPoolInitialize);
+ NX_HLE("nvnMemoryPoolFinalize", MemoryPoolFinalize);
++NX_HLE("nvnMemoryPoolSetDebugLabel", MemoryPoolSetDebugLabel);
+ NX_HLE("nvnMemoryPoolMap", MemoryPoolMap);
+ NX_HLE("nvnMemoryPoolMapVirtual", MemoryPoolMapVirtual);
+ NX_HLE("nvnTextureWriteTexels", TextureWriteTexels);
+@@ -663,6 +694,7 @@
+ NX_HLE("nvnMemoryPoolFlushMappedRange", MemoryPoolFlushMappedRange);
+ NX_HLE("nvnMemoryPoolInvalidateMappedRange", MemoryPoolInvalidateMappedRange);
+ NX_HLE("nvnBufferInitialize", BufferInitialize);
++NX_HLE("nvnBufferSetDebugLabel", BufferSetDebugLabel);
+ NX_HLE("nvnBufferFinalize", BufferFinalize);
+ NX_HLE("nvnBufferMap", BufferMap);
+ NX_HLE("nvnBufferGetAddress", BufferGetAddress);
+@@ -703,3 +735,5 @@
+ NX_HLE("nvnDeviceGetImageHandle", DeviceGetImageHandle);
+ 
+ }  // namespace nx::nvn
++
++NX_HLE("nvnTextureCompare",nx::nvn::TextureCompare);
 --- a/runtime/src/nvn/nvn_program.cpp
 +++ b/runtime/src/nvn/nvn_program.cpp
 @@ -36,9 +36,10 @@
@@ -1114,6 +1761,212 @@
      }
      static const bool trace = std::getenv("NX_TRACE_PROGRAMS") != nullptr;  // each program's stages when set
      if (trace) {
+--- a/runtime/src/nvn/nvn_queue.cpp
++++ b/runtime/src/nvn/nvn_queue.cpp
+@@ -23,6 +23,10 @@
+ #endif
+ 
+ #include "nvn.h"
++#include "nvn_vk.h"
++#include "native_device.h"
++#include "native_guest_span.h"
++#include "sdk53_window_builder.h"
+ #include "nvn_ultrawide.h"
+ #include "platform.h"
+ 
+@@ -33,6 +37,7 @@
+ extern std::atomic<uint64_t> g_tick_calls, g_yield_calls, g_sleep_calls;
+ }
+ namespace nx::nvn {
++VkQueue vk_queue(); // Existing backend queue accessor.
+ 
+ // Submits the game made and submits whose replay (and GPU work, write-backs) finished. The game records the next frame
+ // on one thread while another submits the last one, and our replay runs inside nvnQueueSubmitCommands: a fence the
+@@ -156,9 +161,21 @@
+ // ---- queues -----------------------------------------------------------------------------------------------------
+ 
+ 
+-void QueueInitialize(CPU& c) { c.x[0] = 1; }  // NVNboolean (NVNqueue*, const NVNqueueBuilder*)
+-void QueueFinalize(CPU&) {}
++// Flag1 disables fragment interlock; this backend never enables fragment-interlock Vulkan features.
++// Other queue flags remain unsupported.
++struct Queue final:Object{uint32_t flags{};uint64_t device{};VkQueue physical=VK_NULL_HANDLE;};
++Queue* require_queue(uint64_t key){auto* q=get<Queue>(key);if(!q||!native_device_alive(q->device)||q->physical!=vk_queue()||!q->physical)fatal("native queue identity is invalid");return q;}
++void QueueInitialize(CPU& c){
++ const auto key=c.x[0],builder=c.x[1];if(!native_guest_span(key,8,3)||!native_guest_span(builder,12,1)){c.x[0]=0;return;}
++ const auto device=ld<uint64_t>(builder);const auto flags=ld<uint32_t>(builder+8);log("nvn: queue request key=%llx builder=%llx device=%llx flags=%u live=%u",(unsigned long long)key,(unsigned long long)builder,(unsigned long long)device,flags,unsigned(native_device_alive(device)));if((flags&~1u)||!native_device_alive(device)||!vk_queue()){c.x[0]=0;return;}
++ auto pending=std::make_unique<Queue>();pending->device=device;pending->flags=flags;pending->physical=vk_queue();{std::lock_guard guard(objects_lock());if(objects().contains(key)){c.x[0]=0;return;}objects().emplace(key,std::move(pending));}
++ log("nvn: native queue initialized guest=%llx",(unsigned long long)key);c.x[0]=1;
++}
++void finish_queue(uint64_t key){auto* before=require_queue(key);wait_submits(submits_called(),kWaitFinish);worker_finish();gpu_wait(gpu_serial());{std::lock_guard guard(gpu_lock());if(!vk::p_vkQueueWaitIdle||vk::p_vkQueueWaitIdle(before->physical)!=VK_SUCCESS)fatal("native Vulkan queue drain failed");}if(require_queue(key)!=before)fatal("native queue identity changed while draining");}
++void QueueFinalize(CPU& c){finish_queue(c.x[0]);destroy(c.x[0]);}
++
+ void QueueSubmitCommands(CPU& c) {  // (NVNqueue*, int count, const NVNcommandHandle*)
++    require_queue(c.x[0]);
+     plat::perf_hint_thread();  // this thread replays: part of every frame (perf_hint.cpp)
+     std::vector<std::shared_ptr<CmdList>> lists;
+     static uint64_t submitted = 0, missing = 0;
+@@ -193,11 +210,7 @@
+     });
+ }
+ void QueueFlush(CPU&) {}
+-void QueueFinish(CPU&) {
+-    wait_submits(submits_called(), kWaitFinish);
+-    worker_finish();
+-    gpu_wait(gpu_serial());
+-}
++void QueueFinish(CPU& c){finish_queue(c.x[0]);}
+ // (NVNqueue*, NVNsync*, NVNsyncCondition, int flags): every condition taken as "all previous work complete".
+ void QueueFenceSync(CPU& c) {
+     uint64_t guest = c.x[1];  // the fence goes after the work queued so far: its serial is taken on the replay thread
+@@ -213,16 +226,15 @@
+ 
+ // ---- windows ----------------------------------------------------------------------------------------------------
+ 
+-void WindowInitialize(CPU& c) {  // NVNboolean (NVNwindow*, const NVNwindowBuilder*)
+-    uint64_t guest = c.x[0], builder = c.x[1];
+-    auto& w = make<Window>(guest);
+-    int n = int(driver(c, "nvnWindowBuilderGetNumTextures", {builder}));
+-    for (int k = 0; k < n; k++) w.textures.push_back(driver(c, "nvnWindowBuilderGetTexture", {builder, uint64_t(k)}));
+-    w.active = int(driver(c, "nvnWindowBuilderGetNumActiveTextures", {builder}));
+-    if (w.active <= 0 || w.active > n) w.active = n;
+-    w.interval = int(driver(c, "nvnWindowBuilderGetPresentInterval", {builder}));
+-    log("nvn: window %llx: %d textures (%d active), present interval %d", (unsigned long long)guest, n, w.active, w.interval);
+-    c.x[0] = 1;
++void WindowInitialize(CPU& c) {
++    const auto guest=c.x[0],builder=c.x[1];
++    if(!native_guest_span(guest,8,3)||!native_guest_span(builder,0x24,1)){c.x[0]=0;return;}
++    const auto input=sdk53_window_builder({reinterpret_cast<const uint8_t*>(builder),0x24});
++    if(!native_device_alive(input.device)||input.count<1||input.count>16||input.interval<0||input.interval>4||!native_guest_span(input.textures,uint64_t(input.count)*8,1)||input.native_window!=uint64_t(plat::create_window())){c.x[0]=0;return;}
++    auto pending=std::make_unique<Window>();pending->active=input.count;pending->interval=input.interval;
++    for(int i=0;i<input.count;++i){const auto texture=ld<uint64_t>(input.textures+uint64_t(i)*8);if(!get<Texture>(texture)){c.x[0]=0;return;}pending->textures.push_back(texture);}
++    {std::lock_guard guard(objects_lock());if(objects().contains(guest)){c.x[0]=0;return;}objects().emplace(guest,std::move(pending));}
++    log("nvn: native SDK53 window initialized textures=%d active=%d interval=%d",input.count,input.count,input.interval);c.x[0]=1;
+ }
+ 
+ void WindowFinalize(CPU& c) { destroy(c.x[0]); }
+@@ -238,6 +250,14 @@
+     if (c.x[2]) st<int32_t>(c.x[2], index);
+     signal_sync(c.x[1]);
+     c.x[0] = 0;
++}
++
++void QueueAcquireTexture(CPU& c){
++ const auto queue=c.x[0],window=c.x[1],output=c.x[2];if(!native_guest_span(output,4,2))fatal("native texture index output is not writable");
++ finish_queue(queue);
++ std::lock_guard guard(objects_lock());const auto found=objects().find(window);auto* w=found==objects().end()?nullptr:dynamic_cast<Window*>(found->second.get());
++ if(!w||w->active<1||size_t(w->active)>w->textures.size())fatal("native acquire requires initialized window textures");
++ const auto index=w->next%w->active;st<int32_t>(output,index);w->next=(index+1)%w->active;log("nvn: native queue acquired texture index=%d",index);c.x[0]=0;
+ }
+ 
+ void WindowGetNumTextures(CPU& c) {
+@@ -504,6 +524,8 @@
+ }
+ 
+ void QueuePresentTexture(CPU& c) {
++    require_queue(c.x[0]);
++    const auto* owned_window=get<Window>(c.x[1]);if(!owned_window||int64_t(c.x[2])<0||c.x[2]>=owned_window->textures.size())fatal("native present requires valid window texture index");
+     // The frame's work, from the end of the last present's pacing to now (perf_hint.cpp: ADPF on Android).
+     static uint64_t work_from = 0;
+     uint64_t t_in = plat::monotonic_ns();
+@@ -572,6 +594,7 @@
+ NX_HLE("nvnQueueFenceSync", QueueFenceSync);
+ NX_HLE("nvnQueueWaitSync", QueueWaitSync);
+ NX_HLE("nvnQueuePresentTexture", QueuePresentTexture);
++NX_HLE("nvnQueueAcquireTexture",QueueAcquireTexture);
+ NX_HLE("nvnWindowInitialize", WindowInitialize);
+ NX_HLE("nvnWindowFinalize", WindowFinalize);
+ NX_HLE("nvnWindowAcquireTexture", WindowAcquireTexture);
+--- a/runtime/src/nvn/nvn_sampler_objects.cpp
++++ b/runtime/src/nvn/nvn_sampler_objects.cpp
+@@ -10,6 +10,8 @@
+ #include <cstring>
+ 
+ #include "nvn.h"
++#include "native_guest_span.h"
++#include "sdk53_sampler_descriptor.h"
+ 
+ namespace nx::nvn {
+ 
+@@ -48,10 +50,23 @@
+ 
+ void SamplerInitialize(CPU& c) {  // NVNboolean (NVNsampler*, const NVNsamplerBuilder*)
+     uint64_t guest = c.x[0], builder = c.x[1];
++    if (!native_guest_span(guest, 0x60, 3) || !native_guest_span(builder, 0x50, 1)) { c.x[0] = 0; return; }
+     SamplerInfo info = decode_builder(c, builder);
++    // SDK 53 initializes the public descriptor with a zero prefix and the builder bytes.
++    uint8_t descriptor[0x60]{};
++    std::memcpy(descriptor + 8, reinterpret_cast<const void*>(builder), 0x50);
++    std::memcpy(reinterpret_cast<void*>(guest), descriptor, sizeof descriptor);
+     make<Sampler>(guest).info = info;
+     log_sampler(info);
+     c.x[0] = 1;
++}
++
++void SamplerCompare(CPU& c) {
++    if (!native_guest_span(c.x[0], 0x50, 1) || !native_guest_span(c.x[1], 0x50, 1))
++        fatal("sampler comparison descriptor is unreadable");
++    c.x[0] = sdk53_sampler_descriptors_equal(
++        {reinterpret_cast<const uint8_t*>(c.x[0]), 0x50},
++        {reinterpret_cast<const uint8_t*>(c.x[1]), 0x50});
+ }
+ 
+ void SamplerFinalize(CPU& c) { destroy(c.x[0]); }
+@@ -119,6 +134,7 @@
+ 
+ NX_HLE("nvnSamplerInitialize", SamplerInitialize);
+ NX_HLE("nvnSamplerFinalize", SamplerFinalize);
++NX_HLE("nvnSamplerCompare", SamplerCompare);
+ NX_HLE("nvnSamplerPoolRegisterSampler", RegisterSampler);
+ NX_HLE("nvnSamplerPoolRegisterSamplerBuilder", RegisterSamplerBuilder);
+ NX_HLE("nvnSamplerGetMinMagFilter", GetMinMagFilter);
+--- a/runtime/src/nvn/nvn_texture_layout.cpp
++++ b/runtime/src/nvn/nvn_texture_layout.cpp
+@@ -2,8 +2,7 @@
+ // aligned. The SDK driver computes this through its device's surface-layout object, which only its own
+ // nvnDeviceInitialize (talking to the GPU kernel driver) sets up, so we compute it here: Maxwell block-linear.
+ //
+-// Format facts come from the driver's own format table (sdk+0xd34198 in SDK 16.2, 0x30 bytes per NVNformat):
+-//   word 2: block width (byte 0), block height (byte 1); word 4: bytes per block (byte 0).
++// Storage facts come from the native format definition; never read another title's SDK address.
+ // Block linear: the image is cut into GOBs of 64 bytes x 8 rows; GOBs stack vertically into blocks of
+ // 1..16 GOBs (the block height, picked per mip level from the level's height); a level's rows of blocks are
+ // 64-byte aligned in width and block-aligned in height. Pre-tiled data (BNTX) is laid out the same way, so the
+@@ -11,31 +10,14 @@
+ #include <algorithm>
+ 
+ #include "nvn.h"
++#include "native_texture_format.h"
+ 
+ namespace nx::nvn {
+ 
+ namespace {
+ 
+-constexpr uint64_t kFormatTable = 0xd34198;  // in sdk (SDK 16.2)
+-constexpr uint32_t kFormatCount = 0xd0;
+-
+-struct FormatInfo {
+-    uint32_t block_w = 1, block_h = 1, bytes = 4;
+-};
+-
+-FormatInfo format_info(uint32_t format) {
+-    static uint64_t sdk = [] {
+-        uint64_t loader = find_symbol("nvnBootstrapLoader");
+-        const LoadedModule* m = module_at(loader);
+-        return m ? m->base : 0;
+-    }();
+-    FormatInfo f;
+-    if (!sdk || format >= kFormatCount) return f;
+-    const uint32_t* e = reinterpret_cast<const uint32_t*>(sdk + kFormatTable + uint64_t(format) * 0x30);
+-    uint32_t bw = e[2] & 0xFF, bh = (e[2] >> 8) & 0xFF, bytes = e[4] & 0xFF;
+-    if (bw && bh && bytes) f = {bw, bh, bytes};
+-    return f;
+-}
++using FormatInfo=NativeTextureBlock;
++FormatInfo format_info(uint32_t format){return native_texture_block(format);}
+ 
+ uint32_t div_up(uint32_t a, uint32_t b) { return (a + b - 1) / b; }
+ 
 --- a/runtime/src/nvn/nvn_trace.cpp
 +++ b/runtime/src/nvn/nvn_trace.cpp
 @@ -18,6 +18,7 @@
@@ -1178,9 +2031,103 @@
  VkDevice vk_device();
  bool vk_depth_clip_control();
  // The core features the device was created with (all the GPU has): depthClamp, depthBiasClamp, depthBounds, ...
+--- /dev/null
++++ b/runtime/src/nvn/sdk53_sampler_descriptor.h
+@@ -0,0 +1,22 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++#include <cstring>
++#include <span>
++#include <stdexcept>
++namespace nx::nvn {
++inline bool sdk53_sampler_descriptors_equal(std::span<const uint8_t> a, std::span<const uint8_t> b) {
++    if (a.size() < 0x50 || b.size() < 0x50)
++        throw std::invalid_argument("truncated SDK53 sampler descriptor");
++    if (std::memcmp(a.data() + 8, b.data() + 8, 0x1c) ||
++        std::memcmp(a.data() + 0x30, b.data() + 0x30, 0x18) ||
++        std::memcmp(a.data() + 0x4c, b.data() + 0x4c, 4)) return false;
++    for (const auto offset : {0x24, 0x28, 0x2c, 0x48}) {
++        float x, y;
++        std::memcpy(&x, a.data() + offset, 4);
++        std::memcpy(&y, b.data() + offset, 4);
++        if (x != y) return false;
++    }
++    return true;
++}
++}
+--- /dev/null
++++ b/runtime/src/nvn/sdk53_texture_builder.h
+@@ -0,0 +1,12 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++#include <span>
++#include <stdexcept>
++namespace nx::nvn {
++// The own-dump SDK53.105 setter sets bit0 of the halfword at +0x58.
++inline bool sdk53_texture_is_packaged(std::span<const uint8_t> builder){
++ if(builder.size()<0x5a)throw std::invalid_argument("truncated SDK53 texture builder");
++ return (builder[0x58]&1)!=0;
++}
++}
+--- /dev/null
++++ b/runtime/src/nvn/sdk53_texture_descriptor.h
+@@ -0,0 +1,12 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++#include <cstring>
++#include <span>
++#include <stdexcept>
++namespace nx::nvn {
++inline bool sdk53_texture_descriptors_equal(std::span<const uint8_t> a,std::span<const uint8_t> b){
++ if(a.size()<0x55||b.size()<0x55)throw std::invalid_argument("truncated SDK53 texture descriptor");
++ return std::memcmp(a.data()+8,b.data()+8,0x4c)==0&&((a[0x54]^b[0x54])&3)==0;
++}
++}
+--- /dev/null
++++ b/runtime/src/nvn/sdk53_window_builder.h
+@@ -0,0 +1,14 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++#include <cstring>
++#include <span>
++#include <stdexcept>
++namespace nx::nvn {
++struct Sdk53WindowBuilder{uint64_t device{},textures{},native_window{};int32_t count{},interval{};};
++inline Sdk53WindowBuilder sdk53_window_builder(std::span<const uint8_t> bytes){
++ if(bytes.size()<0x24)throw std::invalid_argument("truncated SDK53 window builder");
++ auto u32=[&](size_t p){uint32_t v;std::memcpy(&v,bytes.data()+p,4);return v;};auto u64=[&](size_t p){uint64_t v;std::memcpy(&v,bytes.data()+p,8);return v;};
++ return {u64(0),u64(0x10),u64(0x18),int32_t(u32(8)),int32_t(u32(0x20)+1u)};
++}
++}
 --- a/runtime/src/platform_win.cpp
 +++ b/runtime/src/platform_win.cpp
-@@ -188,10 +188,11 @@
+@@ -22,6 +22,8 @@
+ 
+ #include "kernel.h"
+ #include "platform.h"
++#include "native_exit_policy.h"
++#include "mk8_focus_policy.h"
+ 
+ namespace nx {
+ HWND g_window = nullptr;
+@@ -148,9 +150,10 @@
+ 
+ static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM w, LPARAM l) {
+     switch (msg) {
++        case WM_SIZE:case WM_SHOWWINDOW:mk8_observe_display();break;
+         case WM_CLOSE:
+-            log("window closed");
+-            ExitProcess(0);
++            if(native_exit_policy().request_close()){log("window closed");ExitProcess(0);}
++            log("window close deferred by application exit lock");return 0;
+         case WM_KEYDOWN:
+             if (w == VK_F11) toggle_fullscreen(h);
+             break;
+@@ -188,10 +191,11 @@
      int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2, y = (sh - h) / 2;
      // NX_HEADLESS: created hidden (the surface still needs a window), never brought to the front.
      const DWORD style = headless() ? (kWindowed & ~WS_VISIBLE) : kWindowed;
@@ -1194,7 +2141,7 @@
      *ready = true;
      MSG m;
      while (GetMessageW(&m, nullptr, 0, 0) > 0) {
-@@ -462,7 +463,7 @@
+@@ -462,7 +466,7 @@
      return EXCEPTION_CONTINUE_SEARCH;
  }
  
@@ -1307,27 +2254,106 @@
 + }
 +};
 +}
+--- a/runtime/src/svc_account.cpp
++++ b/runtime/src/svc_account.cpp
+@@ -5,7 +5,7 @@
+ 
+ // One local user.
+ constexpr uint64_t kUserLo = 0x0000000000000001ull, kUserHi = 0x4E58485553455231ull;
+-const char kNickname[] = "Zagreus";
++const char kNickname[] = "Player";
+ 
+ // IStorage / IStorageAccessor over a byte blob (am's storage objects).
+ std::shared_ptr<Service> make_storage(std::vector<uint8_t> data) {
+@@ -78,7 +78,9 @@
+ std::shared_ptr<Service> manager_for_application() {
+     auto s = std::make_shared<Service>("IManagerForApplication");
+     s->cmds[0] = [](IpcCtx& c) { c.push<uint8_t>(0); return 0u; };  // CheckAvailability
+-    s->cmds[1] = [](IpcCtx& c) { c.push<uint64_t>(0x1234ABCD5678EF90ull); return 0u; };  // GetAccountId
++    constexpr uint32_t offline_cache_unavailable=(100u<<9)|124u; // AccountUpdateFailed: no linked network account/cache.
++    s->cmds[1] = [](IpcCtx&) { return offline_cache_unavailable; }; // No fabricated Nintendo network account ID.
++    s->cmds[130] = [](IpcCtx&) { log("account: Nintendo account cache unavailable in native offline profile");return offline_cache_unavailable; };
+     return s;
+ }
+ 
 --- a/runtime/src/svc_am.cpp
 +++ b/runtime/src/svc_am.cpp
-@@ -3,6 +3,8 @@
+@@ -1,8 +1,13 @@
+ // am services (appletOE): application proxy, focus/operation-mode state, launch parameters.
+ #include <cstdlib>
++#include <algorithm>
  #include <deque>
  
  #include "ipc.h"
 +#include "mk8_window_controller.h"
 +#include "mk8_focus_policy.h"
++#include "native_exit_policy.h"
++#include "platform.h"
  #include "language.h"
  
  namespace nx {
-@@ -84,6 +86,8 @@
+@@ -15,13 +20,15 @@
+ constexpr uint32_t kMsgPerformanceModeChanged = 31;
+ 
+ struct AppletState {
++    std::mutex messages_mutex;bool operation_notifications=false,performance_notifications=false,restart_notifications=false;
+     std::deque<uint32_t> messages{kMsgFocusStateChanged, kMsgOperationModeChanged, kMsgPerformanceModeChanged};
+     std::shared_ptr<EventState> message_event = std::make_shared<EventState>();
+ };
+ 
+ AppletState& applet() {
+     static AppletState s;
+-    return s;
++    static const bool bound=[] {mk8_focus_notification([] {auto& a=applet();{std::lock_guard guard(a.messages_mutex);a.messages.push_back(kMsgFocusStateChanged);a.message_event->signaled=true;}notify_all();});return true;}();
++    (void)bound;return s;
+ }
+ 
+ uint32_t event_handle(std::shared_ptr<EventState> st) {
+@@ -39,12 +46,13 @@
+ std::shared_ptr<Service> common_state_getter() {
+     return svc("ICommonStateGetter", [](Service& s) {
+         s.cmds[0] = [](IpcCtx& c) {  // GetEventHandle
+-            applet().message_event->signaled = !applet().messages.empty();
++            auto& state=applet();std::lock_guard guard(state.messages_mutex);
++            state.message_event->signaled = !state.messages.empty();
+             c.out_copy.push_back(event_handle(applet().message_event));
+             return 0u;
+         };
+         s.cmds[1] = [](IpcCtx& c) {  // ReceiveMessage
+-            auto& a = applet();
++            auto& a = applet();std::lock_guard guard(a.messages_mutex);
+             if (a.messages.empty()) {
+                 a.message_event->signaled = false;
+                 return kAmNoMessage;
+@@ -58,7 +66,7 @@
+         static const bool handheld = std::getenv("NX_HANDHELD") != nullptr;
+         s.cmds[5] = [](IpcCtx& c) { c.push<uint8_t>(handheld ? 0 : 1); return 0u; };   // GetOperationMode
+         s.cmds[6] = [](IpcCtx& c) { c.push<uint32_t>(handheld ? 0 : 1); return 0u; };  // GetPerformanceMode
+-        s.cmds[9] = [](IpcCtx& c) { c.push<uint8_t>(1); return 0u; };   // GetCurrentFocusState: in focus
++        s.cmds[9] = [](IpcCtx& c) { c.push<uint8_t>(mk8_logical_focus()); return 0u; }; // Native SingleApplication logical focus
+         // SetCpuBoostMode(CpuBoostMode): Wonder asks for the boost around every load. A PC has no clock to raise, so
+         // the request is taken and dropped (no output). Same answer as the generic stub, without its log line.
+         s.cmds[66] = [](IpcCtx&) { return 0u; };
+@@ -84,8 +92,17 @@
  
  std::shared_ptr<Service> self_controller() {
      return svc("ISelfController", [](Service& s) {
++        s.cmds[1]=[](IpcCtx& c){if(c.in_size||!c.a.empty()||!c.b.empty()||!c.x.empty()||!c.c.empty())return 0xe401u;c.commit_reply=[]{if(native_exit_policy().lock_exit())plat::exit_process(0);log("am: native exit lock committed");};return 0u;};
++        s.cmds[2]=[](IpcCtx& c){if(c.in_size||!c.a.empty()||!c.b.empty()||!c.x.empty()||!c.c.empty())return 0xe401u;c.commit_reply=[]{if(native_exit_policy().unlock_exit())plat::exit_process(0);log("am: native exit unlock committed");};return 0u;};
++        for(uint32_t command:{11u,12u,14u})s.cmds[command]=[command](IpcCtx& c){
++            if((c.in_size!=1&&c.in_size!=4)||!c.in||c.in[0]>1||!c.a.empty()||!c.b.empty()||!c.x.empty()||!c.c.empty())return 0xe401u;
++            if(std::any_of(c.in+1,c.in+c.in_size,[](uint8_t b){return b!=0;}))return 0xe401u;
++            const bool enabled=c.in[0]!=0;c.commit_reply=[command,enabled]{auto& a=applet();{std::lock_guard guard(a.messages_mutex);auto& field=command==11?a.operation_notifications:command==12?a.performance_notifications:a.restart_notifications;const bool changed=field!=enabled;field=enabled;if(changed&&enabled&&command!=14){a.messages.push_back(command==11?kMsgOperationModeChanged:kMsgPerformanceModeChanged);a.message_event->signaled=true;}}notify_all();log("am: native mode notification command=%u enabled=%u",command,unsigned(enabled));};return 0u;
++        };
 +        s.cmds[13]=mk8_prepare_focus;
 +        s.cmds[16]=mk8_prepare_focus;
          s.cmds[40] = [](IpcCtx& c) { c.push<uint64_t>(1); return 0u; };  // CreateManagedDisplayLayer
-         s.cmds[0] = [](IpcCtx&) { return 0u; };                             // Exit
+-        s.cmds[0] = [](IpcCtx&) { return 0u; };                             // Exit
++        s.cmds[0] = [](IpcCtx& c) { c.commit_reply=[]{plat::exit_process(0);};return 0u; }; // Native process exit after reply.
          s.cmds[62] = [](IpcCtx&) { return 0u; };                            // SetIdleTimeDetectionExtension
-@@ -95,11 +99,7 @@
+         for (uint32_t cmd : {19u, 50u, 71u, 110u})                           // AccumulatedSuspendedTickChangedEvent etc.
+             s.cmds[cmd] = [](IpcCtx& c) {
+@@ -95,11 +112,7 @@
      });
  }
  
@@ -1342,15 +2368,17 @@
      return svc("IApplicationFunctions", [](Service& s) {
 --- a/runtime/src/svc_misc.cpp
 +++ b/runtime/src/svc_misc.cpp
-@@ -1,6 +1,7 @@
+@@ -1,6 +1,9 @@
  // Small services that only need to answer "yes, fine": parental controls, add-on content, logging, power.
  #include <cstdlib>
++#include <array>
++#include <mutex>
  #include "ipc.h"
 +#include "mk8_verified_services.h"
  
  namespace nx {
  
-@@ -24,10 +25,10 @@
+@@ -24,10 +27,10 @@
      s.cmds[1] = [](IpcCtx& c) { c.push_object(parental_control()); return 0u; };  // CreateServiceWithoutInitialize
  }
  
@@ -1365,6 +2393,25 @@
  
  ServiceRegistrar r_lm("lm", [] {
      return make("lm", [](Service& s) {
+@@ -35,9 +38,17 @@
+     });
+ });
+ 
++std::shared_ptr<Service> native_performance_session(){
++ struct State{std::mutex lock;std::array<uint32_t,2> configurations{};};auto state=std::make_shared<State>();
++ return make("ISession",[state](Service& s){
++  s.cmds[0]=[state](IpcCtx& c){if(c.in_size!=8||!c.a.empty()||!c.b.empty())return 0xe401u;const auto mode=c.arg<uint32_t>(0),configuration=c.arg<uint32_t>(4);if(mode>1)return 0xe401u;c.commit_reply=[state,mode,configuration]{std::lock_guard guard(state->lock);state->configurations[mode]=configuration;log("apm: native advisory configuration stored mode=%u configuration=%x; host clocks unchanged",mode,configuration);};return 0u;};
++  s.cmds[1]=[state](IpcCtx& c){if(c.in_size!=4)return 0xe401u;const auto mode=c.arg<uint32_t>(0);if(mode>1)return 0xe401u;std::lock_guard guard(state->lock);c.push<uint32_t>(state->configurations[mode]);return 0u;};
++ });
++}
++
+ ServiceRegistrar r_apm("apm", [] {
+     return make("apm", [](Service& s) {
+-        s.cmds[0] = [](IpcCtx& c) { c.push_object(make("ISession")); return 0u; };  // OpenSession
++        s.cmds[0] = [](IpcCtx& c) { c.push_object(native_performance_session()); return 0u; };  // OpenSession
+         s.cmds[1] = [](IpcCtx& c) {  // GetPerformanceMode: boost (docked), normal with NX_HANDHELD (svc_am.cpp)
+             c.push<uint32_t>(std::getenv("NX_HANDHELD") ? 0 : 1);
+             return 0u;
 --- /dev/null
 +++ b/runtime/src/verified_services/event.cpp
 @@ -0,0 +1,170 @@
@@ -2302,7 +3349,7 @@
 +}
 --- /dev/null
 +++ b/tests/focus_policy_test.cpp
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,30 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "mk8_focus_policy.h"
 +#include "platform.h"
@@ -2324,9 +3371,11 @@
 + std::atomic<bool> resumed=false;std::thread worker([&]{nx::mk8_focus_gate();resumed=true;});Sleep(20);const bool parked=!resumed.load();
 + ShowWindow(window,SW_SHOWNOACTIVATE);worker.join();check(parked&&resumed);check(GetForegroundWindow()!=window);
 + uint8_t yes[4]={1,0,0,0},no[4]={};nx::IpcCtx out;out.cmd=16;out.in=yes;out.in_size=4;check(nx::mk8_prepare_focus(out)==0);out.commit_reply();check(nx::mk8_focus_snapshot().out_of_focus);
++ ShowWindow(window,SW_HIDE);
 + resumed=false;std::thread waiter([&]{nx::mk8_focus_gate();resumed=true;});Sleep(20);const bool unfocused_park=!resumed.load();
-+ nx::IpcCtx restore;restore.cmd=16;restore.in=no;restore.in_size=4;check(nx::mk8_prepare_focus(restore)==0);restore.commit_reply();waiter.join();check(unfocused_park&&resumed);check(!nx::mk8_focus_snapshot().out_of_focus);
++ nx::IpcCtx restore;restore.cmd=16;restore.in=no;restore.in_size=4;check(nx::mk8_prepare_focus(restore)==0);restore.commit_reply();ShowWindow(window,SW_SHOWNOACTIVATE);waiter.join();check(unfocused_park&&resumed);check(!nx::mk8_focus_snapshot().out_of_focus);
 + nx::IpcCtx malformed;malformed.cmd=16;malformed.in=no;malformed.in_size=4;malformed.b.push_back({1,8});check(nx::mk8_prepare_focus(malformed)!=0);check(!malformed.commit_reply);
++ std::atomic<unsigned> notifications=0;nx::mk8_focus_notification([&]{++notifications;});uint8_t notify_flags[4]={1,0,1,0};nx::IpcCtx notify_request;notify_request.cmd=13;notify_request.in=notify_flags;notify_request.in_size=4;check(nx::mk8_prepare_focus(notify_request)==0);notify_request.commit_reply();check(nx::mk8_focus_snapshot().notify&&notifications>0);ShowWindow(window,SW_HIDE);nx::mk8_observe_display();check(nx::mk8_logical_focus()==2&&notifications>1);ShowWindow(window,SW_SHOWNOACTIVATE);nx::mk8_observe_display();check(nx::mk8_logical_focus()==1);
 + DestroyWindow(window);check(!c.validate_reply());bool rejected=false;try{nx::mk8_focus_gate();}catch(const std::exception&){rejected=true;}check(rejected);
 + rejected=false;try{c.commit_reply();}catch(const std::exception&){rejected=true;}check(rejected);
 + std::cout<<"focus_policy checks="<<n<<" PASS\n";return 0;
@@ -2438,14 +3487,25 @@
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,68 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +// Same compiled runtime as the game, but no guest modules are loaded or executed.
 +#include <nx/runtime.h>
++#include "ipc.h"
++#include "platform.h"
 +#include "nvn/native_device.h"
++#include "nvn/native_raster_policy.h"
 +#include "nvn/nvn_vk.h"
 +#include <iostream>
 +#include <string_view>
++namespace {
++unsigned callback_calls=0;uint64_t expected_control=0;
++void authored_memory_callback(nx::CPU& c){
++ if(c.x[1]!=1||c.x[2]>4096||c.x[3]!=expected_control)throw std::runtime_error("callback ABI assertion");
++ ++callback_calls;c.x[1]=expected_control;c.x[2]=4096;auto add=nx::hle_lookup("nvnCommandBufferAddControlMemory");if(!add)throw std::runtime_error("control memory entry missing");add(c);
++}
++nx::HleRegistrar authored_registration("authoredMemoryCallback",authored_memory_callback);
++}
 +int main(int argc,char** argv){try{
 + const bool gpu=argc==2&&std::string_view(argv[1])=="--gpu";if(argc>1&&!gpu)throw std::runtime_error("expected --gpu or no arguments");
 + unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("native device assertion "+std::to_string(n));};
@@ -2453,9 +3513,73 @@
 + check(!nx::nvn::initialize_native_device(device,0));
 + nx::vm_set(device,7008,nx::kMemHeap,3); // Authored fixture explicitly admits its storage to the guest-visible bus.
 + check(!nx::nvn::initialize_native_device(0,0));check(!nx::nvn::initialize_native_device(device,1));check(!nx::nvn::native_device_alive(device));check(nx::nvn::vk_device()==VK_NULL_HANDLE);
-+ if(gpu){check(nx::nvn::initialize_native_device(device,0));check(nx::nvn::native_device_alive(device));check(nx::nvn::vk_device()!=VK_NULL_HANDLE);check(!nx::nvn::initialize_native_device(device,0));nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::find_symbol("nnMain")==0);}
++ const auto text_area=nx::kernel_alloc(1024,16),io=nx::kernel_alloc(128,16);nx::vm_set(text_area,1024,nx::kMemHeap,3);nx::vm_set(io,128,nx::kMemHeap,3);
++ auto text=[&](uint64_t address,const std::string& value){std::memcpy(reinterpret_cast<void*>(address),value.c_str(),value.size()+1);};
++ const std::string mount="fixture",filename=mount+":/authored-"+std::to_string(nx::plat::monotonic_ns())+".bin";text(text_area,mount);text(text_area+128,filename);std::memcpy(reinterpret_cast<void*>(io+32),"saveTest",8);
++ nx::CPU fs{};auto file_api=[&](const char* name){auto fn=nx::hle_lookup(name);if(!fn)throw std::runtime_error(std::string("missing filesystem entry ")+name);fn(fs);};
++ fs.x[0]=text_area;file_api("_ZN2nn2fs19MountDeviceSaveDataEPKc");check(fs.x[0]==0);
++ fs.x[0]=text_area+128;fs.x[1]=8;file_api("_ZN2nn2fs10CreateFileEPKcl");check(fs.x[0]==0);
++ fs.x[0]=io;fs.x[1]=text_area+128;fs.x[2]=3;file_api("_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci");check(fs.x[0]==0);const auto file=nx::ld<uint64_t>(io);
++ fs.x[0]=file;fs.x[1]=0;fs.x[2]=io+32;fs.x[3]=8;fs.x[4]=io+64;file_api("_ZN2nn2fs9WriteFileENS0_10FileHandleElPKvmRKNS0_11WriteOptionE");check(fs.x[0]==0);
++ fs.x[0]=text_area;file_api("_ZN2nn2fs14CommitSaveDataEPKc");check(fs.x[0]==0);fs.x[0]=file;file_api("_ZN2nn2fs9CloseFileENS0_10FileHandleE");
++ fs.x[0]=io;fs.x[1]=text_area+128;fs.x[2]=1;file_api("_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci");check(fs.x[0]==0);const auto reopened=nx::ld<uint64_t>(io);fs.x[0]=reopened;fs.x[1]=0;fs.x[2]=io+80;fs.x[3]=8;file_api("_ZN2nn2fs8ReadFileENS0_10FileHandleElPvm");check(fs.x[0]==0&&!std::memcmp(reinterpret_cast<void*>(io+80),"saveTest",8));fs.x[0]=reopened;file_api("_ZN2nn2fs9CloseFileENS0_10FileHandleE");
++ auto account=nx::make_service("acc:u0");nx::IpcCtx manager_request;manager_request.cmd=101;check(account->handle(manager_request)==0&&manager_request.out_objects.size()==1);auto manager=manager_request.out_objects[0];nx::IpcCtx availability;availability.cmd=0;check(manager->handle(availability)==0&&availability.out.size()==1&&availability.out[0]==0);
++ nx::IpcCtx offline;offline.cmd=130;check(manager->handle(offline)!=0&&offline.out.empty());
++ auto applet_service=nx::make_service("appletOE");nx::IpcCtx open_proxy;open_proxy.cmd=0;check(applet_service->handle(open_proxy)==0&&open_proxy.out_objects.size()==1);auto proxy=open_proxy.out_objects[0];nx::IpcCtx common_request;common_request.cmd=0;check(proxy->handle(common_request)==0);auto common=common_request.out_objects[0];nx::IpcCtx self_request;self_request.cmd=1;check(proxy->handle(self_request)==0);auto self=self_request.out_objects[0];
++ for(unsigned i=0;i<3;++i){nx::IpcCtx message;message.cmd=1;check(common->handle(message)==0);}
++ uint8_t on[4]={1,0,0,0};nx::IpcCtx operation;operation.cmd=11;operation.in=on;operation.in_size=4;check(self->handle(operation)==0);nx::IpcCtx before_notification;before_notification.cmd=1;check(common->handle(before_notification)!=0);operation.commit_reply();nx::IpcCtx mode_message;mode_message.cmd=1;check(common->handle(mode_message)==0&&mode_message.out.size()==4&&mode_message.arg<uint32_t>(0)==0);uint32_t mode_value=0;std::memcpy(&mode_value,mode_message.out.data(),4);check(mode_value==30);
++ auto apm=nx::make_service("apm");nx::IpcCtx session_request;session_request.cmd=0;check(apm->handle(session_request)==0&&session_request.out_objects.size()==1);auto session=session_request.out_objects[0];uint32_t configuration[2]={1,0x92220007};nx::IpcCtx set_performance;set_performance.cmd=0;set_performance.in=reinterpret_cast<uint8_t*>(configuration);set_performance.in_size=8;check(session->handle(set_performance)==0);uint32_t mode=1;nx::IpcCtx get_performance;get_performance.cmd=1;get_performance.in=reinterpret_cast<uint8_t*>(&mode);get_performance.in_size=4;check(session->handle(get_performance)==0);uint32_t stored=0;std::memcpy(&stored,get_performance.out.data(),4);check(stored==0);set_performance.commit_reply();get_performance.out.clear();check(session->handle(get_performance)==0);std::memcpy(&stored,get_performance.out.data(),4);check(stored==configuration[1]);
++ if(gpu){check(nx::nvn::initialize_native_device(device,0));check(nx::nvn::native_device_alive(device));check(nx::nvn::vk_device()!=VK_NULL_HANDLE);check(nx::nvn::native_window_origin()==0);nx::nvn::set_native_origin(device,1);check(nx::nvn::native_window_origin()==1);const auto output=nx::kernel_alloc(4,16);nx::vm_set(output,4,nx::kMemHeap,3);nx::st<uint32_t>(output,0xdeadbeef);nx::CPU query{};query.x[0]=device;query.x[1]=59;query.x[2]=output;auto getter=nx::hle_lookup("nvnDeviceGetInteger");check(getter!=nullptr);getter(query);check(nx::ld<uint32_t>(output)==0);
++ for(uint32_t property:{40u,50u,59u,66u,67u,68u,69u,71u,72u,73u,74u,75u,76u,87u,97u}){query.x[0]=device;query.x[1]=property;getter(query);check(nx::ld<uint32_t>(output)==0);}
++ for(uint32_t property:{23u,24u,42u,45u,55u,56u,58u,61u,62u,63u,64u,65u}){query.x[0]=device;query.x[1]=property;getter(query);check(nx::ld<uint32_t>(output)>0);}
++ bool rejected=false;try{nx::nvn::set_native_origin(device,2);}catch(const std::exception&){rejected=true;}check(rejected&&nx::nvn::native_window_origin()==1);check(!nx::nvn::initialize_native_device(device,0));
++ const auto queue=nx::kernel_alloc(256,16),builder=nx::kernel_alloc(16,16);nx::vm_set(queue,256,nx::kMemHeap,3);nx::vm_set(builder,16,nx::kMemHeap,3);nx::st<uint64_t>(builder,device);nx::st<uint32_t>(builder+8,1);
++ nx::CPU queue_call{};queue_call.x[0]=queue;queue_call.x[1]=builder;auto queue_init=nx::hle_lookup("nvnQueueInitialize");check(queue_init!=nullptr);queue_init(queue_call);check(queue_call.x[0]==1);queue_call.x[0]=queue;queue_call.x[1]=builder;queue_init(queue_call);check(queue_call.x[0]==0);
++ nx::st<uint32_t>(builder+8,2);const auto unsupported_queue=nx::kernel_alloc(256,16);nx::vm_set(unsupported_queue,256,nx::kMemHeap,3);queue_call.x[0]=unsupported_queue;queue_call.x[1]=builder;queue_init(queue_call);check(queue_call.x[0]==0);
++ queue_call.x[0]=queue;auto queue_final=nx::hle_lookup("nvnQueueFinalize");check(queue_final!=nullptr);queue_final(queue_call);
++ const auto cb=nx::kernel_alloc(256,16),pool_key=nx::kernel_alloc(128,16),command=nx::kernel_alloc(4096,16),control=nx::kernel_alloc(4096,16),rgba=nx::kernel_alloc(16,16);
++ for(auto [addr,bytes]:{std::pair{cb,256ull},std::pair{pool_key,128ull},std::pair{command,4096ull},std::pair{control,4096ull},std::pair{rgba,16ull}})nx::vm_set(addr,bytes,nx::kMemHeap,3);
++ auto& pool=nx::nvn::make<nx::nvn::MemoryPool>(pool_key);pool.memory=command;pool.size=4096;pool.gpu=nx::nvn::gpu_alloc(4096);
++ nx::CPU commands{};auto api=[&](const char* name){auto fn=nx::hle_lookup(name);if(!fn)throw std::runtime_error(std::string("missing command API ")+name);fn(commands);};
++ commands.x[0]=cb;commands.x[1]=device;api("nvnCommandBufferInitialize");check(commands.x[0]==1);
++ commands.x[0]=cb;commands.x[1]=pool_key;commands.x[2]=0;commands.x[3]=4096;api("nvnCommandBufferSetShaderScratchMemory");check(commands.x[0]==cb);
++ commands.x[0]=cb;commands.x[1]=pool_key;commands.x[2]=4096;commands.x[3]=4096;bool scratch_rejected=false;try{api("nvnCommandBufferSetShaderScratchMemory");}catch(const std::invalid_argument&){scratch_rejected=true;}check(scratch_rejected);
++ const auto callback=nx::hle_address("authoredMemoryCallback");commands.x[0]=cb;commands.x[1]=callback;api("nvnCommandBufferSetMemoryCallback");commands.x[0]=cb;api("nvnCommandBufferGetMemoryCallback");check(commands.x[0]==callback);
++ expected_control=control;commands.x[0]=cb;commands.x[1]=control;api("nvnCommandBufferSetMemoryCallbackData");commands.x[0]=cb;api("nvnCommandBufferGetMemoryCallbackData");check(commands.x[0]==control);
++ commands.x[0]=cb;commands.x[1]=pool_key;commands.x[2]=0;commands.x[3]=4096;api("nvnCommandBufferAddCommandMemory");commands.x[0]=cb;api("nvnCommandBufferBeginRecording");
++ for(unsigned i=0;i<4;++i)nx::st<float>(rgba+i*4,0.0f);commands.x[0]=cb;commands.x[1]=0;commands.x[2]=rgba;commands.x[3]=15;api("nvnCommandBufferClearColor");check(callback_calls==1);
++ commands.x[0]=cb;api("nvnCommandBufferGetCommandMemoryUsed");check(commands.x[0]==16);commands.x[0]=cb;api("nvnCommandBufferGetControlMemoryUsed");check(commands.x[0]==4);
++ commands.x[0]=cb;api("nvnCommandBufferEndRecording");check(commands.x[0]!=0);commands.x[0]=cb;api("nvnCommandBufferGetCommandMemoryUsed");check(commands.x[0]==32);
++ commands.x[0]=cb;api("nvnCommandBufferFinalize");commands.x[0]=pool_key;api("nvnMemoryPoolFinalize");
++ const auto texture_a=nx::kernel_alloc(256,16),texture_b=nx::kernel_alloc(256,16);auto& ta=nx::nvn::make<nx::nvn::Texture>(texture_a);auto& tb=nx::nvn::make<nx::nvn::Texture>(texture_b);ta.pool=tb.pool=0x1234;ta.offset=tb.offset=64;ta.format=tb.format=0x25;ta.width=tb.width=16;ta.height=tb.height=16;ta.depth=tb.depth=1;ta.levels=tb.levels=1;ta.samples=tb.samples=1;
++ nx::CPU compare{};auto cmp=nx::hle_lookup("nvnTextureCompare");check(cmp!=nullptr);compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==1);tb.width=32;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);tb.width=16;tb.swizzle[3]=0;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);compare.x[0]=texture_a;compare.x[1]=texture_a;cmp(compare);check(compare.x[0]==1);nx::nvn::destroy(texture_a);nx::nvn::destroy(texture_b);
++ nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/native_exit_policy_test.cpp
+@@ -0,0 +1,5 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "native_exit_policy.h"
++#include <iostream>
++#include <stdexcept>
++int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("exit policy assertion");};nx::NativeExitPolicy p;check(!p.is_locked());check(!p.lock_exit()&&p.is_locked());check(!p.lock_exit()&&p.is_locked());check(!p.request_close()&&p.is_locked());check(p.unlock_exit()&&!p.is_locked());check(p.lock_exit());nx::NativeExitPolicy q;check(q.request_close());check(q.lock_exit());std::cout<<"native_exit_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/native_hid_policy_test.cpp
+@@ -0,0 +1,5 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "native_hid_policy.h"
++#include <array>
++#include <iostream>
++int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("HID policy assertion");};nx::NativeHidPolicy p;check(p.style(0)==0);p.initialize();check(p.style(0)==1&&p.style(1)==0&&p.style(32)==0);p.styles(0);check(p.style(0)==0);p.styles(1);std::array<uint32_t,1> ids{1};p.supported_ids(ids);check(p.style(0)==0);ids[0]=0;p.supported_ids(ids);check(p.style(0)==1);p.handheld_mode(2);check(p.handheld_mode()==2);p.disconnect(0);check(p.style(0)==0);p.initialize();check(p.style(0)==1);bool bad=false;try{p.handheld_mode(3);}catch(const std::invalid_argument&){bad=true;}check(bad&&p.handheld_mode()==2);ids[0]=99;bad=false;try{p.supported_ids(ids);}catch(const std::invalid_argument&){bad=true;}check(bad&&p.style(0)==1);std::cout<<"native_hid_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/native_touch_policy_test.cpp
+@@ -0,0 +1,5 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "native_touch_policy.h"
++#include <array>
++#include <iostream>
++int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("touch policy assertion");};nx::NativeTouchPolicy p;std::array<uint8_t,nx::NativeTouchPolicy::StateBytes> state{};check(p.states(state,1)==0);p.initialize();check(p.states(state,0)==0);check(p.states(state,1)==1);uint64_t sample=0;std::memcpy(&sample,state.data(),8);check(sample==1);for(size_t i=8;i<state.size();++i)check(state[i]==0);check(p.states(state,16)==1);std::memcpy(&sample,state.data(),8);check(sample==2);bool bad=false;try{p.states(std::span<uint8_t>(state).first(4),1);}catch(const std::invalid_argument&){bad=true;}check(bad);std::cout<<"native_touch_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/romfs_image_probe.cpp
 @@ -0,0 +1,12 @@
@@ -2496,6 +3620,83 @@
 + auto writer=_wfsopen((root/"valid.bin").c_str(),L"r+b",_SH_DENYNO);check(writer==nullptr);if(writer)std::fclose(writer);
 +#endif
 + std::cout<<"romfs_image checks="<<checks<<" PASS\n";return 0;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/sdk53_sampler_descriptor_test.cpp
+@@ -0,0 +1,26 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/sdk53_sampler_descriptor.h"
++#include <array>
++#include <limits>
++#include <iostream>
++int main() {
++    using nx::nvn::sdk53_sampler_descriptors_equal;
++    unsigned checks = 0;
++    auto check = [&](bool ok) { ++checks; if (!ok) throw std::runtime_error("sampler descriptor assertion"); };
++    std::array<uint8_t, 0x60> a{}, b{};
++    check(sdk53_sampler_descriptors_equal(a,b));
++    for (unsigned offset=8; offset<0x50; ++offset) {
++        b[offset]=1; check(!sdk53_sampler_descriptors_equal(a,b)); b[offset]=0;
++    }
++    b[0]=1; b[0x50]=1; check(sdk53_sampler_descriptors_equal(a,b));
++    float negative_zero=-0.0f; std::memcpy(b.data()+0x24,&negative_zero,4);
++    check(sdk53_sampler_descriptors_equal(a,b));
++    float nan=std::numeric_limits<float>::quiet_NaN();
++    std::memcpy(a.data()+0x28,&nan,4); std::memcpy(b.data()+0x28,&nan,4);
++    check(!sdk53_sampler_descriptors_equal(a,b));
++    bool rejected=false;
++    try { sdk53_sampler_descriptors_equal(std::span<const uint8_t>(a).first(0x4f),b); }
++    catch(const std::invalid_argument&) { rejected=true; }
++    check(rejected);
++    std::cout << "sampler descriptor checks=" << checks << " PASS\n";
++}
+--- /dev/null
++++ b/tests/sdk53_texture_builder_test.cpp
+@@ -0,0 +1,10 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/sdk53_texture_builder.h"
++#include <array>
++#include <iostream>
++int main(){try{
++ unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("SDK texture builder assertion");};std::array<uint8_t,0x80> bytes{};
++ check(!nx::nvn::sdk53_texture_is_packaged(bytes));bytes[0x58]=1;check(nx::nvn::sdk53_texture_is_packaged(bytes));bytes[0x58]=0x10;check(!nx::nvn::sdk53_texture_is_packaged(bytes));bytes[0x58]=0x31;bytes[0x59]=0xab;check(nx::nvn::sdk53_texture_is_packaged(bytes));
++ for(size_t size:{size_t(0),size_t(0x58),size_t(0x59)}){bool bad=false;try{nx::nvn::sdk53_texture_is_packaged(std::span<const uint8_t>(bytes).first(size));}catch(const std::exception&){bad=true;}check(bad);}
++ std::cout<<"sdk53_texture_builder checks="<<n<<" PASS\n";return 0;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/sdk53_texture_descriptor_test.cpp
+@@ -0,0 +1,5 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/sdk53_texture_descriptor.h"
++#include <array>
++#include <iostream>
++int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("texture descriptor assertion");};std::array<uint8_t,0x80>a{},b{};check(nx::nvn::sdk53_texture_descriptors_equal(a,b));b[0]=1;check(nx::nvn::sdk53_texture_descriptors_equal(a,b));b[8]=1;check(!nx::nvn::sdk53_texture_descriptors_equal(a,b));b[8]=0;b[0x40]=1;check(!nx::nvn::sdk53_texture_descriptors_equal(a,b));b[0x40]=0;b[0x54]=0xfc;check(nx::nvn::sdk53_texture_descriptors_equal(a,b));b[0x54]=1;check(!nx::nvn::sdk53_texture_descriptors_equal(a,b));b[0x54]=0;b[0x60]=1;check(nx::nvn::sdk53_texture_descriptors_equal(a,b));bool bad=false;try{nx::nvn::sdk53_texture_descriptors_equal(std::span<const uint8_t>(a).first(0x54),b);}catch(const std::invalid_argument&){bad=true;}check(bad);std::cout<<"sdk53_texture_descriptor checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/sdk53_window_builder_test.cpp
+@@ -0,0 +1,9 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/sdk53_window_builder.h"
++#include <array>
++#include <iostream>
++int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("window builder assertion");};std::array<uint8_t,64> bytes{};auto put=[&](size_t p,uint64_t v,unsigned count){for(unsigned i=0;i<count;++i)bytes[p+i]=uint8_t(v>>(8*i));};put(0,0x5012340000,8);put(8,3,4);put(0x10,0x6a00fff000,8);put(0x18,0x123456,8);
++ auto a=nx::nvn::sdk53_window_builder(bytes);check(a.device==0x5012340000&&a.count==3&&a.textures==0x6a00fff000&&a.native_window==0x123456&&a.interval==1);
++ put(0x20,0xffffffff,4);check(nx::nvn::sdk53_window_builder(bytes).interval==0);put(0x20,3,4);check(nx::nvn::sdk53_window_builder(bytes).interval==4);put(8,0xffffffff,4);check(nx::nvn::sdk53_window_builder(bytes).count==-1);
++ bool bad=false;try{nx::nvn::sdk53_window_builder(std::span<const uint8_t>(bytes).first(0x23));}catch(const std::exception&){bad=true;}check(bad);std::cout<<"sdk53_window_builder checks="<<n<<" PASS\n";return 0;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/texture_format_test.cpp
+@@ -0,0 +1,12 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/native_texture_format.h"
++#include <iostream>
++int main(){try{
++ unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("texture format assertion");};
++ for(auto [format,bytes]:{std::pair{1u,1u},{5u,2u},{10u,4u},{0x19u,3u},{0x1du,6u},{0x22u,12u},{0x25u,4u},{0x29u,8u},{0x2eu,16u},{0x31u,1u},{0x32u,2u},{0x33u,4u},{0x35u,4u},{0x36u,8u},{0x3fu,4u},{0x95u,2u},{0x99u,4u}}){auto b=nx::nvn::native_texture_block(format);check(b.block_w==1&&b.block_h==1&&b.bytes==bytes);}
++ for(uint32_t format=0x41;format<=0x50;++format){auto b=nx::nvn::native_texture_block(format);check(b.block_w==4&&b.block_h==4);check(b.bytes==((format==0x41||format==0x42||format==0x45||format==0x46||format==0x49||format==0x4a)?8:16));}
++ auto a=nx::nvn::native_texture_block(0x79),z=nx::nvn::native_texture_block(0x94);check(a.block_w==4&&a.block_h==4&&a.bytes==16);check(z.block_w==12&&z.block_h==12&&z.bytes==16);
++ for(uint32_t i=0;i<14;++i){auto x=nx::nvn::native_texture_block(0x79+i),y=nx::nvn::native_texture_block(0x87+i);check(x.block_w==y.block_w&&x.block_h==y.block_h&&x.bytes==y.bytes);}
++ for(auto invalid:{0u,0x51u,0x78u,0x9du,0xffffffffu}){bool rejected=false;try{nx::nvn::native_texture_block(invalid);}catch(const std::exception&){rejected=true;}check(rejected);}
++ std::cout<<"texture_format checks="<<n<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/verified_parental_test.cpp

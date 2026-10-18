@@ -115,3 +115,8 @@ fix, alongside ready-object/poll precedence and cancellation of a blocked host
 thread. The native GPU fixture now passes 461 checks and all 36 suites pass.
 These results do not establish native movie presentation or races. The current
 full-game probe is checking that final video handoff without diagnostic readbacks.
+
+The R146 original-game run now presents a changing movie preview and native 3D
+character/kart/glider and cup-selection menus. The movie has visible color
+corruption and the 3D character lighting is dark. Those defects and race loading
+remain open; this is not a playable-game or release claim.

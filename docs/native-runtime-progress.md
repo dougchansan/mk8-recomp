@@ -28,9 +28,15 @@ the old code and passes after preserving the pending cancellation. Tests cover
 ready-object and zero-timeout precedence, one-shot/coalesced cancellation, an
 already-blocked host thread, and invalid handles. No game event is forced.
 
-The latest full-game run is checking the complete video draw and presentation.
-Native movie presentation, races and a complete playable application remain
-unverified. No native tag, binary or download is published.
+The R146 full-game run directly presents changing movie-preview frames in the
+Single Player menu, then renders native character/kart/glider and Mushroom Cup
+selection. This is further native rendering progress, with explicit defects:
+movie colors are green/magenta-corrupted and 3D character lighting is too dark.
+The run closes intentionally after its scripted input reaches cup selection;
+source, executable, saved-input profile and foreground identity remain unchanged.
+Races and a complete playable application remain unverified. A follow-up captures
+the actual transfer-plane bytes and lookup-image state, and extends the scripted
+cup/race confirmations. No native tag, binary or download is published.
 
 The earlier R132 saved-profile run directly renders the native main menu and
 creates the real bundled Google AVC component. The movie uses Main-profile AVC

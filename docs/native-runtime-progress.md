@@ -12,7 +12,7 @@ The Vulkan dispatch table is regenerated for the already installed headers.
 Thirty-five CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 194-check GPU fixture creates and drains a real device and queue on
+A separate 196-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,
@@ -148,6 +148,11 @@ formats. Other clear profiles stop explicitly. A transfer-ordering regression
 verifies all 128 bytes of a two-layer image: the selected layer clears to magenta
 while the blue layer remains unchanged. Upload and clear have an explicit memory
 dependency even when they would otherwise use the same image layout.
+The next actual clear uses sRGB RGBA8 storage with a linear RGBA8 view and a zero
+clear color. That alias is now supported for RGB endpoint colors, whose stored
+encodings agree. Intermediate converting colors remain rejected. An authored
+native sRGB upload/linear-view clear verifies all 64 stored bytes become zero.
+
 
 Missing required shader translations and unknown calls remain visible failures.
 Shader/draw/present coverage, GPU upload/layout correctness, allocator callback

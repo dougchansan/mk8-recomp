@@ -36,7 +36,7 @@ parser/profile cases pass, including invalid/duplicate slots and viewport state.
 The diagnostic profile uses SPIR-V 1.0, float attributes/outputs and triangle
 topology. Those are explicit specialization assumptions. Translation and driver
 module creation do not prove draw-state compatibility, pipeline validity,
-rendering equivalence or gameplay. The local startup cache contains 3,894 pretranslated graphics/compute stages from the inspected
+rendering equivalence or gameplay. The local startup cache contains 4,325 pretranslated graphics/compute stages from the inspected
 asset set, with Vulkan module acceptance. This is not full-game shader coverage;
 startup passes application display-version metadata and continues into further RaceCommon assets. Game-linked inputs, SPIR-V and
 builds stay private. Missing required translations remain fatal in the runtime.

@@ -9,10 +9,10 @@ The isolated Windows target uses MIT-licensed SuperMarioWonderRecomp revision
 main/subsdk0/SDK form three static libraries and a local standalone executable.
 The Vulkan dispatch table is regenerated for the already installed headers.
 
-Thirty CPU/component suites pass, including SDK 53 texture/sampler
+Thirty-two CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 118-check GPU fixture creates and drains a real device and queue on
+A separate 135-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,
@@ -30,12 +30,13 @@ shader setup, raw compute program setup and system-resource mounting. It now
 starts the SDK53 software audio render thread and loads sound banks, then reaches
 UI and RaceCommon asset loading. The pinned application-control reader answers
 the display-version request using privately supplied title metadata. Startup
-continues into the menu course's assets, where the latest closed probe stopped
-at another required shader. There is still no native game frame or playable result.
+continues through menu, Mario, kart and 3D Mii assets. The native random-Mii
+request succeeds. The next closed probe passes depth-resource metadata queries
+and reaches line-width setup; unit-width command recording and replay are now integrated. There is still no native game frame or playable result.
 
 The [offline shader diagnostic](../integrations/belmante-runtime/offline/README.md)
 uses the existing shader-only compiler libraries. Thirteen authored parser/profile
-cases pass. The cache contains 3,894 pretranslated graphics/compute shader stages from inspected startup
+cases pass. The cache contains 4,325 pretranslated graphics/compute shader stages from inspected startup
 assets, with Vulkan module acceptance and no pipeline/draw credit. Explicit
 profiles cover normalized 2D/cube/array float sampling and depth comparisons on 2D or
 array textures; live bindings must match before upload/draw. Cubemap storage uses
@@ -49,15 +50,17 @@ layouts and remaining resource classes still require integration.
 The application-control adapter checks the supplied NACP digest, exact extent
 and display-version string before replying. Its metadata remains private.
 
-The application-control adapter checks the supplied NACP digest, exact extent and display-version string before replying. Its metadata remains private.
-
 The font adapter maps seven privately supplied, verified system fonts into native shared memory and serves font metadata and language queries. No font contents are distributed.
 
 The optional system-data adapter reads the owner's existing Mii archive through
 an identity-pinned read-only image. Its local extraction verified the NCA section
 hash and 357 IVFC blocks; neither system contents nor keys are published. Native
 system mounts and ordinary file calls now use the same image reader. The local
-avatar database is empty; generation and mutation remain unsupported. FSP process
+avatar database is empty. Temporary random-character generation uses a standalone
+adaptation of the existing Mii algorithm and tables, with retained attribution.
+Its regression checks 6,144 generated characters across descriptor combinations
+and rejects invalid descriptors (24,580 checks). Database mutation and other
+Mii service operations remain incomplete. FSP process
 binding commits after its reply, and archive output is staged until reply completion.
 
 Native audio now resolves the inspected SDK53 renderer and execution entry by
@@ -70,7 +73,8 @@ interfaces have begun integration; their remaining calls still stop explicitly.
 The owned window does not activate or change the foreground. An expanded-cache
 probe hit its 30-second bound while loading assets. A fresh 120-second probe
 then reached menu-course assets and stopped at a missing shader after 40.9 seconds,
-without a timeout. Owned processes closed, source and executable hashes stayed
+without a timeout. A later run with native Mii generation reaches the ZCull
+storage query after 64.2 seconds. Owned processes closed, source and executable hashes stayed
 unchanged, and the foreground stayed unchanged. These
 observations establish startup progress, not correct rendering or full gameplay.
 
@@ -81,6 +85,17 @@ Native queue ownership, command-memory callback dispatch, scratch reservations,
 focus/exit subscriptions, desktop input configuration and durable basic save-file
 writes are integrated. Tests cover descriptor changes, ignored fields, signed
 zero and NaN comparison, and basic save write/close/reopen behavior.
+
+The ZCull storage-size query accepts a live texture or an exact SDK descriptor
+copy that still names a live native texture. It reports no additional
+client-managed metadata allocation. The SDK53 texture wire layout now puts the
+device pointer at +8, the GPU address at +0x80 and depth/stencil aspect bits at
++0x54; a dedicated authored regression checks those offsets.
+
+Line width is recorded and replayed against the native pipeline's supported
+unit width. Other widths and malformed state stop explicitly. Vulkan image
+[memory requirements](https://docs.vulkan.org/refpages/latest/refpages/source/VkMemoryRequirements.html)
+account for resource allocation; these adaptations do not prove depth rendering.
 
 Missing required shader translations and unknown calls remain visible failures.
 Shader/draw/present coverage, GPU upload/layout correctness, allocator callback

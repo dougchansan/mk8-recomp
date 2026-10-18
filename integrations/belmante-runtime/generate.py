@@ -18,6 +18,10 @@ private = root / 'private'
 private.mkdir(exist_ok=False)
 (private / 'analysis').mkdir()
 (private / 'gen').mkdir()
+npdm = args.exefs.resolve() / 'main.npdm'
+npdm_bytes = npdm.read_bytes()
+(private / 'main.npdm').write_bytes(npdm_bytes)
+(root / 'NPDM-INPUT.json').write_text(json.dumps({'sha256': hashlib.sha256(npdm_bytes).hexdigest(), 'path': str(private / 'main.npdm')}, indent=2) + '\n', encoding='utf-8')
 sys.path.insert(0, str(source))
 from recomp import nso
 manifest = {}

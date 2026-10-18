@@ -4,33 +4,44 @@ Updated 2026-10-17. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The isolated Windows experiment adapts SuperMarioWonderRecomp revision
-`010ed7a596a621c15d3a8dfa5795ca8c3668b066` (MIT), retaining its attribution.
-MK8D's main, subsdk0 and SDK now compile into three static libraries and a local
-standalone executable using that runtime. Existing Vulkan headers are retained;
-the dispatch table is regenerated against their matching registry.
+The isolated Windows target uses MIT-licensed SuperMarioWonderRecomp revision
+`010ed7a596a621c15d3a8dfa5795ca8c3668b066`, retaining its attribution. MK8D's
+main/subsdk0/SDK form three static libraries and a local standalone executable.
+The Vulkan dispatch table is regenerated for the already installed headers.
 
-The integration adds direct read-only RomFS image access, correct undefined-weak
-ELF symbol resolution, bounded domain payload sizing and a native owned-window
-controller with response validation and commit callbacks. Eight component suites
-pass: domain IPC, window ownership, loader symbols, image-backed RomFS, GPU
-selection, tiling, ASTC and memory guard. The real RomFS has 1,122 directories and
-6,597 files; eight native sample reads and the inventory match an independent
-parser. These reads are adapter verification, not observed guest content reads.
+Thirteen CPU/component suites pass: native device admission, VI object/scaling
+state, module initializer metadata, the existing verified parental-control policy
+through its new adapter, native focus park/resume, domain IPC, window ownership,
+loader symbols, read-only RomFS, GPU selection, tiling, ASTC and memory guard.
+A separate twelve-check GPU fixture creates a real device on the RX 9070 XT,
+rejects duplicate initialization and drains/finalizes it without guest execution.
+The real image's 1,122 directories, 6,597 files and eight native sample reads match
+an independent parser; those sample reads are adapter verification.
 
-The latest real startup loads all three modules, links them, enters
-`nn::init::Start`, connects logging/power/applet services and commits native
-window rights. It then stops at unsupported `ISelfController` command 13. No
-native game frame or playable-game result is credited. Unknown imports, service
-commands, SVCs and NVN tracing stubs stop execution; other inherited handlers,
-Wonder-specific capabilities, shader completeness and SDK differences still need
-review. This experiment uses a different memory/dispatch model and does not
-inherit the earlier runtime's guarded ownership evidence. Prior builds and the
-partially implemented storage-read successor remain retained.
+The actual game now enters `nnMain`, mounts its content image, creates an owned
+native display/layer, applies ScaleToWindow and calls `nvnDeviceInitialize`.
+That call validates the SDK 53.105 builder, creates a real Vulkan device and
+returns success. Original compiled SDK getters deliver API-version properties
+0 and 1. The next unsupported call is `nvnDeviceSetWindowOriginMode`. The owned
+window does not activate or change the foreground; the process exits normally
+at the unsupported boundary. No native game frame or playable result is credited.
 
-See the [integration recipe](../integrations/belmante-runtime/README.md) for pinned
-source preparation. All title code, generated modules, data and binaries remain
-local. No tag or download is published.
+The adaptation replaces unmapped VI placeholders with mapped owned objects,
+reads DT_INIT from each module instead of assuming Wonder's initializer address,
+and reuses the existing native parental contexts with separate restricted ports.
+Device memory must pass logical and actual Windows permission checks before GPU
+creation. Missing required shader translations and unknown calls remain visible
+failures. Hardware-dependent device properties, remaining SDK differences,
+allocator callback semantics and inherited handlers still require integration.
+
+This runtime has a different memory/dispatch model and does not inherit the old
+guarded runtime's ownership or floating-point verification. All prior candidates
+and the partial atomic storage-read successor remain retained. The native frame,
+shader, audio, input, save/restart and full-game gates remain open.
+
+See the [integration recipe](../integrations/belmante-runtime/README.md).
+Game code, generated modules, metadata, assets and binaries remain local.
+No tag or download is published.
 
 ## Existing runtime campaign
 

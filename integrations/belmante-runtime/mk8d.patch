@@ -1,9 +1,24 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -36,6 +36,22 @@
+@@ -36,6 +36,37 @@
  option(NX_TESTS "Build the standalone unit tests" OFF)
  if(NX_TESTS AND NOT ANDROID)
      enable_testing()
++    add_executable(vi_state_test tests/vi_state_test.cpp runtime/src/vi_state.cpp)
++    target_include_directories(vi_state_test PRIVATE runtime/include runtime/src)
++    add_test(NAME vi_state COMMAND vi_state_test)
++    add_executable(module_init_test tests/module_init_test.cpp runtime/src/module_init.cpp)
++    target_include_directories(module_init_test PRIVATE runtime/include runtime/src)
++    add_test(NAME module_init COMMAND module_init_test)
++    add_executable(verified_parental_test tests/verified_parental_test.cpp runtime/src/mk8_verified_services.cpp runtime/src/verified_services/event.cpp runtime/src/verified_services/services/addon_content.cpp runtime/src/verified_services/services/parental_control.cpp)
++    target_include_directories(verified_parental_test PRIVATE runtime/include runtime/src)
++    target_link_libraries(verified_parental_test PRIVATE bcrypt)
++    target_compile_definitions(verified_parental_test PRIVATE _CRT_SECURE_NO_WARNINGS)
++    add_test(NAME verified_parental COMMAND verified_parental_test)
++    add_executable(focus_policy_test tests/focus_policy_test.cpp runtime/src/mk8_focus_policy.cpp)
++    target_include_directories(focus_policy_test PRIVATE runtime/include runtime/src)
++    add_test(NAME focus_policy COMMAND focus_policy_test)
++    set_tests_properties(focus_policy PROPERTIES TIMEOUT 10)
 +    add_executable(ipc_domain_test tests/ipc_domain_test.cpp runtime/src/ipc.cpp)
 +    target_include_directories(ipc_domain_test PRIVATE runtime/include runtime/src)
 +    add_test(NAME ipc_domain COMMAND ipc_domain_test)
@@ -23,7 +38,7 @@
      add_executable(gpu_pick_test tests/gpu_pick_test.cpp runtime/src/nvn/nvn_gpu_pick.cpp)
      target_compile_definitions(gpu_pick_test PRIVATE NX_GPU_PICK_STANDALONE)
      target_include_directories(gpu_pick_test PRIVATE runtime/src/nvn)
-@@ -67,7 +83,14 @@
+@@ -67,7 +98,14 @@
      return()
  endif()
  
@@ -39,23 +54,39 @@
      file(GLOB src CONFIGURE_DEPENDS "${NX_GEN_DIR}/${mod}/*.cpp")
      add_library(game_${mod} STATIC ${src})
      target_include_directories(game_${mod} PRIVATE runtime/include "${NX_GEN_DIR}/${mod}")
-@@ -84,6 +107,7 @@
+@@ -84,8 +122,10 @@
          target_compile_options(game_${mod} PRIVATE -O2 -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
      endif()
  endforeach()
 +endif()
  
  set(NX_RUNTIME_SOURCES
++    runtime/src/module_init.cpp
      runtime/src/main.cpp
-@@ -93,6 +117,7 @@
+     runtime/src/sampler.cpp
+     runtime/src/loader.cpp
+@@ -93,6 +133,12 @@
      runtime/src/kernel.cpp
      runtime/src/kernel_watch.cpp
      runtime/src/ipc.cpp
++    runtime/src/mk8_verified_services.cpp
++    runtime/src/verified_services/event.cpp
++    runtime/src/verified_services/services/addon_content.cpp
++    runtime/src/verified_services/services/parental_control.cpp
++    runtime/src/mk8_focus_policy.cpp
 +    runtime/src/mk8_window_controller.cpp
      runtime/src/svc_am.cpp
      runtime/src/svc_set.cpp
      runtime/src/svc_misc.cpp
-@@ -185,7 +210,7 @@
+@@ -101,6 +147,7 @@
+     runtime/src/hle_fs.cpp
+     runtime/src/svc_account.cpp
+     runtime/src/hle_ro.cpp
++    runtime/src/vi_state.cpp
+     runtime/src/hle_vi.cpp
+     runtime/src/hle_hid.cpp
+     runtime/src/hle_net.cpp
+@@ -185,7 +232,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -64,7 +95,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +221,7 @@
+@@ -196,7 +243,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -73,7 +104,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,14 +233,14 @@
+@@ -208,16 +255,35 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -83,13 +114,37 @@
      # The executable (PIE) loads near 0x55_5555_0000_0000, far above the guest ranges (0x40_0000_0000 and up). The
      # game runs on its own thread with a 64 MiB stack (platform_linux.cpp).
  else()
-     add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_win.cpp runtime/src/memguard_win.cpp)
-     target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_SDK}/Include")
+-    add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_win.cpp runtime/src/memguard_win.cpp)
+-    target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_SDK}/Include")
 -    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk xinput xaudio2 ole32 psapi)
-+    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi)
++    set(NX_RUNTIME_OBJECT_DIR "" CACHE PATH "Verified native runtime object directory; requires identical production sources and headers")
++    if(NX_RUNTIME_OBJECT_DIR)
++        file(GLOB_RECURSE NX_RUNTIME_OBJECTS "${NX_RUNTIME_OBJECT_DIR}/*.obj")
++        add_library(nx_runtime_objects OBJECT IMPORTED)
++        set_target_properties(nx_runtime_objects PROPERTIES IMPORTED_OBJECTS "${NX_RUNTIME_OBJECTS}")
++    else()
++    add_library(nx_runtime_objects OBJECT ${NX_RUNTIME_SOURCES} runtime/src/platform_win.cpp runtime/src/memguard_win.cpp)
++    endif()
++    add_executable(${NX_GAME} runtime/src/entry_win.cpp $<TARGET_OBJECTS:nx_runtime_objects>)
++    if(NOT NX_RUNTIME_OBJECT_DIR)
++        target_include_directories(nx_runtime_objects PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_SDK}/Include")
++    endif()
++    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt)
++    if(NX_TESTS)
++        add_executable(native_device_fixture tests/native_device_fixture.cpp $<TARGET_OBJECTS:nx_runtime_objects>)
++        target_include_directories(native_device_fixture PRIVATE runtime/include runtime/src "${NX_VULKAN_SDK}/Include")
++        target_link_libraries(native_device_fixture PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt)
++        target_link_options(native_device_fixture PRIVATE /STACK:67108864 /HIGHENTROPYVA:NO /MAP)
++        add_test(NAME native_device_cpu COMMAND native_device_fixture)
++    endif()
      # The runtime uses the portable C library (getenv, fopen, ...) on every host: no "_s" variants.
-     target_compile_definitions(${NX_GAME} PRIVATE _CRT_SECURE_NO_WARNINGS _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
+-    target_compile_definitions(${NX_GAME} PRIVATE _CRT_SECURE_NO_WARNINGS _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
++    if(NOT NX_RUNTIME_OBJECT_DIR)
++        target_compile_definitions(nx_runtime_objects PRIVATE _CRT_SECURE_NO_WARNINGS _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
++    endif()
      if(MSVC)
+         # Keep host allocations low so the guest ranges (0x40_0000_0000..0x70_0000_0000) are always free; a big
+         # main-thread stack (recompiled calls nest deeply); a link map for tools/symbolize.py.
 --- /dev/null
 +++ b/games/mk8d/game.cpp
 @@ -0,0 +1,9 @@
@@ -157,6 +212,12 @@
          segs.append((mem_off, blob))
      bss_size = struct.unpack_from("<I", raw, 0x3C)[0]
      data_end = segs[2][0] + len(segs[2][1])
+--- /dev/null
++++ b/runtime/src/entry_win.cpp
+@@ -0,0 +1,3 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++int platform_entry();
++int main(){return platform_entry();}
 --- a/runtime/src/hle_fs.cpp
 +++ b/runtime/src/hle_fs.cpp
 @@ -21,6 +21,8 @@
@@ -319,6 +380,70 @@
      FILE* f = plat::fopen_utf8(utf8(data_root() / "extract" / "romfs" / fs::u8path(relative_to_romfs)), "rb");
      if (!f) return {};
      std::string s;
+--- a/runtime/src/hle_vi.cpp
++++ b/runtime/src/hle_vi.cpp
+@@ -10,6 +10,7 @@
+ 
+ #include "kernel.h"
+ #include "platform.h"
++#include "vi_state.h"
+ 
+ namespace nx {
+ 
+@@ -28,28 +29,21 @@
+ 
+ namespace {
+ 
+-constexpr uint64_t kFakeDisplay = kKernelBase - 0x1000;  // opaque pointers, never dereferenced by the game
+-constexpr uint64_t kFakeLayer = kKernelBase - 0x2000;
++// Native VI objects have real mapped storage and owned-window identities.
+ 
+-void ok(CPU& c) { c.x[0] = 0; }
++void initialize_vi(CPU& c){native_vi::initialize();c.x[0]=0;}
+ 
+ void OpenDefaultDisplay(CPU& c) {
+-    st<uint64_t>(c.x[0], kFakeDisplay);
++    st<uint64_t>(c.x[0],native_vi::open_display());
+     c.x[0] = 0;
+ }
+ 
+ void CreateLayer(CPU& c) {
+-    void* w = plat::create_window();
+-    log("vi: layer created -> native window %p", w);
+-    plat::release_window(w);
+-    st<uint64_t>(c.x[0], kFakeLayer);
+-    c.x[0] = 0;
++    const auto layer=native_vi::create_layer(c.x[1]);st<uint64_t>(c.x[0],layer);c.x[0]=0;
++    log("vi: owned layer created");
+ }
+-
+-void GetNativeWindow(CPU& c) {  // (void** out, Layer*)
+-    st<uint64_t>(c.x[0], uint64_t(plat::create_window()));
+-    c.x[0] = 0;
+-}
++void GetNativeWindow(CPU& c){st<uint64_t>(c.x[0],uint64_t(native_vi::native_window(c.x[1])));c.x[0]=0;}
++void SetLayerScalingMode(CPU& c){native_vi::set_scaling(c.x[0],uint32_t(c.x[1]));log("vi: ScaleToWindow applied");c.x[0]=0;}
+ 
+ void nv_noop(CPU&) {}
+ 
+@@ -70,6 +64,7 @@
+ }
+ 
+ void GetDisplayVsyncEvent(CPU& c) {  // (os::SystemEventType*, Display*)
++    if(!native_vi::display_valid(c.x[1]))fatal("vsync requires owned live display");
+     auto r = std::make_shared<KEvent>(), w = std::make_shared<KEvent>();
+     r->state = w->state = g_vsync;
+     uint32_t hr = handle_add(r), hw = handle_add(w);
+@@ -86,7 +81,8 @@
+ 
+ }  // namespace
+ 
+-NX_HLE("_ZN2nn2vi10InitializeEv", ok);
++NX_HLE("_ZN2nn2vi10InitializeEv", initialize_vi);
++NX_HLE("_ZN2nn2vi19SetLayerScalingModeEPNS0_5LayerENS0_11ScalingModeE",SetLayerScalingMode);
+ NX_HLE("_ZN2nn2vi18OpenDefaultDisplayEPPNS0_7DisplayE", OpenDefaultDisplay);
+ NX_HLE("_ZN2nn2vi11CreateLayerEPPNS0_5LayerEPNS0_7DisplayE", CreateLayer);
+ NX_HLE("_ZN2nn2vi15GetNativeWindowEPPvPNS0_5LayerE", GetNativeWindow);
 --- a/runtime/src/ipc.cpp
 +++ b/runtime/src/ipc.cpp
 @@ -36,15 +36,13 @@
@@ -349,6 +474,15 @@
      std::lock_guard lk(g_ipc);
      auto sess = std::dynamic_pointer_cast<KSession>(handle_get(handle));
      if (!sess) {
+@@ -101,7 +100,7 @@
+     size_t p = 2;
+     if (special) {
+         uint32_t sh = w[p++];
+-        bool pid = sh & 1;
++        bool pid = sh & 1;ctx.send_pid=pid;
+         uint32_t ncopy = (sh >> 1) & 0xF, nmove = (sh >> 5) & 0xF;
+         if (pid) {
+             ctx.pid = w[p] | (uint64_t(w[p + 1]) << 32);
 @@ -150,6 +149,7 @@
          ctx.in_size = ndata * 4;
          if (g_trace) log("ipc: tipc %s cmd %u", sess->svc->name.c_str(), ctx.cmd);
@@ -361,7 +495,7 @@
          std::memcpy(&w[q + 1], ctx.out.data(), ctx.out.size());
          w[0] = ctx.type;
          w[1] = uint32_t(1 + (ctx.out.size() + 3) / 4) | (has_special ? 0x80000000u : 0);
-+        if(!rc&&ctx.commit_reply)ctx.commit_reply();
++        if((!rc||ctx.commit_error_reply)&&ctx.commit_reply)ctx.commit_reply();
          return 0;
      }
      // Raw data: aligned to 16 bytes from the message start.
@@ -378,7 +512,7 @@
 +        const auto end=buf+data_start*4+uint64_t(ndata)*4;
 +        if(end<buf || end-buf>buffer_size || raw+16>end || dsize>end-raw-16 || uint64_t(nobj)*4>end-raw-16-dsize)
 +            fatal("domain CMIF extent exceeds IPC message");
-+        domain_data_size=dsize;
++        domain_data_size=dsize;ctx.domain_payload=true;
          domain_obj = ld<uint32_t>(raw + 4);
          for (uint32_t i = 0; i < nobj; i++) ctx.in_objects.push_back(ld<uint32_t>(raw + 16 + dsize + 4 * i));
          raw += 16;
@@ -406,13 +540,18 @@
          uint32_t words = uint32_t((end - (buf + dstart * 4)) / 4) + 4;
          w[0] = 0;
          w[1] = words | (has_special ? 0x80000000u : 0);
-+        if(!rc&&ctx.commit_reply)ctx.commit_reply();
++        if((!rc||ctx.commit_error_reply)&&ctx.commit_reply)ctx.commit_reply();
          return 0;
      }
  
 --- a/runtime/src/ipc.h
 +++ b/runtime/src/ipc.h
-@@ -29,6 +29,8 @@
+@@ -25,10 +25,13 @@
+     const uint8_t* in = nullptr;  // raw arguments (after the SFCI header)
+     size_t in_size = 0;
+     std::vector<uint32_t> in_copy, in_move;
++    bool send_pid=false,domain_payload=false,commit_error_reply=false;
+     uint64_t pid = 0;
      std::vector<Buffer> a, b, x, c;  // send, receive, pointer (X), receive list (C)
      std::vector<uint32_t> in_objects;  // domain objects passed in
  
@@ -421,7 +560,7 @@
      std::vector<uint8_t> out;
      std::vector<uint32_t> out_copy, out_move;
      std::vector<std::shared_ptr<Service>> out_objects;
-@@ -55,7 +57,7 @@
+@@ -55,7 +58,7 @@
      std::string name;
      explicit Service(std::string n) : name(std::move(n)) {}
      virtual ~Service() = default;
@@ -432,7 +571,12 @@
  };
 --- a/runtime/src/kernel.cpp
 +++ b/runtime/src/kernel.cpp
-@@ -678,7 +678,7 @@
+@@ -1,3 +1,4 @@
++#include "mk8_focus_policy.h"
+ // A small Horizon kernel: handles, threads, synchronization (mutex/condvar/address arbitration), events,
+ // memory and GetInfo. Services (IPC) live in ipc.cpp.
+ #include <algorithm>
+@@ -678,7 +679,7 @@
              rc = unmap_transfer_memory(uint32_t(c.x[0]), c.x[1], c.x[2]);
              break;
          default:
@@ -441,9 +585,25 @@
                  (unsigned long long)c.x[0], (unsigned long long)c.x[1], (unsigned long long)c.x[2]);
              rc = 0;
      }
+@@ -720,6 +721,7 @@
+ }
+ 
+ void svc(CPU& c, uint32_t imm, uint64_t pc) {
++    mk8_focus_gate();
+     if (!t_svc_role || !svc_profile_on()) return svc_impl(c, imm, pc);
+     uint64_t t0 = plat::monotonic_ns();
+     svc_impl(c, imm, pc);
 --- a/runtime/src/loader.cpp
 +++ b/runtime/src/loader.cpp
-@@ -91,8 +91,8 @@
+@@ -11,6 +11,7 @@
+ #include <nx/runtime.h>
+ 
+ #include "platform.h"
++#include "mk8_focus_policy.h"
+ 
+ namespace nx {
+ 
+@@ -91,8 +92,8 @@
  
  static void missing_stub(CPU& c) {
      // Name comes from the thunk that dispatched here.
@@ -454,7 +614,15 @@
  }
  
  uint64_t hle_address_or(const char* name, HleFn fallback) {
-@@ -270,8 +270,8 @@
+@@ -161,6 +162,7 @@
+ size_t g_fast_count = 0;
+ 
+ void call(CPU& c, uint64_t t) {
++    mk8_focus_gate();
+     for (size_t k = 0; k < g_fast_count; k++) {
+         const FastModule& m = g_fast[k];
+         uint64_t off = t - m.base;
+@@ -270,8 +272,8 @@
              }
              if (!target && !s.imported) target = lm.base + s.value;
              if (!target) {
@@ -467,7 +635,11 @@
              *slot = target + uint64_t(r.addend);
 --- a/runtime/src/main.cpp
 +++ b/runtime/src/main.cpp
-@@ -14,6 +14,7 @@
+@@ -11,9 +11,11 @@
+ 
+ #include "kernel.h"
+ #include "platform.h"
++#include "module_init.h"
  
  extern const nx::ModuleInfo nx_module_main;
  extern const nx::ModuleInfo nx_module_sdk;
@@ -475,7 +647,48 @@
  
  namespace nx {
  
-@@ -109,6 +110,7 @@
+@@ -47,7 +49,7 @@
+ // a TLS allocator (SetMemoryAllocatorForThreadLocal, in nninitStartup), so rtld's initializer callback does nothing
+ // and the modules are initialized right before nnMain, SDK first. Static TLS itself comes from the kernel
+ // (kernel.cpp: a block per thread at TLS region +0x1F0, where nn::os loads TPIDR_EL0 from).
+-constexpr uint64_t kDtInit = 0x30;
++// Initializer addresses are read from each loaded module, never assumed by SDK version.
+ 
+ static void call_preserving(CPU& c, uint64_t target) {
+     uint64_t saved[13];
+@@ -60,8 +62,9 @@
+ // in its first instructions (SDK 9: adjacent; SDK 16: another adrp in between). Follow the adrp targets until
+ // that load.
+ static uint64_t init_status_addr(const ModuleInfo& m) {
++    const auto init=module_init_offset(m);
+     uint64_t page[32] = {};
+-    for (uint64_t pc = m.base + kDtInit; pc < m.base + kDtInit + 0x40; pc += 4) {
++    for (uint64_t pc = m.base + init; pc < m.base + init + 0x40; pc += 4) {
+         uint32_t w = ld<uint32_t>(pc);
+         if ((w & 0x9F000000) == 0x90000000) {  // adrp
+             int64_t imm = int64_t(((w >> 5) & 0x7FFFF) << 2 | ((w >> 29) & 3)) << 43 >> 31;  // sign-extended << 12
+@@ -77,8 +80,9 @@
+ // and 14 are the start and end of the module's .tdata (checked on SDK 16: Wonder's main 0x359cc18..0x359cc28,
+ // sdk empty). Returns false when the pattern is not there (SDK 9 modules have no .tdata to worry about).
+ static bool tdata_range(const ModuleInfo& m, uint64_t& start, uint64_t& end) {
++    const auto init=module_init_offset(m);if(!init)return false;
+     uint64_t page[32] = {}, lo = ~0ull, hi = 0;
+-    for (uint64_t pc = m.base + kDtInit; pc < m.base + kDtInit + 0x100; pc += 4) {
++    for (uint64_t pc = m.base + init; pc < m.base + init + 0x100; pc += 4) {
+         uint32_t w = ld<uint32_t>(pc);
+         if ((w & 0x9F000000) == 0x90000000) {  // adrp
+             int64_t imm = int64_t(((w >> 5) & 0x7FFFF) << 2 | ((w >> 29) & 3)) << 43 >> 31;
+@@ -94,7 +98,8 @@
+ }
+ 
+ static void init_module(CPU& c, const ModuleInfo& m) {
+-    call_preserving(c, m.base + kDtInit);
++    const auto init=module_init_offset(m);if(!init)return;
++    call_preserving(c, m.base + init);
+     uint32_t status = ld<uint32_t>(init_status_addr(m));
+     if (status == 1)
+         for (size_t k = 0; k < m.init_count; k++) call_preserving(c, m.base + m.init_array[k]);
+@@ -109,6 +114,7 @@
  // set up by now, so they run here, right before the real nnMain.
  static void nn_main(CPU& c) {
      init_module(c, nx_module_sdk);
@@ -483,7 +696,7 @@
      init_module(c, nx_module_main);
      game::after_init();
      log("entering nnMain");
-@@ -142,8 +144,8 @@
+@@ -142,8 +148,8 @@
      if (plat::setting("trace") == "1") g_trace = true;
      memory_init();
      kernel_init();
@@ -506,11 +719,123 @@
      reserve(kAliasBase, kAliasSize, "alias");
      reserve(kStackBase, kStackSize, "stack");
 --- /dev/null
++++ b/runtime/src/mk8_focus_policy.cpp
+@@ -0,0 +1,41 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "mk8_focus_policy.h"
++#include "platform.h"
++#define WIN32_LEAN_AND_MEAN
++#define NOMINMAX
++#include <windows.h>
++#include <atomic>
++#include <mutex>
++#include <algorithm>
++namespace nx {
++namespace {
++std::mutex lock;HWND display{};uint64_t generation{};bool configured=false,out_of_focus=false;
++std::atomic<bool> enabled=false;
++bool live(){DWORD process=0;return display&&IsWindow(display)&&GetWindowThreadProcessId(display,&process)&&process==GetCurrentProcessId()&&generation==plat::window_generation();}
++}
++void mk8_bind_display(void* window,uint64_t value){std::lock_guard guard(lock);display=static_cast<HWND>(window);generation=value;if(!live())fatal("focus policy requires an owned live display");}
++uint32_t mk8_prepare_focus(IpcCtx& c){
++ if(!c.a.empty()||!c.b.empty()||!c.x.empty()||!c.c.empty()||!c.in_copy.empty()||!c.in_move.empty()||!c.in_objects.empty()||c.pid)return 0xe401;
++ if(c.cmd==13){
++  if((c.in_size!=3&&c.in_size!=4)||!c.in||c.in[0]!=0||c.in[1]!=0||c.in[2]!=1||(c.in_size==4&&c.in[3]!=0))
++   fatal("unsupported MK8D focus configuration");
++ }else if(c.cmd==16){
++  if((c.in_size!=1&&c.in_size!=4)||!c.in||c.in[0]>1||std::any_of(c.in+1,c.in+c.in_size,[](uint8_t b){return b!=0;}))return 0xe401;
++ }else fatal("unsupported focus command");
++ {std::lock_guard guard(lock);if(!live())return 0xe401;}
++ const auto command=c.cmd;const bool value=command==16&&c.in[0];
++ c.validate_reply=[]{std::lock_guard guard(lock);return live();};
++ c.commit_reply=[command,value]{std::lock_guard guard(lock);if(!live())fatal("display lost after focus response write");if(command==13){configured=true;enabled.store(true,std::memory_order_release);}else out_of_focus=value;log("am: native focus policy committed command=%u suspend_hidden=1 suspend_out_of_focus=%u",command,unsigned(out_of_focus));};
++ return 0;
++}
++Mk8FocusSnapshot mk8_focus_snapshot(){std::lock_guard guard(lock);return {configured,false,false,true,out_of_focus};}
++void mk8_focus_gate(){
++ if(!enabled.load(std::memory_order_acquire))return;
++ for(;;){
++  bool park;
++  {std::lock_guard guard(lock);if(!live())fatal("owned native display closed");park=!IsWindowVisible(display)||IsIconic(display)||(out_of_focus&&GetForegroundWindow()!=display);}
++  if(!park)return;
++  Sleep(5); // UI runs on its separate native thread; never activate a foreign window.
++ }
++}
++}
+--- /dev/null
++++ b/runtime/src/mk8_focus_policy.h
+@@ -0,0 +1,10 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "ipc.h"
++namespace nx {
++void mk8_bind_display(void* window,uint64_t generation);
++uint32_t mk8_prepare_focus(IpcCtx&);
++void mk8_focus_gate();
++struct Mk8FocusSnapshot{bool configured;bool notify;bool background;bool suspend;bool out_of_focus;};
++Mk8FocusSnapshot mk8_focus_snapshot();
++}
+--- /dev/null
++++ b/runtime/src/mk8_verified_services.cpp
+@@ -0,0 +1,44 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Bridge the existing reviewed native policy into the adopted IPC transport.
++#include "mk8_verified_services.h"
++#include "verified_services/services/parental_control.h"
++#include <nx/game.h>
++#include <filesystem>
++#include <fstream>
++#define WIN32_LEAN_AND_MEAN
++#define NOMINMAX
++#include <windows.h>
++namespace nx {
++namespace {
++native_services::AddOnProgramIdentity identity(){
++ const char* path=std::getenv("NX_NPDM"),*hex=std::getenv("NX_NPDM_SHA256");
++ if(!path||!hex||std::strlen(hex)!=64)fatal("verified parental policy needs pinned NPDM metadata");
++ std::ifstream f(std::filesystem::u8path(path),std::ios::binary|std::ios::ate);if(!f)fatal("cannot open NPDM metadata");auto n=f.tellg();if(n<128||n>1024*1024)fatal("NPDM metadata extent");std::vector<uint8_t> b(size_t(n),0);f.seekg(0);f.read(reinterpret_cast<char*>(b.data()),n);if(!f)fatal("NPDM read failed");
++ native_services::MetadataDigest expected{};auto digit=[](char c)->uint8_t{if(c>='0'&&c<='9')return uint8_t(c-'0');if(c>='a'&&c<='f')return uint8_t(c-'a'+10);fatal("NPDM SHA256 character");};for(size_t i=0;i<32;++i)expected[i]=uint8_t(digit(hex[2*i])*16+digit(hex[2*i+1]));
++ auto admitted=native_services::AddOnProgramIdentity::Admit(b,expected);if(admitted.ProgramId()!=game::kInfo.program_id)fatal("NPDM program does not match MK8D target");return admitted;
++}
++class VerifiedEndpoint final:public Service{
++ std::unique_ptr<native_services::Endpoint> endpoint;
++public:
++ VerifiedEndpoint(std::string name,std::unique_ptr<native_services::Endpoint> value):Service(std::move(name)),endpoint(std::move(value)){}
++ uint32_t handle(IpcCtx& c)override{
++  if(!c.a.empty()||!c.b.empty()||!c.x.empty()||!c.c.empty()||!c.in_copy.empty()||!c.in_move.empty()||!c.in_objects.empty())fatal("verified policy buffer/handle transport is not admitted");
++  native_services::Request request;request.command=c.cmd;request.process_id=GetCurrentProcessId();request.send_pid=c.send_pid;request.domain_payload=c.domain_payload;request.payload={reinterpret_cast<const std::byte*>(c.in),c.in_size};
++  auto reply=endpoint->Prepare(request);
++  if(reply.status!=native_services::Status::Ok)fatal("verified %s command %u rejected: %s",name.c_str(),c.cmd,reply.diagnostic.c_str());
++  if(reply.copied_event)fatal("verified policy event export not integrated");
++  c.out.resize(reply.payload.size());if(!c.out.empty())std::memcpy(c.out.data(),reply.payload.data(),c.out.size());
++  if(reply.moved_endpoint)c.out_objects.push_back(std::make_shared<VerifiedEndpoint>("IParentalControlService",std::move(reply.moved_endpoint)));
++  c.validate_reply=std::move(reply.validate);const auto result=reply.service_result;const auto command=c.cmd;const auto label=name;
++  c.commit_error_reply=result!=0;c.commit_reply=[commit=std::move(reply.commit),label,command,result]{if(commit)commit();log("verified native policy committed service=%s command=%u result=%x",label.c_str(),command,result);};
++  return result;
++ }
++};
++}
++std::shared_ptr<Service> mk8_verified_parental(const std::string& port){
++ using namespace native_services;std::shared_ptr<ParentalControlContext> context;
++ if(port=="pctl")context=ParentalControlContext::Unconfigured(GetCurrentProcessId(),identity());
++ else{ParentalPort selected;if(port=="pctl:s")selected=ParentalPort::RestrictedPeer;else if(port=="pctl:a")selected=ParentalPort::RestrictedApplication;else if(port=="pctl:r")selected=ParentalPort::RestrictedRecovery;else fatal("unknown parental port");context=ParentalControlContext::RestrictedPeer(GetCurrentProcessId(),identity(),selected);}
++ return std::make_shared<VerifiedEndpoint>(port,CreateParentalControlManager(context));
++}
++}
+--- /dev/null
++++ b/runtime/src/mk8_verified_services.h
+@@ -0,0 +1,4 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "ipc.h"
++namespace nx {std::shared_ptr<Service> mk8_verified_parental(const std::string& port);}
+--- /dev/null
 +++ b/runtime/src/mk8_window_controller.cpp
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,32 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "mk8_window_controller.h"
 +#include "platform.h"
++#include "mk8_focus_policy.h"
 +#define WIN32_LEAN_AND_MEAN
 +#define NOMINMAX
 +#include <windows.h>
@@ -532,7 +857,7 @@
 +  if(!valid())return 0xE401;
 +  auto self=std::static_pointer_cast<WindowController>(shared_from_this());
 +  c.validate_reply=[self]{return self->valid();};
-+  c.commit_reply=[self]{if(!self->valid())fatal("native window lease lost after response write");self->acquired=true;log("am: native window rights committed process=%lu generation=%llu",self->process,(unsigned long long)self->generation);};
++  c.commit_reply=[self]{if(!self->valid())fatal("native window lease lost after response write");self->acquired=true;mk8_bind_display(self->window,self->generation);log("am: native window rights committed process=%lu generation=%llu",self->process,(unsigned long long)self->generation);};
 +  return 0;
 + }
 +};
@@ -546,9 +871,260 @@
 +#pragma once
 +#include "ipc.h"
 +namespace nx { std::shared_ptr<Service> mk8_window_controller(); }
+--- /dev/null
++++ b/runtime/src/module_init.cpp
+@@ -0,0 +1,26 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "module_init.h"
++#include <cstring>
++#include <span>
++#include <stdexcept>
++namespace nx {
++uint64_t module_init_offset(const ModuleInfo& m){
++ if(m.data>UINT64_MAX-m.data_size)throw std::runtime_error("module image overflow");
++ const auto size=m.data+m.data_size;if(size<8||size>0x30000000||m.base>UINT64_MAX-size)throw std::runtime_error("module image extent");
++ std::span<const uint8_t> image(reinterpret_cast<const uint8_t*>(m.base),size_t(size));
++ auto u32=[&](uint64_t p){if(p>size||4>size-p)throw std::runtime_error("MOD0 read bound");uint32_t v;std::memcpy(&v,image.data()+p,4);return v;};
++ auto u64=[&](uint64_t p){if(p>size||8>size-p)throw std::runtime_error("dynamic read bound");uint64_t v;std::memcpy(&v,image.data()+p,8);return v;};
++ const uint64_t mod=u32(4);if(u32(mod)!=0x30444f4d)throw std::runtime_error("MOD0 initializer metadata magic");
++ const int64_t dynamic=int64_t(mod)+int32_t(u32(mod+4));if(dynamic<0||uint64_t(dynamic)>size)throw std::runtime_error("dynamic metadata offset");
++ bool found=false,ended=false;uint64_t init=0;
++ for(uint64_t p=uint64_t(dynamic);p<=size&&16<=size-p;p+=16){
++  const auto tag=u64(p),value=u64(p+8);if(!tag){ended=true;break;}
++  if(tag==12){if(found)throw std::runtime_error("duplicate DT_INIT");found=true;init=value;}
++ }
++ if(!ended)throw std::runtime_error("unterminated module dynamic table");
++ if(!init)return 0;
++ if(init<m.text||init-m.text>=m.text_size||(init&3))throw std::runtime_error("DT_INIT outside executable text");
++ for(size_t i=0;i<m.func_count;++i)if(m.funcs[i].offset==init&&m.funcs[i].fn)return init;
++ throw std::runtime_error("DT_INIT has no static compiled entry");
++}
++}
+--- /dev/null
++++ b/runtime/src/module_init.h
+@@ -0,0 +1,4 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <nx/module.h>
++namespace nx {uint64_t module_init_offset(const ModuleInfo&);}
+--- /dev/null
++++ b/runtime/src/nvn/native_device.h
+@@ -0,0 +1,8 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++namespace nx::nvn {
++bool native_device_alive(uint64_t);
++bool initialize_native_device(uint64_t,uint32_t flags);
++void finalize_native_device(uint64_t);
++}
+--- a/runtime/src/nvn/nvn_device.cpp
++++ b/runtime/src/nvn/nvn_device.cpp
+@@ -1,129 +1,52 @@
+-// NVN device (docs/NVN.md, phases N2-N3). Values come from what the game checks and from the SDK's own NVN driver
+-// (recompiled in sdk; NX_NVN_REAL=1 records where each of its procs lives, see nvn_trace.cpp).
+-#include <map>
+-
+-#include <nx/runtime.h>
+-
+-namespace nx {
+-
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Native device admission; SDK constants are queried from compiled SDK getters.
++#include "nvn_vk.h"
++#include "native_device.h"
++#define WIN32_LEAN_AND_MEAN
++#define NOMINMAX
++#include <windows.h>
++#include <algorithm>
++namespace nx::nvn {
+ namespace {
+-
+-// nvnDeviceGetInteger(const NVNdevice*, NVNdeviceInfo pname, int* value).
+-// Read out of the SDK 16.2 driver (sdk+451090: a jump table over pname 0..0x62, constants inline or from a second
+-// table at sdk+440c80; see docs/nvn/API.md). 0, 1 are the API version: Wonder requires major == 55 and
+-// minor >= 15 (main+5a7b48). The "provisional" ones are fields the real nvnDeviceInitialize fills in its device
+-// struct; their values are placeholders until that init is read.
+-const std::map<uint32_t, int32_t> kDeviceInfo = {
+-    {0, 0x37},
+-    {1, 0xf},
+-    {2, 0xe},
+-    {3, 0x10000},
+-    {4, 0x100},
+-    {5, 0x8},
+-    {6, 0x10},
+-    {7, 0x4},
+-    {8, 0x10},
+-    {9, 0x20},
+-    {10, 0x10},
+-    {11, 0x4},
+-    {12, 0x4},
+-    {13, 0x4},
+-    {14, 0x10},
+-    {15, 0x20},
+-    {16, 0x20},
+-    {17, 0x100},
+-    {18, 0x100},
+-    {19, 0x4},
+-    {20, 0x8},
+-    {21, 0x200},
+-    {22, 0x100},
+-    {23, 0x2},  // provisional: the driver reads [dev+0xb4]
+-    {24, 0x1000},  // provisional: the driver reads [dev+0xb4]*[dev+0xac]
+-    {25, 0x1000},
+-    {26, 0x20000},
+-    {27, 0x10},
+-    {28, 0x600},
+-    {29, 0x400},
+-    {30, 0x40},
+-    {31, 0x600},
+-    {32, 0xffff},
+-    {33, 0xffff},
+-    {34, 0xffff},
+-    {35, 0x8},
+-    {36, 0x100000},
+-    {37, 0x1000},
+-    {38, 0x10},
+-    {39, 0x1000},
+-    {40, 0x1},
+-    {41, 0x1},
+-    {42, 0x1},
+-    {43, 0x40000},  // provisional: the driver reads [dev+0x20]<<10
+-    {44, 0xf},
+-    {45, 0x0},  // provisional: the driver reads [dev+0x3c]
+-    {46, 0x1},
+-    {47, 0x1},
+-    {48, 0x10},
+-    {49, 0x5},
+-    {50, 0x1},
+-    {51, 0x8},
+-    {52, 0x8},
+-    {53, 0x4},
+-    {54, 0x20},
+-    {55, 0x800},  // provisional: the driver reads [dev+0xac]
+-    {56, 0x0},  // provisional: the driver reads [dev+0x44]
+-    {57, 0x80},
+-    {58, 0x0},  // provisional: the driver reads [dev+0xc8]
+-    {59, 0x1},  // provisional: the driver reads !byte[dev+0x1b1d]
+-    {60, 0x4},
+-    {61, 0x0},  // provisional: the driver reads [dev+0x28]
+-    {62, 0x0},  // provisional: the driver reads [dev+0x40]
+-    {63, 0x0},  // provisional: the driver reads [dev+0x2c]
+-    {64, 0x0},  // provisional: the driver reads [dev+0x30]
+-    {65, 0x0},  // provisional: the driver reads [dev+0x34]
+-    {66, 0x1},
+-    {67, 0x1},
+-    {68, 0x1},
+-    {69, 0x1},
+-    {70, 0x5},
+-    {71, 0x1},
+-    {72, 0x1},
+-    {73, 0x1},
+-    {74, 0x1},
+-    {75, 0x1},
+-    {76, 0x1},
+-    {77, 0x10},
+-    {78, 0x400},
+-    {79, 0x20},
+-    {80, 0x1000},
+-    {81, 0x10000},
+-    {82, 0x10000},
+-    {83, 0x100},
+-    {84, 0x4000},
+-    {85, 0x40000},
+-    {86, 0x1000},
+-    {87, 0x1},
+-    {88, 0x4},
+-    {89, 0x2},
+-    {90, 0x0},
+-    {91, 0x1000},
+-    {92, 0x4000},
+-    {93, 0x1000},
+-    {94, 0x80},
+-    {95, 0x20},
+-    {96, 0xffff},
+-    {97, 0x1},
+-    {98, 0x0},  // provisional: the driver reads [dev+0xbc]
+-};
+-
+-void nvnDeviceGetInteger(CPU& c) {
+-    uint32_t pname = uint32_t(c.x[1]);
+-    auto it = kDeviceInfo.find(pname);
+-    if (it == kDeviceInfo.end()) log("nvn: nvnDeviceGetInteger(%u) unknown -> 0 (lr %s)", pname, describe(c.x[30]).c_str());
+-    if (c.x[2]) st<int32_t>(c.x[2], it == kDeviceInfo.end() ? 0 : it->second);
++struct Device final:Object{std::atomic<bool> ready=false;VkDevice backend=VK_NULL_HANDLE;};
++bool span_valid(uint64_t address,uint64_t bytes,uint32_t permissions){
++ if(!address||address>=(1ull<<39)||bytes>(1ull<<39)-address)return false;
++ for(uint64_t cursor=address;cursor<address+bytes;){auto v=vm_query(cursor);if(cursor<v.addr||cursor-v.addr>=v.size||(v.perm&permissions)!=permissions)return false;MEMORY_BASIC_INFORMATION info{};if(!VirtualQuery(reinterpret_cast<void*>(cursor),&info,sizeof(info))||info.State!=MEM_COMMIT||(info.Protect&(PAGE_GUARD|PAGE_NOACCESS)))return false;
++  if((permissions&2)&&!(info.Protect&(PAGE_READWRITE|PAGE_WRITECOPY|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY)))return false;
++  const auto end=std::min<uint64_t>(v.addr+v.size,reinterpret_cast<uint64_t>(info.BaseAddress)+info.RegionSize);if(end<=cursor)return false;cursor=std::min(end,address+bytes);
++ }return true;
+ }
+-
+-}  // namespace
+-
+-NX_HLE("nvnDeviceGetInteger", nvnDeviceGetInteger);
+-
+-}  // namespace nx
++}
++bool native_device_alive(uint64_t key){auto* d=get<Device>(key);return d&&d->ready.load(std::memory_order_acquire);}
++bool initialize_native_device(uint64_t key,uint32_t flags){
++ if(flags||!span_valid(key,7008,3))return false;
++ auto owned=std::make_unique<Device>();auto* identity=owned.get();
++ {std::lock_guard guard(objects_lock());if(objects().contains(key))return false;for(const auto& [k,v]:objects())if(dynamic_cast<Device*>(v.get()))return false;objects().emplace(key,std::move(owned));}
++ if(!initialize_backend()||!vk_device())fatal("native Vulkan device admission failed; process must stop");
++ {std::lock_guard guard(objects_lock());const auto it=objects().find(key);if(it==objects().end()||it->second.get()!=identity)fatal("native device publication identity changed");identity->backend=vk_device();identity->ready.store(true,std::memory_order_release);}
++ log("nvn: native device initialized guest=%llx flags=%u",(unsigned long long)key,flags);return true;
++}
++void finalize_native_device(uint64_t key){
++ if(!native_device_alive(key))fatal("native device finalize requires live identity");worker_finish();
++ {std::lock_guard guard(gpu_lock());if(!vk::p_vkDeviceWaitIdle||vk::p_vkDeviceWaitIdle(vk_device())!=VK_SUCCESS)fatal("native device drain failed");}
++ auto* device=get<Device>(key);if(!device)fatal("native device identity lost while draining");device->ready.store(false,std::memory_order_release);destroy(key);log("nvn: native device finalized");
++}
++namespace {
++void DeviceInitialize(CPU& c){const auto key=c.x[0],builder=c.x[1];if(!span_valid(builder,16,1)){c.x[0]=0;return;}const auto getter=real_proc(c,"nvnDeviceGetInteger");if(!getter)fatal("SDK integer getter is missing");const auto tmp=scratch(c,8);
++ guest_call(c,getter,{0,0,tmp});guest_call(c,getter,{0,1,tmp+4});const auto major=ld<uint32_t>(tmp),minor=ld<uint32_t>(tmp+4);
++ if(major!=53||minor!=105)fatal("unsupported MK8D native builder ABI %u.%u",major,minor);
++ // SDK53.105's own SetDefaults zeroes16bytes and SetFlags stores u32 at +0.
++ const auto flags=ld<uint32_t>(builder);log("nvn: admitted SDK builder ABI %u.%u",major,minor);log("nvn: native device request guest=%llx builder=%llx flags=%u",(unsigned long long)key,(unsigned long long)builder,flags);c.x[0]=initialize_native_device(key,flags)?1:0;}
++void DeviceFinalize(CPU& c){finalize_native_device(c.x[0]);}
++void DeviceGetInteger(CPU& c){
++ const auto pname=uint32_t(c.x[1]);if(c.x[0]&&!native_device_alive(c.x[0]))fatal("native device property requires live device");
++ if(!span_valid(c.x[2],4,2))fatal("native device property output is not writable");
++ if(pname>97)fatal("unsupported SDK device property %u",pname);
++ switch(pname){case 23:case 24:case 43:case 45:case 55:case 56:case 58:case 59:case 61:case 62:case 63:case 64:case 65:fatal("native hardware-dependent device property %u is not integrated",pname);default:break;}
++ driver(c,"nvnDeviceGetInteger",{0,pname,c.x[2]});log("nvn: SDK property %u delivered",pname);
++}
++}
++}
++NX_HLE("nvnDeviceInitialize",nx::nvn::DeviceInitialize);
++NX_HLE("nvnDeviceFinalize",nx::nvn::DeviceFinalize);
++NX_HLE("nvnDeviceGetInteger",nx::nvn::DeviceGetInteger);
+--- a/runtime/src/nvn/nvn_program.cpp
++++ b/runtime/src/nvn/nvn_program.cpp
+@@ -36,9 +36,10 @@
+         if (!pool || !control) {
+             log("nvn: program %llx stage %d: code %llx control %llx not found", (unsigned long long)c.x[0], k,
+                 (unsigned long long)code, (unsigned long long)control);
+-            continue;
++            fatal("native program shader pool/control is missing");
+         }
+         if (const ShaderInfo* s = shader_for(pool->memory + offset, control)) shaders.push_back(s);
++        else fatal("required offline shader translation is missing or unsupported");
+     }
+     static const bool trace = std::getenv("NX_TRACE_PROGRAMS") != nullptr;  // each program's stages when set
+     if (trace) {
 --- a/runtime/src/nvn/nvn_trace.cpp
 +++ b/runtime/src/nvn/nvn_trace.cpp
-@@ -73,7 +73,7 @@
+@@ -18,6 +18,7 @@
+ #include <string>
+ 
+ #include "nvn.h"
++#include "native_device.h"
+ #include "platform.h"
+ 
+ namespace nx {
+@@ -73,7 +74,7 @@
      }
      if (n == 1) log("nvn: first call of %s (lr %s)", name, describe(c.x[30]).c_str());
      // Initialize functions return NVNboolean: false would make the engine give up at the first object.
@@ -557,6 +1133,76 @@
  }
  
  // Builders, state objects and texture views only store and return fields: the driver's own code serves them.
+@@ -107,6 +108,7 @@
+ 
+ // PFNNVNGENERICFUNCPROC nvnDeviceGetProcAddress(const NVNdevice* device, const char* name)
+ void nvn_device_get_proc_address(CPU& c) {
++    if(c.x[0]&&!nvn::native_device_alive(c.x[0]))fatal("native resolver requires live device or null bootstrap");
+     std::string name = guest_str(c.x[1]);
+     if (g_trace) log("nvnDeviceGetProcAddress(%llx, %s)", (unsigned long long)c.x[0], name.c_str());
+     c.x[0] = proc_address(c, name);
+--- a/runtime/src/nvn/nvn_vk.cpp
++++ b/runtime/src/nvn/nvn_vk.cpp
+@@ -21,6 +21,7 @@
+ 
+ #include "nvn_vk.h"
+ #include "platform.h"
++#include "vi_state.h"
+ 
+ #include <nx/game.h>
+ 
+@@ -396,6 +397,7 @@
+ }  // namespace
+ 
+ std::recursive_mutex& gpu_lock() { return g_gpu; }
++bool initialize_backend(){std::lock_guard guard(g_gpu);return init();}
+ VkDevice vk_device() { return g_device; }
+ VkPhysicalDevice vk_physical() { return g_physical; }
+ VkQueue vk_queue() { return g_queue; }
+@@ -638,6 +640,7 @@
+ }
+ 
+ void gpu_present(uint64_t texture, const int32_t* crop) {
++    if(native_vi::scaling_mode()!=2)fatal("native presentation lacks the required VI scaling policy");
+     plat::perf_hint_thread();  // the thread that presents takes part in the frame (perf_hint.cpp)
+     std::lock_guard lk(g_gpu);
+     PresentTimer timer;
+--- a/runtime/src/nvn/nvn_vk.h
++++ b/runtime/src/nvn/nvn_vk.h
+@@ -35,6 +35,8 @@
+     bool uw = false;          // NX_ULTRAWIDE: a widened render target (nvn_ultrawide.cpp)
+ };
+ 
++std::recursive_mutex& gpu_lock();
++bool initialize_backend();
+ VkDevice vk_device();
+ bool vk_depth_clip_control();
+ // The core features the device was created with (all the GPU has): depthClamp, depthBiasClamp, depthBounds, ...
+--- a/runtime/src/platform_win.cpp
++++ b/runtime/src/platform_win.cpp
+@@ -188,10 +188,11 @@
+     int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2, y = (sh - h) / 2;
+     // NX_HEADLESS: created hidden (the surface still needs a window), never brought to the front.
+     const DWORD style = headless() ? (kWindowed & ~WS_VISIBLE) : kWindowed;
+-    g_window = CreateWindowW(wc.lpszClassName, (widen(nx::game::kInfo.title) + L" (Switch recomp)  -  F11: fullscreen").c_str(), style,
++    const bool inactive=std::getenv("NX_SHOW_INACTIVE")!=nullptr;
++    g_window = CreateWindowExW(inactive?WS_EX_NOACTIVATE:0,wc.lpszClassName, (widen(nx::game::kInfo.title) + L" (Switch recomp)  -  F11: fullscreen").c_str(), style,
+                              std::max(0, x), std::max(0, y), w, h, nullptr, nullptr, wc.hInstance, nullptr);
+     if (const char* f = std::getenv("NX_FULLSCREEN"); f && *f == '1' && !headless()) toggle_fullscreen(g_window);
+-    if (!headless()) SetForegroundWindow(g_window);
++    if (!headless()&&!inactive) SetForegroundWindow(g_window);
+     *ready = true;
+     MSG m;
+     while (GetMessageW(&m, nullptr, 0, 0) > 0) {
+@@ -462,7 +463,7 @@
+     return EXCEPTION_CONTINUE_SEARCH;
+ }
+ 
+-int main() {
++int platform_entry() {
+     nx::plat::start_memory_guard();  // before anything can grow: a leak must never freeze the machine (memguard_win.cpp)
+     SetUnhandledExceptionFilter(crash_handler);
+     if (const char* t = std::getenv("NX_THROW_TRACE"); t && *t == '1') AddVectoredExceptionHandler(1, throw_tracer);
 --- /dev/null
 +++ b/runtime/src/romfs_image.h
 @@ -0,0 +1,101 @@
@@ -663,15 +1309,25 @@
 +}
 --- a/runtime/src/svc_am.cpp
 +++ b/runtime/src/svc_am.cpp
-@@ -3,6 +3,7 @@
+@@ -3,6 +3,8 @@
  #include <deque>
  
  #include "ipc.h"
 +#include "mk8_window_controller.h"
++#include "mk8_focus_policy.h"
  #include "language.h"
  
  namespace nx {
-@@ -95,11 +96,7 @@
+@@ -84,6 +86,8 @@
+ 
+ std::shared_ptr<Service> self_controller() {
+     return svc("ISelfController", [](Service& s) {
++        s.cmds[13]=mk8_prepare_focus;
++        s.cmds[16]=mk8_prepare_focus;
+         s.cmds[40] = [](IpcCtx& c) { c.push<uint64_t>(1); return 0u; };  // CreateManagedDisplayLayer
+         s.cmds[0] = [](IpcCtx&) { return 0u; };                             // Exit
+         s.cmds[62] = [](IpcCtx&) { return 0u; };                            // SetIdleTimeDetectionExtension
+@@ -95,11 +99,7 @@
      });
  }
  
@@ -684,6 +1340,997 @@
  
  std::shared_ptr<Service> application_functions() {
      return svc("IApplicationFunctions", [](Service& s) {
+--- a/runtime/src/svc_misc.cpp
++++ b/runtime/src/svc_misc.cpp
+@@ -1,6 +1,7 @@
+ // Small services that only need to answer "yes, fine": parental controls, add-on content, logging, power.
+ #include <cstdlib>
+ #include "ipc.h"
++#include "mk8_verified_services.h"
+ 
+ namespace nx {
+ 
+@@ -24,10 +25,10 @@
+     s.cmds[1] = [](IpcCtx& c) { c.push_object(parental_control()); return 0u; };  // CreateServiceWithoutInitialize
+ }
+ 
+-ServiceRegistrar r_pctl("pctl", [] { return make("pctl", pctl); });
+-ServiceRegistrar r_pctl_s("pctl:s", [] { return make("pctl:s", pctl); });
+-ServiceRegistrar r_pctl_a("pctl:a", [] { return make("pctl:a", pctl); });
+-ServiceRegistrar r_pctl_r("pctl:r", [] { return make("pctl:r", pctl); });
++ServiceRegistrar r_pctl("pctl", [] { return mk8_verified_parental("pctl"); });
++ServiceRegistrar r_pctl_s("pctl:s", [] { return mk8_verified_parental("pctl:s"); });
++ServiceRegistrar r_pctl_a("pctl:a", [] { return mk8_verified_parental("pctl:a"); });
++ServiceRegistrar r_pctl_r("pctl:r", [] { return mk8_verified_parental("pctl:r"); });
+ 
+ ServiceRegistrar r_lm("lm", [] {
+     return make("lm", [](Service& s) {
+--- /dev/null
++++ b/runtime/src/verified_services/event.cpp
+@@ -0,0 +1,170 @@
++#include "event.h"
++#include <array>
++#include <chrono>
++#include <mutex>
++namespace native {
++namespace {
++std::mutex synchronization;
++class SteadyClock final : public EventClock {
++  const std::chrono::steady_clock::time_point origin_ =
++      std::chrono::steady_clock::now();
++
++public:
++  uint64_t NowNs() const noexcept override {
++    const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
++                             std::chrono::steady_clock::now() - origin_)
++                             .count();
++    return elapsed > 0 ? uint64_t(elapsed) : 0;
++  }
++};
++std::shared_ptr<const EventClock> DefaultClock() {
++  static const auto clock = std::make_shared<SteadyClock>();
++  return clock;
++}
++} // namespace
++namespace detail {
++struct EventWaitNode {
++  EventWaitState *state{};
++  NativeEvent *event{};
++  EventWaitNode *previous{}, *next{};
++  bool linked = false;
++};
++struct EventWaitState {
++  std::array<EventRef, 64> events;
++  std::array<EventWaitNode, 64> nodes;
++  size_t count = 0;
++  std::shared_ptr<const EventClock> clock;
++  uint64_t deadline = 0;
++  bool finite = false;
++  EventWaitOutcome outcome{EventWaitStatus::Pending, -1};
++  void Unlink() noexcept {
++    for (size_t i = 0; i < count; ++i) {
++      auto &node = nodes[i];
++      if (!node.linked)
++        continue;
++      if (node.previous)
++        node.previous->next = node.next;
++      else
++        node.event->waiters_ = node.next;
++      if (node.next)
++        node.next->previous = node.previous;
++      node.linked = false;
++      node.previous = node.next = nullptr;
++    }
++  }
++  bool Complete(EventWaitStatus status, int32_t index) noexcept {
++    if (outcome.status != EventWaitStatus::Pending)
++      return false;
++    outcome = {status, index};
++    Unlink();
++    return true;
++  }
++  bool Expire() noexcept {
++    return outcome.status == EventWaitStatus::Pending && finite &&
++           clock->NowNs() >= deadline &&
++           Complete(EventWaitStatus::TimedOut, -1);
++  }
++  void Notify(NativeEvent *event) noexcept {
++    if (Expire())
++      return;
++    for (size_t i = 0; i < count; ++i)
++      if (events[i].get() == event) {
++        Complete(EventWaitStatus::Signaled, int32_t(i));
++        return;
++      }
++  }
++  void Arm(int64_t timeout, bool cancelled) noexcept {
++    for (size_t i = 0; i < count; ++i)
++      if (events[i]->signaled_) {
++        outcome = {EventWaitStatus::Signaled, int32_t(i)};
++        return;
++      }
++    if (!timeout) {
++      outcome = {EventWaitStatus::TimedOut, 0};
++      return;
++    }
++    if (cancelled) {
++      outcome = {EventWaitStatus::Cancelled, 0};
++      return;
++    }
++    finite = timeout > 0;
++    if (finite) {
++      auto now = clock->NowNs();
++      auto ns = uint64_t(timeout);
++      deadline = now > UINT64_MAX - ns - 2 ? UINT64_MAX : now + ns + 2;
++    }
++    for (size_t i = 0; i < count; ++i) {
++      auto &node = nodes[i];
++      node.state = this;
++      node.event = events[i].get();
++      node.next = node.event->waiters_;
++      if (node.next)
++        node.next->previous = &node;
++      node.event->waiters_ = &node;
++      node.linked = true;
++    }
++  }
++};
++} // namespace detail
++NativeEvent::NativeEvent(uint64_t pid) : owner_(pid) {
++  if (!pid)
++    throw std::invalid_argument("event process ownership unavailable");
++}
++bool NativeEvent::IsSignaled() const noexcept {
++  std::lock_guard lock(synchronization);
++  return signaled_;
++}
++void NativeEvent::Signal() noexcept {
++  std::lock_guard lock(synchronization);
++  signaled_ = true;
++  while (waiters_)
++    waiters_->state->Notify(this);
++}
++void NativeEvent::Clear() noexcept {
++  std::lock_guard lock(synchronization);
++  signaled_ = false;
++}
++bool NativeEvent::Reset() noexcept {
++  std::lock_guard lock(synchronization);
++  bool old = signaled_;
++  signaled_ = false;
++  return old;
++}
++NativeEventWait::NativeEventWait(std::span<const EventRef> events,
++                                 int64_t timeout,
++                                 std::shared_ptr<const EventClock> clock,
++                                 bool cancelled) {
++  if (events.size() > 64)
++    throw std::invalid_argument("native wait object bound");
++  for (const auto &event : events)
++    if (!event)
++      throw std::invalid_argument("null native wait object");
++  auto state = std::make_shared<detail::EventWaitState>();
++  state->count = events.size();
++  state->clock = clock ? std::move(clock) : DefaultClock();
++  for (size_t i = 0; i < events.size(); ++i)
++    state->events[i] = events[i];
++  {
++    std::lock_guard lock(synchronization);
++    state->Arm(timeout, cancelled);
++  }
++  state_ = std::move(state);
++}
++NativeEventWait::~NativeEventWait() {
++  std::lock_guard lock(synchronization);
++  state_->Complete(EventWaitStatus::Cancelled, -1);
++  state_->Unlink();
++}
++EventWaitOutcome NativeEventWait::Poll() const noexcept {
++  std::lock_guard lock(synchronization);
++  state_->Expire();
++  return state_->outcome;
++}
++bool NativeEventWait::Cancellation::Cancel() const noexcept {
++  if (!state_)
++    return false;
++  std::lock_guard lock(synchronization);
++  state_->Expire();
++  return state_->Complete(EventWaitStatus::Cancelled, -1);
++}
++} // namespace native
+--- /dev/null
++++ b/runtime/src/verified_services/event.h
+@@ -0,0 +1,76 @@
++#pragma once
++#include "native_handles.h"
++#include <cstdint>
++#include <memory>
++#include <span>
++#include <stdexcept>
++namespace native {
++namespace detail {
++struct EventWaitState;
++struct EventWaitNode;
++} // namespace detail
++// Actual server-owned manual-reset state. Guests receive only readable handles.
++class NativeEvent final {
++public:
++  explicit NativeEvent(uint64_t process_id);
++  uint64_t OwnerProcessId() const noexcept { return owner_; }
++  bool IsSignaled() const noexcept;
++  void Signal() noexcept;
++  void Clear() noexcept;
++  bool Reset() noexcept;
++
++private:
++  friend struct detail::EventWaitState;
++  const uint64_t owner_;
++  bool signaled_ = false;
++  detail::EventWaitNode *waiters_ = nullptr;
++};
++using EventRef = std::shared_ptr<NativeEvent>;
++class ScopedEventExport {
++public:
++  virtual ~ScopedEventExport() = default;
++  virtual uint32_t Handle() const noexcept = 0;
++  virtual bool Commit() noexcept = 0;
++};
++class EventClock {
++public:
++  virtual ~EventClock() = default;
++  // Monotonic, bounded, nonthrowing; must not reenter event synchronization.
++  virtual uint64_t NowNs() const noexcept = 0;
++};
++enum class EventWaitStatus { Pending, Signaled, TimedOut, Cancelled };
++struct EventWaitOutcome {
++  EventWaitStatus status;
++  int32_t index;
++};
++// Registration never blocks an owner. Signal/timeout/cancel establish one
++// outcome under the shared synchronization lock, including pulses cleared
++// before polling.
++class NativeEventWait final {
++public:
++  class Cancellation {
++  public:
++    Cancellation() = default;
++    bool Cancel() const noexcept;
++
++  private:
++    friend class NativeEventWait;
++    explicit Cancellation(std::shared_ptr<detail::EventWaitState> state)
++        : state_(std::move(state)) {}
++    std::shared_ptr<detail::EventWaitState> state_;
++  };
++  NativeEventWait(std::span<const EventRef>, int64_t timeout_ns,
++                  std::shared_ptr<const EventClock> clock = {},
++                  bool initially_cancelled = false);
++  ~NativeEventWait();
++  NativeEventWait(const NativeEventWait &) = delete;
++  NativeEventWait &operator=(const NativeEventWait &) = delete;
++  EventWaitOutcome Poll() const noexcept;
++  Cancellation CancellationHandle() const noexcept {
++    return Cancellation(state_);
++  }
++
++private:
++  std::shared_ptr<detail::EventWaitState> state_;
++};
++} // namespace native
+--- /dev/null
++++ b/runtime/src/verified_services/native_handles.h
+@@ -0,0 +1,13 @@
++#pragma once
++#include <cstdint>
++namespace native {
++inline constexpr uint32_t MainThreadHandle = 0x100;
++inline constexpr uint32_t SessionHandleBegin = 0x10000,
++                          SessionHandleEnd = 0x20000;
++inline constexpr uint32_t EventHandleBegin = 0x20000, EventHandleEnd = 0x30000;
++inline constexpr uint32_t CurrentThreadHandle = 0xffff8000u,
++                          CurrentProcessHandle = 0xffff8001u;
++static_assert(MainThreadHandle < SessionHandleBegin &&
++              SessionHandleEnd <= EventHandleBegin &&
++              EventHandleEnd < CurrentThreadHandle);
++} // namespace native
+--- /dev/null
++++ b/runtime/src/verified_services/services/addon_content.cpp
+@@ -0,0 +1,152 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Semantic sources: pinned native AOC research, addon_content_manager.cpp,
++// common_funcs.h and program_metadata.h. No Core/provider implementation imported.
++#include "addon_content.h"
++#include <algorithm>
++#include <atomic>
++#include <limits>
++#include <stdexcept>
++#include <windows.h>
++#include <bcrypt.h>
++namespace native_services {
++namespace {
++uint64_t Little(std::span<const uint8_t> bytes,size_t at,size_t size) {
++    if(at>bytes.size() || size>bytes.size()-at || size>8)throw std::invalid_argument("NPDM field bounds");
++    uint64_t result=0;for(size_t i=0;i<size;++i)result|=uint64_t(bytes[at+i])<<(8*i);return result;
++}
++uint64_t NewGeneration() {
++    static std::atomic<uint64_t> next{1};
++    auto current=next.load();
++    while(current!=UINT64_MAX){if(next.compare_exchange_weak(current,current+1))return current;}
++    throw std::runtime_error("native AOC context identities exhausted");
++}
++bool Room(uint64_t value){return value!=UINT64_MAX;}
++Reply Decline(Status status,std::string message){Reply r;r.status=status;r.diagnostic=std::move(message);return r;}
++void Scalar(Reply& reply,uint64_t value,size_t size) {
++    reply.payload.resize(size);for(size_t i=0;i<size;++i)reply.payload[i]=std::byte(value>>(8*i));
++}
++}
++MetadataDigest HashProgramMetadata(std::span<const uint8_t> bytes) {
++    if(bytes.size()<0x80 || bytes.size()>1024*1024)throw std::invalid_argument("bounded actual NPDM required");
++    BCRYPT_ALG_HANDLE algorithm=nullptr;MetadataDigest digest{};
++    if(BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,nullptr,0)<0)
++        throw std::runtime_error("NPDM SHA256 provider failed");
++    const auto result=BCryptHash(algorithm,nullptr,0,const_cast<PUCHAR>(bytes.data()),ULONG(bytes.size()),
++                                 digest.data(),ULONG(digest.size()));
++    const auto closed=BCryptCloseAlgorithmProvider(algorithm,0);
++    if(result<0 || closed<0)throw std::runtime_error("NPDM SHA256 failed");
++    return digest;
++}
++AddOnProgramIdentity AddOnProgramIdentity::Admit(std::span<const uint8_t> bytes,const MetadataDigest& expected) {
++    if(std::all_of(expected.begin(),expected.end(),[](uint8_t n){return n==0;}) || HashProgramMetadata(bytes)!=expected)
++        throw std::invalid_argument("NPDM is not the admitted SHA-bound metadata");
++    if(Little(bytes,0,4)!=0x4154454d)throw std::invalid_argument("NPDM META magic");
++    const auto aci=Little(bytes,0x70,4),size=Little(bytes,0x74,4);
++    if(aci<0x80 || aci>bytes.size() || size<0x40 || size>bytes.size()-aci ||
++       Little(bytes,size_t(aci),4)!=0x30494341)throw std::invalid_argument("NPDM ACI extent/magic");
++    const auto program=Little(bytes,size_t(aci)+0x10,8);
++    if(!program)throw std::invalid_argument("NPDM application ProgramID zero");
++    return AddOnProgramIdentity(program,bytes.size(),aci,size,expected);
++}
++MountedAddOnCatalog::MountedAddOnCatalog(std::vector<MountedAddOnEntry> input) {
++    if(input.size()>4096)throw std::invalid_argument("native mounted catalog bound");
++    for(const auto& entry:input)
++        if(entry.title_id && entry.kind==MountedContentKind::AddOnData && entry.parsed_success)
++            entries_.push_back(entry.title_id);
++    std::sort(entries_.begin(),entries_.end());
++    entries_.erase(std::unique(entries_.begin(),entries_.end()),entries_.end());
++}
++uint32_t CountMountedAddOns(uint64_t current,const MountedAddOnCatalog& catalog,
++                           std::span<const DisabledAddOnPolicy> disabled) {
++    if(!current)throw std::invalid_argument("native AOC current ProgramID required");
++    for(const auto& policy:disabled)if(policy.program_id==current && policy.dlc_disabled)return 0;
++    // Count's key is the actual current ProgramID; only entries are base-masked.
++    // Future List3 uses a different normalized current/policy key and stays closed.
++    return uint32_t(std::count_if(catalog.Entries().begin(),catalog.Entries().end(),
++        [current](uint64_t entry){return (entry&UINT64_C(0xffffffffffffe000))==current;}));
++}
++std::optional<uint64_t> AddOnBaseFallback(uint64_t program,AddOnControlState control) {
++    if(!program || control!=AddOnControlState::NotMounted)return {};
++    return (program&UINT64_C(0xffffffffffffe000))+0x1000;
++}
++AddOnContentContext::AddOnContentContext(uint64_t pid,AddOnProgramIdentity program,native::EventRef event)
++    :process_(pid),program_(std::move(program)),catalog_(std::vector<MountedAddOnEntry>{}),disabled_(),event_(std::move(event)),generation_(NewGeneration()) {
++    if(!pid || !event_ || event_->OwnerProcessId()!=pid || event_->IsSignaled())
++        throw std::invalid_argument("native AOC requires actual owned initially unsignaled event");
++}
++std::shared_ptr<AddOnContentContext> AddOnContentContext::BaseGameOnly(uint64_t pid,AddOnProgramIdentity identity,native::EventRef event) {
++    return std::shared_ptr<AddOnContentContext>(new AddOnContentContext(pid,std::move(identity),std::move(event)));
++}
++void AddOnContentContext::Owner() const {
++    if(owner_!=std::this_thread::get_id())throw std::runtime_error("native AOC owner thread mismatch");
++}
++bool AddOnContentContext::Live() const noexcept {return owner_==std::this_thread::get_id() && live_ && !uncertain_;}
++AddOnContentSnapshot AddOnContentContext::Snapshot() const {
++    Owner();AddOnContentSnapshot s;s.configured=true;s.live=Live();s.retired=retired_;s.postwrite_uncertainty=uncertain_;
++    s.process_id=process_;s.program_id=program_.ProgramId();s.context_generation=generation_;s.catalog_generation=1;
++    s.catalog_entries=catalog_.Entries().size();s.disabled_policy_entries=disabled_.size();
++    s.npdm_bytes=program_.MetadataBytes();s.aci_offset=program_.AciOffset();s.aci_bytes=program_.AciBytes();s.npdm_sha256=program_.Digest();
++    s.endpoint_constructions=constructions_;s.control=AddOnControlState::NotMounted;s.event_present=bool(event_);
++    s.event_signaled=event_->IsSignaled();s.event_owner=event_->OwnerProcessId();s.commands=facts_;return s;
++}
++void AddOnContentContext::Retire(){Owner();live_=false;retired_=true;pending_.reset();validated_=0;}
++AddOnContentContext::Ticket AddOnContentContext::Prepare(unsigned index) {
++    Owner();if(!Live() || index>=facts_.size() || !Room(next_) || !Room(facts_[index].prepared))
++        throw std::runtime_error("native AOC reply preparation authority exhausted");
++    Ticket ticket{++next_,generation_,index};pending_=ticket;validated_=0;++facts_[index].prepared;return ticket;
++}
++bool AddOnContentContext::Validate(Ticket ticket) {
++    if(!Live() || !pending_ || pending_->ordinal!=ticket.ordinal || ticket.generation!=generation_ ||
++       ticket.index>=facts_.size() || pending_->index!=ticket.index || ticket.ordinal<=consumed_ ||
++       !Room(facts_[ticket.index].validated))return false;
++    validated_=ticket.ordinal;++facts_[ticket.index].validated;return true;
++}
++void AddOnContentContext::CommitAfterReplyWrite(Ticket ticket) {
++    Owner();
++    if(ticket.index>=facts_.size())throw std::runtime_error("native AOC invalid commit index");
++    auto& facts=facts_[ticket.index];
++    if(Room(facts.commit_callbacks))++facts.commit_callbacks;else uncertain_=true;
++    if(!Live() || !pending_ || pending_->ordinal!=ticket.ordinal || pending_->index!=ticket.index ||
++       ticket.generation!=generation_ || validated_!=ticket.ordinal || ticket.ordinal<=consumed_ || !Room(facts.committed)) {
++        uncertain_=true;live_=false;throw std::runtime_error("native AOC post-write authority uncertainty; guest must stop");
++    }
++    consumed_=ticket.ordinal;pending_.reset();validated_=0;++facts.committed;
++}
++class AddOnContentEndpoint final:public Endpoint {
++    std::shared_ptr<AddOnContentContext> context_;
++public:
++    explicit AddOnContentEndpoint(std::shared_ptr<AddOnContentContext> context):context_(std::move(context)){}
++    Reply Prepare(const Request& request) override {
++        if(request.process_id!=context_->process_)return Decline(Status::InvalidProcess,"AOC owned process mismatch");
++        if(!context_->Live())return Decline(Status::InvalidState,"AOC context retired or owner invalid");
++        unsigned index;
++        switch(request.command){case 2:index=0;break;case 5:index=1;break;case 8:index=2;break;case 10:index=3;break;
++        default:return Decline(Status::Unsupported,"AOC command has no mounted-native implementation: "+std::to_string(request.command));}
++        if(!request.read_buffers.empty() || !request.copied_process_handles.empty() || !request.incoming_domain_objects.empty())
++            return Decline(Status::Malformed,"AOC scalar/event commands accept no buffers or input capabilities");
++        const bool pid=request.command!=8;
++        // Pinned libnx cmifMakeRequest: normal PID methods have8 semantic
++        // bytes plus4 tail bytes; normal no-PID event8 has8 tail bytes. Domain
++        // CMIF sizes exclude these transport tails. Tail bytes are ignored.
++        const size_t expected=request.domain_payload?(pid?8u:0u):(pid?12u:8u);
++        if(request.send_pid!=pid || request.payload.size()!=expected)
++            return Decline(Status::Malformed,"AOC PID descriptor or exact semantic body mismatch");
++        // ClientProcessId's raw u64 slot is not process identity. Router supplied
++        // the authenticated owner; no ProgramID is inferred from either PID.
++        Reply reply;reply.status=Status::Ok;
++        if(request.command==2)Scalar(reply,CountMountedAddOns(context_->program_.ProgramId(),context_->catalog_,context_->disabled_),4);
++        else if(request.command==5){const auto base=AddOnBaseFallback(context_->program_.ProgramId(),AddOnControlState::NotMounted);
++            if(!base)return Decline(Status::InvalidState,"AOC control metadata authority absent");Scalar(reply,*base,8);}
++        else reply.copied_event=context_->event_;
++        const auto ticket=context_->Prepare(index);
++        reply.validate=[context=context_,ticket]{return context->Validate(ticket);};
++        reply.commit=[context=context_,ticket]{context->CommitAfterReplyWrite(ticket);};
++        return reply;
++    }
++};
++std::unique_ptr<Endpoint> CreateAddOnContentService(std::shared_ptr<AddOnContentContext> context) {
++    if(!context || !context->Live())throw std::invalid_argument("AOC requires actual live owned mounted context");
++    context->Owner();if(!Room(context->constructions_))throw std::runtime_error("AOC endpoint count exhausted");
++    auto endpoint=std::make_unique<AddOnContentEndpoint>(context);++context->constructions_;return endpoint;
++}
++} // namespace native_services
+--- /dev/null
++++ b/runtime/src/verified_services/services/addon_content.h
+@@ -0,0 +1,80 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "router.h"
++#include <array>
++#include <optional>
++#include <thread>
++namespace native_services {
++using MetadataDigest = std::array<uint8_t,32>;
++MetadataDigest HashProgramMetadata(std::span<const uint8_t>);
++class AddOnProgramIdentity final {
++public:
++    static AddOnProgramIdentity Admit(std::span<const uint8_t>,const MetadataDigest& expected);
++    uint64_t ProgramId() const noexcept { return program_; }
++    uint64_t MetadataBytes() const noexcept { return bytes_; }
++    uint64_t AciOffset() const noexcept { return aci_; }
++    uint64_t AciBytes() const noexcept { return aci_bytes_; }
++    const MetadataDigest& Digest() const noexcept { return digest_; }
++private:
++    AddOnProgramIdentity(uint64_t p,uint64_t n,uint64_t a,uint64_t size,MetadataDigest d)
++        :program_(p),bytes_(n),aci_(a),aci_bytes_(size),digest_(d){}
++    uint64_t program_,bytes_,aci_,aci_bytes_;
++    MetadataDigest digest_;
++};
++enum class MountedContentKind { AddOnData, Other };
++struct MountedAddOnEntry { uint64_t title_id{};MountedContentKind kind{};bool parsed_success{}; };
++class MountedAddOnCatalog final {
++public:
++    explicit MountedAddOnCatalog(std::vector<MountedAddOnEntry>);
++    const std::vector<uint64_t>& Entries() const noexcept { return entries_; }
++private:
++    std::vector<uint64_t> entries_;
++};
++struct DisabledAddOnPolicy { uint64_t program_id{};bool dlc_disabled{}; };
++uint32_t CountMountedAddOns(uint64_t current_program,const MountedAddOnCatalog&,
++                           std::span<const DisabledAddOnPolicy>);
++enum class AddOnControlState { Unbound, NotMounted, Mounted, Malformed };
++std::optional<uint64_t> AddOnBaseFallback(uint64_t program,AddOnControlState);
++struct AddOnReplyFacts { uint64_t prepared{},validated{},commit_callbacks{},committed{}; };
++struct AddOnContentSnapshot {
++    unsigned schema=1;
++    bool configured{},live{},retired{},postwrite_uncertainty{};
++    uint64_t process_id{},program_id{},context_generation{},catalog_generation{},catalog_entries{},disabled_policy_entries{};
++    uint64_t npdm_bytes{},aci_offset{},aci_bytes{},endpoint_constructions{};
++    MetadataDigest npdm_sha256{};
++    AddOnControlState control=AddOnControlState::Unbound;
++    bool event_present{},event_signaled{};
++    uint64_t event_owner{};
++    std::array<AddOnReplyFacts,4> commands{}; // Commands2,5,8,10 respectively.
++};
++class AddOnContentContext final {
++public:
++    static constexpr const char* Profile="NativeMountedContentBaseGameOnly/v1";
++    static std::shared_ptr<AddOnContentContext> BaseGameOnly(uint64_t owned_process,
++        AddOnProgramIdentity,native::EventRef);
++    AddOnContentSnapshot Snapshot() const;
++    bool Live() const noexcept;
++    void Retire();
++private:
++    friend class AddOnContentEndpoint;
++    friend std::unique_ptr<Endpoint> CreateAddOnContentService(std::shared_ptr<AddOnContentContext>);
++    struct Ticket { uint64_t ordinal{},generation{};unsigned index{}; };
++    AddOnContentContext(uint64_t,AddOnProgramIdentity,native::EventRef);
++    void Owner() const;
++    Ticket Prepare(unsigned);
++    bool Validate(Ticket);
++    void CommitAfterReplyWrite(Ticket);
++    const uint64_t process_;
++    const AddOnProgramIdentity program_;
++    const MountedAddOnCatalog catalog_;
++    const std::vector<DisabledAddOnPolicy> disabled_;
++    const native::EventRef event_;
++    const std::thread::id owner_=std::this_thread::get_id();
++    const uint64_t generation_;
++    bool live_=true,retired_=false,uncertain_=false;
++    uint64_t constructions_=0,next_=0,validated_=0,consumed_=0;
++    std::optional<Ticket> pending_;
++    std::array<AddOnReplyFacts,4> facts_{};
++};
++std::unique_ptr<Endpoint> CreateAddOnContentService(std::shared_ptr<AddOnContentContext>);
++} // namespace native_services
+--- /dev/null
++++ b/runtime/src/verified_services/services/parental_control.cpp
+@@ -0,0 +1,164 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Pinned primary PCTL contracts and explicit Root-owned unconfigured policy.
++// No reference Core implementation or console/global permission state imported.
++#include "parental_control.h"
++#include <atomic>
++#include <algorithm>
++#include <exception>
++#include <stdexcept>
++namespace native_services {
++namespace {
++uint64_t NewGeneration() {
++    static std::atomic<uint64_t> next{1};auto value=next.load();
++    while(value!=UINT64_MAX){if(next.compare_exchange_weak(value,value+1))return value;}
++    throw std::runtime_error("native PCTL generations exhausted");
++}
++bool Room(uint64_t value){return value!=UINT64_MAX;}
++Reply Decline(Status status,std::string text){Reply r;r.status=status;r.diagnostic=std::move(text);return r;}
++bool Shape(const Request& r,bool pid) {
++    return r.send_pid==pid && r.payload.size()==(r.domain_payload?(pid?8u:0u):(pid?12u:8u)) &&
++           r.read_buffers.empty() && r.copied_process_handles.empty() && r.incoming_domain_objects.empty();
++}
++}
++uint32_t ParentalCapabilityResult(uint32_t caps,uint32_t command) {
++    uint32_t required=0;
++    switch(command){
++    case 1:required=uint32_t(ParentalCapability::Application)|uint32_t(ParentalCapability::System);break;
++    case 1031:required=uint32_t(ParentalCapability::Status)|uint32_t(ParentalCapability::Recovery);break;
++    case 1062:required=uint32_t(ParentalCapability::StereoVision);break;
++    // Primary1065's no-PIN helper and1432 have no capability check.
++    case 1065:case 1432:return 0;
++    default:throw std::invalid_argument("PCTL undeclared capability operation");
++    }
++    return (caps&required)?0:ParentalNoCapability;
++}
++ParentalControlContext::ParentalControlContext(uint64_t pid,AddOnProgramIdentity program,uint32_t caps,ParentalPort port)
++    :process_(pid),program_(std::move(program)),capabilities_(caps),port_(port),generation_(NewGeneration()) {
++    constexpr uint32_t known=0x8343;
++    if(!pid || !program_.ProgramId() || (caps&~known))throw std::invalid_argument("PCTL actual owned identity/primary capabilities required");
++}
++std::shared_ptr<ParentalControlContext> ParentalControlContext::Unconfigured(uint64_t pid,AddOnProgramIdentity program,uint32_t caps) {
++    return std::shared_ptr<ParentalControlContext>(new ParentalControlContext(pid,std::move(program),caps,ParentalPort::Primary));
++}
++std::shared_ptr<ParentalControlContext> ParentalControlContext::RestrictedPeer(uint64_t pid,AddOnProgramIdentity program,ParentalPort port) {
++    if(std::none_of(FixedRestrictedParentalPorts.begin(),FixedRestrictedParentalPorts.end(),
++        [port](const RestrictedParentalPort& fixed){return fixed.port==port;}))
++        throw std::invalid_argument("PCTL restricted factory requires a fixed adopted port");
++    return std::shared_ptr<ParentalControlContext>(new ParentalControlContext(pid,std::move(program),RestrictedPctlPeerCapabilities,port));
++}
++void ParentalControlContext::Owner() const {
++    if(owner_!=std::this_thread::get_id())throw std::runtime_error("native PCTL owner thread mismatch");
++}
++bool ParentalControlContext::Live() const noexcept{return owner_==std::this_thread::get_id() && live_ && !uncertain_;}
++ParentalControlSnapshot ParentalControlContext::Snapshot() const {
++    Owner();ParentalControlSnapshot s;s.configured=true;s.live=Live();s.retired=retired_;s.postwrite_uncertainty=uncertain_;
++    s.process_id=process_;s.program_id=program_.ProgramId();s.context_generation=generation_;s.capabilities=capabilities_;s.port=port_;
++    s.npdm_bytes=program_.MetadataBytes();s.aci_offset=program_.AciOffset();s.aci_bytes=program_.AciBytes();s.npdm_sha256=program_.Digest();
++    s.pin_configured=pin_configured_;s.stereo_restriction=stereo_restriction_;
++    s.manager_constructions=manager_constructions_;s.child_constructions=child_constructions_;s.manager_commands=manager_facts_;
++    for(const auto& child:children_){auto state=child->state;state.event_present=bool(child->event);
++        state.event_owner=child->event->OwnerProcessId();state.event_identity=uint64_t(reinterpret_cast<uintptr_t>(child->event.get()));
++        state.event_signaled=child->event->IsSignaled();s.children.push_back(state);}
++    return s;
++}
++void ParentalControlContext::Retire(){Owner();live_=false;retired_=true;pending_.reset();validated_=0;
++    for(const auto& child:children_)child->state.retired=true;}
++void ParentalControlContext::RetireChild(const std::shared_ptr<Child>& child) noexcept {
++    if(owner_!=std::this_thread::get_id())std::terminate();
++    child->state.retired=true;
++}
++std::shared_ptr<ParentalControlContext::Child> ParentalControlContext::NewChild(uint32_t command,bool initialize) {
++    Owner();if(!Live() || children_.size()>=1024 || !Room(child_constructions_))throw std::runtime_error("PCTL owned child capacity exhausted");
++    auto child=std::make_shared<Child>();child->state.generation=NewGeneration();child->state.create_command=command;
++    child->event=std::make_shared<native::NativeEvent>(process_);
++    // Root compatibility policy, not a claim that reference factory calls Initialize.
++    child->state.initialized=initialize;children_.push_back(child);++child_constructions_;return child;
++}
++ParentalReplyFacts& ParentalControlContext::Facts(Ticket t,const std::shared_ptr<Child>& child) {
++    if(t.manager){if(t.index>=manager_facts_.size())throw std::runtime_error("PCTL manager fact index");return manager_facts_[t.index];}
++    if(!child || t.index>=child->state.commands.size())throw std::runtime_error("PCTL child fact index");
++    return child->state.commands[t.index];
++}
++ParentalControlContext::Ticket ParentalControlContext::Prepare(bool manager,unsigned index,const std::shared_ptr<Child>& child,
++        bool initialize,bool publish,uint32_t result) {
++    Owner();if(!Live() || !Room(next_))throw std::runtime_error("PCTL reply authority exhausted");
++    Ticket t{next_+1,generation_,child?child->state.generation:0,index,manager,initialize,publish,result};auto& f=Facts(t,child);
++    if(!Room(f.prepared))throw std::runtime_error("PCTL prepared facts exhausted");
++    ++next_;pending_=t;validated_=0;++f.prepared;f.last_prepared_child_generation=t.child;return t;
++}
++bool ParentalControlContext::Validate(Ticket t,const std::shared_ptr<Child>& child) {
++    if(!Live() || !pending_ || pending_->ordinal!=t.ordinal || t.generation!=generation_ || t.ordinal<=consumed_ ||
++       pending_->child!=t.child || pending_->manager!=t.manager || pending_->index!=t.index)return false;
++    if(child && (child->state.generation!=t.child || child->state.retired ||
++        (t.publish?child->state.published:!child->state.published)))return false;
++    auto& f=Facts(t,child);if(!Room(f.validated))return false;validated_=t.ordinal;++f.validated;return true;
++}
++void ParentalControlContext::CommitAfterReplyWrite(Ticket t,const std::shared_ptr<Child>& child) {
++    Owner();auto& f=Facts(t,child);if(Room(f.commit_callbacks))++f.commit_callbacks;else uncertain_=true;
++    const bool child_live=!child || (child->state.generation==t.child && !child->state.retired &&
++        (t.publish?!child->state.published:child->state.published));
++    if(!Live() || !pending_ || pending_->ordinal!=t.ordinal || pending_->child!=t.child ||
++       pending_->manager!=t.manager || pending_->index!=t.index || t.generation!=generation_ ||
++       validated_!=t.ordinal || t.ordinal<=consumed_ || !child_live || !Room(f.committed)) {
++        uncertain_=true;live_=false;throw std::runtime_error("native PCTL post-write authority uncertainty; guest must stop");
++    }
++    if(child && t.publish)child->state.published=true;
++    if(child && t.initialize && !t.result)child->state.initialized=true;
++    consumed_=t.ordinal;pending_.reset();validated_=0;++f.committed;f.last_service_result=t.result;f.last_committed_child_generation=t.child;
++}
++Reply ParentalControlContext::Bind(Reply reply,bool manager,unsigned index,const std::shared_ptr<Child>& child,bool initialize,bool publish) {
++    const auto t=Prepare(manager,index,child,initialize,publish,reply.service_result);
++    auto self=shared_from_this();
++    reply.validate=[self,child,t]{return self->Validate(t,child);};
++    reply.commit=[self,child,t]{self->CommitAfterReplyWrite(t,child);};return reply;
++}
++class ParentalControlChildEndpoint final:public Endpoint {
++    std::shared_ptr<ParentalControlContext> context_;
++    std::shared_ptr<ParentalControlContext::Child> child_;
++public:
++    ParentalControlChildEndpoint(std::shared_ptr<ParentalControlContext> context,std::shared_ptr<ParentalControlContext::Child> child)
++        :context_(std::move(context)),child_(std::move(child)){}
++    ~ParentalControlChildEndpoint() override{context_->RetireChild(child_);}
++    Reply Prepare(const Request& r) override {
++        if(r.process_id!=context_->process_)return Decline(Status::InvalidProcess,"PCTL child owned process mismatch");
++        if(!context_->Live() || child_->state.retired || !child_->state.published)return Decline(Status::InvalidState,"PCTL child authority unpublished or retired");
++        unsigned index;
++        switch(r.command){case 1:index=0;break;case 1031:index=1;break;case 1062:index=2;break;case 1065:index=3;break;case 1432:index=4;break;
++        default:return Decline(Status::Unsupported,"PCTL child command has no owned native implementation: "+std::to_string(r.command));}
++        if(!Shape(r,false))return Decline(Status::Malformed,"PCTL child exact no-input shape required");
++        if(r.command!=1 && !child_->state.initialized)return Decline(Status::InvalidState,"PCTL child requires Initialize");
++        Reply reply;reply.status=Status::Ok;reply.service_result=ParentalCapabilityResult(context_->capabilities_,r.command);
++        if(r.command==1031)reply.payload={std::byte(reply.service_result?0:context_->pin_configured_)};
++        else if(r.command==1062)reply.payload={std::byte(reply.service_result?0:context_->stereo_restriction_)};
++        else if(r.command==1065){
++            if(context_->pin_configured_)return Decline(Status::Unsupported,"PCTL configured PIN permission policy is not implemented");
++            reply.payload={std::byte{1}}; // Primary helper's genuine no-PIN branch.
++        }else if(r.command==1432)reply.copied_event=child_->event;
++        return context_->Bind(std::move(reply),false,index,child_,r.command==1);
++    }
++};
++class ParentalControlManagerEndpoint final:public Endpoint {
++    std::shared_ptr<ParentalControlContext> context_;
++public:
++    explicit ParentalControlManagerEndpoint(std::shared_ptr<ParentalControlContext> context):context_(std::move(context)){}
++    Reply Prepare(const Request& r) override {
++        if(r.process_id!=context_->process_)return Decline(Status::InvalidProcess,"PCTL manager owned process mismatch");
++        if(!context_->Live())return Decline(Status::InvalidState,"PCTL manager context retired or owner invalid");
++        if(r.command!=0 && r.command!=1)return Decline(Status::Unsupported,"PCTL manager command is not implemented: "+std::to_string(r.command));
++        if(!Shape(r,true))return Decline(Status::Malformed,"PCTL manager PID descriptor/exact semantic body required");
++        // The raw ClientProcessId slot and arbitrary normal transport tail are
++        // ignored; authenticated Request.process_id and admitted ProgramID own state.
++        Reply reply;reply.status=Status::Ok;
++        if(r.command==0)reply.service_result=ParentalCapabilityResult(context_->capabilities_,1);
++        if(reply.service_result)return context_->Bind(std::move(reply),true,unsigned(r.command),{});
++        auto child=context_->NewChild(r.command,r.command==0);
++        reply.moved_endpoint=std::make_unique<ParentalControlChildEndpoint>(context_,child);
++        return context_->Bind(std::move(reply),true,unsigned(r.command),child,false,true);
++    }
++};
++std::unique_ptr<Endpoint> CreateParentalControlManager(std::shared_ptr<ParentalControlContext> context) {
++    if(!context || !context->Live())throw std::invalid_argument("PCTL requires live owned unconfigured policy");
++    context->Owner();if(!Room(context->manager_constructions_))throw std::runtime_error("PCTL manager constructions exhausted");
++    auto manager=std::make_unique<ParentalControlManagerEndpoint>(context);++context->manager_constructions_;return manager;
++}
++} // namespace native_services
+--- /dev/null
++++ b/runtime/src/verified_services/services/parental_control.h
+@@ -0,0 +1,106 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "addon_content.h"
++#include <array>
++#include <optional>
++#include <thread>
++namespace native_services {
++// Source-selected ports only; no caller names or capability overrides.
++enum class ParentalPort { Primary, RestrictedPeer, RestrictedApplication, RestrictedRecovery };
++struct RestrictedParentalPort { ParentalPort port; const char* name; };
++inline constexpr std::array<RestrictedParentalPort,3> FixedRestrictedParentalPorts{{
++    {ParentalPort::RestrictedPeer,"pctl:s"},
++    {ParentalPort::RestrictedApplication,"pctl:a"},
++    {ParentalPort::RestrictedRecovery,"pctl:r"}
++}};
++inline constexpr const char* ParentalPortName(ParentalPort port) noexcept {
++    if(port==ParentalPort::Primary)return "pctl";
++    for(const auto& fixed:FixedRestrictedParentalPorts)if(fixed.port==port)return fixed.name;
++    return "Unbound";
++}
++enum class ParentalCapability : uint32_t {
++    None=0,Application=1u<<0,SnsPost=1u<<1,Recovery=1u<<6,
++    Status=1u<<8,StereoVision=1u<<9,System=1u<<15
++};
++inline constexpr uint32_t NamedPctlCapabilities=0x303;
++inline constexpr uint32_t RestrictedPctlPeerCapabilities=0;
++inline constexpr uint32_t ParentalNoCapability=0x1068e;
++uint32_t ParentalCapabilityResult(uint32_t capabilities,uint32_t child_command);
++struct ParentalReplyFacts {
++    uint64_t prepared{},validated{},commit_callbacks{},committed{};
++    uint64_t last_prepared_child_generation{},last_committed_child_generation{};
++    uint32_t last_service_result{};
++};
++struct ParentalChildSnapshot {
++    uint64_t generation{};
++    uint32_t create_command{};
++    bool published{},initialized{},retired{},event_present{},event_signaled{};
++    uint64_t event_owner{},event_identity{}; // Actual object diagnostic only; never guest input/authority.
++    std::array<ParentalReplyFacts,5> commands{}; //1,1031,1062,1065,1432
++};
++struct ParentalControlSnapshot {
++    unsigned schema=1;
++    ParentalPort port=ParentalPort::Primary;
++    bool configured{},live{},retired{},postwrite_uncertainty{};
++    uint64_t process_id{},program_id{},context_generation{};
++    uint64_t npdm_bytes{},aci_offset{},aci_bytes{},manager_constructions{},child_constructions{};
++    MetadataDigest npdm_sha256{};
++    uint32_t capabilities{};
++    bool pin_configured{},stereo_restriction{};
++    std::array<ParentalReplyFacts,2> manager_commands{}; //0,1
++    std::vector<ParentalChildSnapshot> children;
++};
++using RestrictedParentalSnapshots=std::array<ParentalControlSnapshot,FixedRestrictedParentalPorts.size()>;
++class ParentalControlManagerEndpoint;
++class ParentalControlChildEndpoint;
++class ParentalControlContext final:public std::enable_shared_from_this<ParentalControlContext> {
++public:
++    static constexpr const char* Profile="UnconfiguredParentalPolicy/v1";
++    // Primary boot uses exactly0x303; other masks retain existing CPU denial locks.
++    // RestrictedPeer selects only a fixed capability-zero port from the list above.
++    // The default retains pctl:s; no arbitrary name/mask or global policy is admitted.
++    static std::shared_ptr<ParentalControlContext> Unconfigured(uint64_t owned_process,
++        AddOnProgramIdentity,uint32_t capabilities=NamedPctlCapabilities);
++    static std::shared_ptr<ParentalControlContext> RestrictedPeer(uint64_t owned_process,AddOnProgramIdentity,
++        ParentalPort port=ParentalPort::RestrictedPeer);
++    ParentalControlSnapshot Snapshot() const;
++    bool Live() const noexcept;
++    void Retire();
++private:
++    friend class ParentalControlManagerEndpoint;
++    friend class ParentalControlChildEndpoint;
++    friend std::unique_ptr<Endpoint> CreateParentalControlManager(std::shared_ptr<ParentalControlContext>);
++    struct Child {
++        ParentalChildSnapshot state;
++        native::EventRef event;
++    };
++    struct Ticket {
++        uint64_t ordinal{},generation{},child{};
++        unsigned index{};
++        bool manager{},initialize{},publish{};
++        uint32_t result{};
++    };
++    ParentalControlContext(uint64_t,AddOnProgramIdentity,uint32_t,ParentalPort);
++    void Owner() const;
++    std::shared_ptr<Child> NewChild(uint32_t,bool private_initialize);
++    void RetireChild(const std::shared_ptr<Child>&) noexcept;
++    Ticket Prepare(bool manager,unsigned index,const std::shared_ptr<Child>&,bool initialize,bool publish,uint32_t result);
++    bool Validate(Ticket,const std::shared_ptr<Child>&);
++    void CommitAfterReplyWrite(Ticket,const std::shared_ptr<Child>&);
++    ParentalReplyFacts& Facts(Ticket,const std::shared_ptr<Child>&);
++    Reply Bind(Reply,bool manager,unsigned,const std::shared_ptr<Child>&,bool initialize=false,bool publish=false);
++    const uint64_t process_;
++    const AddOnProgramIdentity program_;
++    const uint32_t capabilities_;
++    const ParentalPort port_;
++    const bool pin_configured_=false,stereo_restriction_=false;
++    const std::thread::id owner_=std::this_thread::get_id();
++    const uint64_t generation_;
++    bool live_=true,retired_=false,uncertain_=false;
++    uint64_t manager_constructions_=0,child_constructions_=0,next_=0,validated_=0,consumed_=0;
++    std::optional<Ticket> pending_;
++    std::array<ParentalReplyFacts,2> manager_facts_{};
++    std::vector<std::shared_ptr<Child>> children_;
++};
++std::unique_ptr<Endpoint> CreateParentalControlManager(std::shared_ptr<ParentalControlContext>);
++} // namespace native_services
+--- /dev/null
++++ b/runtime/src/verified_services/services/router.h
+@@ -0,0 +1,110 @@
++// SPDX-FileCopyrightText: Copyright 2026 suyu Emulator Project
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "../event.h"
++#include <cstddef>
++#include <cstdint>
++#include <functional>
++#include <map>
++#include <memory>
++#include <span>
++#include <string>
++#include <string_view>
++#include <vector>
++
++namespace native_services {
++inline constexpr uint32_t SessionHandleFirst=native::SessionHandleBegin;
++inline constexpr uint32_t SessionHandleLast=native::SessionHandleEnd-1;
++struct GuestMemory {
++    void* user{};
++    bool (*read)(void*, uint64_t, std::span<std::byte>){};
++    // Must preflight the complete destination: false means no bytes changed.
++    bool (*write)(void*, uint64_t, std::span<const std::byte>){};
++};
++enum class Status { Ok, Unsupported, Malformed, MemoryFault, InvalidHandle, InvalidProcess, InvalidState, Exhausted, SessionClosed };
++struct Outcome {
++    Status status{Status::Ok};
++    uint32_t kernel_result{};
++    uint32_t handle{};
++    std::string diagnostic;
++};
++struct Request {
++    uint32_t command{}, token{};
++    uint64_t process_id{}; // Supplied by the owning native process, never client PID bytes.
++    bool send_pid{};
++    std::span<const std::byte> payload;
++    struct ReadBuffer {
++        uint64_t address{}, size{};
++        // X buffers are copied into an actual owned per-session pointer arena.
++        // Borrowed only during Prepare; endpoints must not retain this view.
++        std::span<const std::byte> snapshot;
++        uint32_t pointer_index{UINT32_MAX};
++    };
++    std::span<const ReadBuffer> read_buffers;
++    GuestMemory memory;
++    // Every handle here passed the owning CPU's typed-process validator.
++    std::span<const uint32_t> copied_process_handles;
++    std::span<const uint32_t> incoming_domain_objects;
++    // Passive parse fact: domain payload has an explicit semantic CMIF size.
++    bool domain_payload{};
++};
++class Endpoint;
++struct Reply {
++    Status status{Status::Unsupported};
++    uint32_t service_result{};
++    std::vector<std::byte> payload;
++    std::string diagnostic;
++    // Prepare must not change externally visible state. Commit runs only after a
++    // successful complete response write. A delivery exception is fatal to native
++    // bring-up: the host must stop before resuming guest code, never swallow it.
++    std::function<void()> commit;
++    std::unique_ptr<Endpoint> moved_endpoint;
++    native::EventRef copied_event;
++    // Optional pure epoch check immediately before the response write.
++    std::function<bool()> validate;
++};
++class Endpoint {
++public:
++    virtual ~Endpoint() = default;
++    virtual bool AcceptsProcessHandles() const { return false; }
++    virtual bool AcceptsDomainObjects() const { return false; }
++    virtual Reply Prepare(const Request&) = 0;
++};
++class Router {
++public:
++    explicit Router(uint64_t process_id,uint16_t pointer_buffer_capacity=0);
++    // Factory must create a real implemented endpoint, without external effects.
++    bool Register(std::string name, std::function<std::unique_ptr<Endpoint>()> factory);
++    void SetProcessHandleValidator(std::function<bool(uint32_t,uint64_t)> validator) {
++        process_handle_validator_=std::move(validator);
++    }
++    void SetEventExporter(std::function<std::unique_ptr<native::ScopedEventExport>(
++                              const native::EventRef&,uint64_t)> exporter) {
++        event_exporter_=std::move(exporter);
++    }
++    Outcome Connect(std::string_view name);
++    Outcome Send(uint32_t handle, GuestMemory memory, uint64_t tls_base, uint64_t process_id);
++    Outcome Close(uint32_t handle);
++    size_t SessionCount() const { return sessions_.size(); }
++private:
++    struct ServiceState {
++        bool sm{},initialized{},domain{};
++        std::unique_ptr<Endpoint> endpoint;
++        uint32_t next_object_id{1};
++        std::map<uint32_t,std::unique_ptr<Endpoint>> domain_objects;
++    };
++    struct Session {
++        bool protocol_closed{};
++        uint64_t process{};
++        std::shared_ptr<ServiceState> state;
++        std::vector<std::byte> pointer_arena;
++    };
++    uint64_t process_id_;
++    uint16_t pointer_buffer_capacity_;
++    uint32_t next_handle_{SessionHandleFirst};
++    std::map<std::string, std::function<std::unique_ptr<Endpoint>()>> endpoints_;
++    std::map<uint32_t, Session> sessions_;
++    std::function<bool(uint32_t,uint64_t)> process_handle_validator_;
++    std::function<std::unique_ptr<native::ScopedEventExport>(const native::EventRef&,uint64_t)> event_exporter_;
++};
++} // namespace native_services
+--- /dev/null
++++ b/runtime/src/vi_state.cpp
+@@ -0,0 +1,25 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "vi_state.h"
++#include "platform.h"
++#include <nx/runtime.h>
++#include <mutex>
++#include <stdexcept>
++#define WIN32_LEAN_AND_MEAN
++#define NOMINMAX
++#include <windows.h>
++namespace nx::native_vi {
++namespace {
++std::mutex lock;bool initialized=false;uint64_t display{},layer{},generation{};HWND window{};uint32_t mode{};
++bool live(){DWORD owner=0;return window&&IsWindow(window)&&GetWindowThreadProcessId(window,&owner)&&owner==GetCurrentProcessId()&&generation==plat::window_generation();}
++void require(bool b){if(!b)throw std::runtime_error("invalid or retired owned VI object");}
++}
++void initialize(){std::lock_guard guard(lock);initialized=true;}
++uint64_t open_display(){std::lock_guard guard(lock);require(initialized);if(display){require(live());return display;}window=static_cast<HWND>(plat::create_window());generation=plat::window_generation();require(live());display=kernel_alloc(64,16);return display;}
++uint64_t create_layer(uint64_t parent){std::lock_guard guard(lock);require(display&&parent==display&&live());if(layer)throw std::runtime_error("multiple native layers are not supported");layer=kernel_alloc(64,16);mode=0;return layer;}
++void* native_window(uint64_t key){std::lock_guard guard(lock);require(layer&&key==layer&&live());return window;}
++void set_scaling(uint64_t key,uint32_t requested){std::lock_guard guard(lock);require(layer&&key==layer&&live());if(requested!=2)throw std::runtime_error("native VI supports ScaleToWindow only");const auto* pass=std::getenv("NX_PRESENT_PASS");if(pass&&*pass=='1')throw std::runtime_error("ScaleToWindow requires the native blit presentation path");mode=2;}
++uint32_t scaling_mode(){std::lock_guard guard(lock);return mode;}
++bool display_valid(uint64_t key){std::lock_guard guard(lock);return display&&key==display&&live();}
++void close_layer(uint64_t key){std::lock_guard guard(lock);require(layer&&key==layer);layer=0;mode=0;}
++void close_display(uint64_t key){std::lock_guard guard(lock);require(display&&key==display&&!layer);display=0;window=nullptr;generation=0;}
++}
+--- /dev/null
++++ b/runtime/src/vi_state.h
+@@ -0,0 +1,9 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++namespace nx::native_vi {
++void initialize();uint64_t open_display();uint64_t create_layer(uint64_t display);
++void* native_window(uint64_t layer);void set_scaling(uint64_t layer,uint32_t mode);
++uint32_t scaling_mode();bool display_valid(uint64_t display);
++void close_layer(uint64_t layer);void close_display(uint64_t display);
++}
+--- /dev/null
++++ b/tests/focus_policy_test.cpp
+@@ -0,0 +1,28 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "mk8_focus_policy.h"
++#include "platform.h"
++#define WIN32_LEAN_AND_MEAN
++#define NOMINMAX
++#include <windows.h>
++#include <atomic>
++#include <thread>
++#include <iostream>
++#include <stdexcept>
++namespace nx::plat {uint64_t window_generation(){return 1;}}
++namespace nx {void log(const char*,...){}[[noreturn]]void fatal(const char*,...){throw std::runtime_error("fatal");}}
++int main(){try{
++ unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("focus policy assertion");};
++ WNDCLASSW cls{};cls.lpfnWndProc=DefWindowProcW;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"Mk8NativeFocusTest";RegisterClassW(&cls);
++ auto window=CreateWindowExW(WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,cls.lpszClassName,L"owned focus fixture",WS_POPUP,0,0,16,16,nullptr,nullptr,cls.hInstance,nullptr);check(window!=nullptr);
++ nx::mk8_bind_display(window,1);uint8_t flags[4]={0,0,1,0};nx::IpcCtx c;c.cmd=13;c.in=flags;c.in_size=4;
++ check(nx::mk8_prepare_focus(c)==0);check(!nx::mk8_focus_snapshot().configured);check(c.validate_reply());c.commit_reply();check(nx::mk8_focus_snapshot().configured);
++ std::atomic<bool> resumed=false;std::thread worker([&]{nx::mk8_focus_gate();resumed=true;});Sleep(20);const bool parked=!resumed.load();
++ ShowWindow(window,SW_SHOWNOACTIVATE);worker.join();check(parked&&resumed);check(GetForegroundWindow()!=window);
++ uint8_t yes[4]={1,0,0,0},no[4]={};nx::IpcCtx out;out.cmd=16;out.in=yes;out.in_size=4;check(nx::mk8_prepare_focus(out)==0);out.commit_reply();check(nx::mk8_focus_snapshot().out_of_focus);
++ resumed=false;std::thread waiter([&]{nx::mk8_focus_gate();resumed=true;});Sleep(20);const bool unfocused_park=!resumed.load();
++ nx::IpcCtx restore;restore.cmd=16;restore.in=no;restore.in_size=4;check(nx::mk8_prepare_focus(restore)==0);restore.commit_reply();waiter.join();check(unfocused_park&&resumed);check(!nx::mk8_focus_snapshot().out_of_focus);
++ nx::IpcCtx malformed;malformed.cmd=16;malformed.in=no;malformed.in_size=4;malformed.b.push_back({1,8});check(nx::mk8_prepare_focus(malformed)!=0);check(!malformed.commit_reply);
++ DestroyWindow(window);check(!c.validate_reply());bool rejected=false;try{nx::mk8_focus_gate();}catch(const std::exception&){rejected=true;}check(rejected);
++ rejected=false;try{c.commit_reply();}catch(const std::exception&){rejected=true;}check(rejected);
++ std::cout<<"focus_policy checks="<<n<<" PASS\n";return 0;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/ipc_domain_test.cpp
 @@ -0,0 +1,34 @@
@@ -723,7 +2370,7 @@
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/loader_symbol_test.cpp
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,43 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +// Exercise real module relocation and indirect dispatch with an authored module image.
 +#include <nx/runtime.h>
@@ -735,6 +2382,7 @@
 +#include <stdexcept>
 +namespace {alignas(4096) std::array<uint8_t,4096> memory{};struct FatalExit{};}
 +namespace nx {
++void mk8_focus_gate(){}
 +bool commit(uint64_t a,uint64_t n){return a==reinterpret_cast<uint64_t>(memory.data())&&n<=memory.size();}
 +void vm_set(uint64_t,uint64_t,uint32_t,uint32_t){}
 +void backtrace(CPU&){}
@@ -765,6 +2413,48 @@
 + nx::CPU c{};nx::call(c,slot(160));check(c.x[0]==77);nx::call(c,slot(168));check(c.x[0]==99);
 + bool rejected=false;try{nx::call(c,slot(152));}catch(const FatalExit&){rejected=true;}check(rejected);
 + std::cout<<"loader_symbols checks="<<checks<<" PASS\n";return 0;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/module_init_test.cpp
+@@ -0,0 +1,19 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "module_init.h"
++#include <array>
++#include <iostream>
++#include <stdexcept>
++namespace{void compiled(nx::CPU&) {}}
++int main(){try{
++ unsigned checks=0;auto check=[&](bool b){++checks;if(!b)throw std::runtime_error("module init assertion");};
++ std::array<uint8_t,512> bytes{};auto put=[&](size_t p,uint64_t v,unsigned n){for(unsigned i=0;i<n;++i)bytes[p+i]=uint8_t(v>>(8*i));};
++ nx::FuncEntry entry{0x24,compiled};nx::ModuleInfo m{};m.base=reinterpret_cast<uint64_t>(bytes.data());m.text_size=64;m.data=128;m.data_size=384;m.funcs=&entry;m.func_count=1;
++ auto reset=[&]{bytes.fill(0);put(4,64,4);put(64,0x30444f4d,4);put(68,64,4);put(128,12,8);put(136,0x24,8);};
++ auto rejects=[&]{bool bad=false;try{nx::module_init_offset(m);}catch(const std::exception&){bad=true;}check(bad);};
++ reset();check(nx::module_init_offset(m)==0x24);
++ put(136,0x30,8);rejects();reset();put(136,0x25,8);rejects();reset();put(136,0x800,8);rejects();
++ reset();put(64,0,4);rejects();reset();put(68,0xffffff80,4);rejects();reset();put(4,510,4);rejects();
++ reset();put(144,12,8);put(152,0x24,8);rejects();reset();put(128,0,8);check(nx::module_init_offset(m)==0);
++ reset();for(size_t i=144;i<bytes.size();i+=16)put(i,5,8);rejects();reset();entry.fn=nullptr;rejects();entry.fn=compiled;
++ std::cout<<"module_init checks="<<checks<<" PASS\n";return 0;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/native_device_fixture.cpp
+@@ -0,0 +1,17 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Same compiled runtime as the game, but no guest modules are loaded or executed.
++#include <nx/runtime.h>
++#include "nvn/native_device.h"
++#include "nvn/nvn_vk.h"
++#include <iostream>
++#include <string_view>
++int main(int argc,char** argv){try{
++ const bool gpu=argc==2&&std::string_view(argv[1])=="--gpu";if(argc>1&&!gpu)throw std::runtime_error("expected --gpu or no arguments");
++ unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("native device assertion "+std::to_string(n));};
++ check(nx::find_symbol("nnMain")==0);nx::memory_init();const auto device=nx::kernel_alloc(7008,16);
++ check(!nx::nvn::initialize_native_device(device,0));
++ nx::vm_set(device,7008,nx::kMemHeap,3); // Authored fixture explicitly admits its storage to the guest-visible bus.
++ check(!nx::nvn::initialize_native_device(0,0));check(!nx::nvn::initialize_native_device(device,1));check(!nx::nvn::native_device_alive(device));check(nx::nvn::vk_device()==VK_NULL_HANDLE);
++ if(gpu){check(nx::nvn::initialize_native_device(device,0));check(nx::nvn::native_device_alive(device));check(nx::nvn::vk_device()!=VK_NULL_HANDLE);check(!nx::nvn::initialize_native_device(device,0));nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::find_symbol("nnMain")==0);}
++ std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/romfs_image_probe.cpp
@@ -808,6 +2498,72 @@
 + std::cout<<"romfs_image checks="<<checks<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
++++ b/tests/verified_parental_test.cpp
+@@ -0,0 +1,35 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "mk8_verified_services.h"
++#include "verified_services/services/addon_content.h"
++#include <nx/game.h>
++#include <filesystem>
++#include <fstream>
++#include <iostream>
++#include <stdexcept>
++namespace nx {
++const game::Info game::kInfo={"test","test",7,"test","."};
++void log(const char*,...){}[[noreturn]]void fatal(const char*,...){throw std::runtime_error("fatal");}
++uint32_t Service::handle(IpcCtx&){throw std::runtime_error("unsupported");}
++}
++int main(){try{
++ unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("parental bridge assertion");};
++ std::vector<uint8_t> bytes(192);auto put=[&](size_t p,uint64_t value,unsigned count){for(unsigned i=0;i<count;++i)bytes[p+i]=uint8_t(value>>(8*i));};
++ put(0,0x4154454d,4);put(0x70,0x80,4);put(0x74,0x40,4);put(0x80,0x30494341,4);put(0x90,7,8);
++ const auto file=std::filesystem::current_path()/"authored-parental.npdm";
++ auto install=[&]{std::ofstream f(file,std::ios::binary);f.write(reinterpret_cast<const char*>(bytes.data()),bytes.size());f.close();auto digest=native_services::HashProgramMetadata(bytes);std::string hex;for(auto v:digest){hex+="0123456789abcdef"[v>>4];hex+="0123456789abcdef"[v&15];}_putenv_s("NX_NPDM",file.string().c_str());_putenv_s("NX_NPDM_SHA256",hex.c_str());};install();
++ auto manager=nx::mk8_verified_parental("pctl");uint8_t body[8]={};nx::IpcCtx create;create.cmd=1;create.send_pid=true;create.domain_payload=true;create.in=body;create.in_size=8;create.pid=0xdeadbeef;
++ check(manager->handle(create)==0);check(create.out_objects.size()==1);check(create.validate_reply());auto child=create.out_objects[0];
++ nx::IpcCtx init;init.cmd=1;init.domain_payload=true;bool rejected=false;try{child->handle(init);}catch(const std::exception&){rejected=true;}check(rejected);create.commit_reply();
++ nx::IpcCtx ready;ready.cmd=1;ready.domain_payload=true;check(child->handle(ready)==0);check(ready.validate_reply());ready.commit_reply();
++ nx::IpcCtx status;status.cmd=1031;status.domain_payload=true;check(child->handle(status)==0&&status.out.size()==1&&status.out[0]==0);check(status.validate_reply());status.commit_reply();
++ for(auto name:{"pctl:s","pctl:a","pctl:r"}){
++  auto restricted=nx::mk8_verified_parental(name);nx::IpcCtx open;open.cmd=1;open.send_pid=true;open.domain_payload=true;open.in=body;open.in_size=8;
++  check(restricted->handle(open)==0&&open.out_objects.size()==1);check(open.validate_reply());open.commit_reply();
++  nx::IpcCtx denied;denied.cmd=1;denied.domain_payload=true;check(open.out_objects[0]->handle(denied)==0x1068e);check(denied.commit_error_reply&&denied.validate_reply());denied.commit_reply();
++  nx::IpcCtx automatic;automatic.cmd=0;automatic.send_pid=true;automatic.domain_payload=true;automatic.in=body;automatic.in_size=8;
++  check(restricted->handle(automatic)==0x1068e&&automatic.out_objects.empty());check(automatic.validate_reply());automatic.commit_reply();
++ }
++ _putenv_s("NX_NPDM_SHA256",std::string(64,'0').c_str());rejected=false;try{nx::mk8_verified_parental("pctl");}catch(const std::exception&){rejected=true;}check(rejected);
++ put(0x90,8,8);install();rejected=false;try{nx::mk8_verified_parental("pctl");}catch(const std::exception&){rejected=true;}check(rejected);
++ std::cout<<"verified_parental checks="<<n<<" PASS\n";return 0;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/vi_state_test.cpp
+@@ -0,0 +1,25 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "vi_state.h"
++#include "platform.h"
++#include <nx/runtime.h>
++#include <array>
++#include <iostream>
++#include <stdexcept>
++#define WIN32_LEAN_AND_MEAN
++#define NOMINMAX
++#include <windows.h>
++namespace {HWND window{};alignas(16)std::array<uint8_t,512> backing{};size_t cursor=0;}
++namespace nx {uint64_t kernel_alloc(uint64_t n,uint64_t a){cursor=(cursor+a-1)&~size_t(a-1);if(n>backing.size()-cursor)throw std::runtime_error("test extent");auto out=reinterpret_cast<uint64_t>(backing.data()+cursor);cursor+=size_t(n);return out;}}
++namespace nx::plat {void* create_window(){return window;}uint64_t window_generation(){return 1;}}
++int main(){try{
++ unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("VI assertion");};auto reject=[&](auto fn){bool bad=false;try{fn();}catch(const std::exception&){bad=true;}check(bad);};
++ reject([]{nx::native_vi::open_display();});
++ WNDCLASSW cls{};cls.lpfnWndProc=DefWindowProcW;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"Mk8NativeViTest";RegisterClassW(&cls);window=CreateWindowExW(WS_EX_NOACTIVATE,cls.lpszClassName,L"owned VI fixture",WS_POPUP,0,0,16,16,nullptr,nullptr,cls.hInstance,nullptr);check(window!=nullptr);
++ nx::native_vi::initialize();auto display=nx::native_vi::open_display();check(display!=0&&nx::native_vi::display_valid(display));check(nx::native_vi::open_display()==display);
++ reject([&]{nx::native_vi::create_layer(display+1);});auto layer=nx::native_vi::create_layer(display);check(layer!=0&&layer!=display);check(nx::native_vi::native_window(layer)==window);
++ reject([&]{nx::native_vi::create_layer(display);});reject([&]{nx::native_vi::native_window(layer+1);});reject([&]{nx::native_vi::set_scaling(layer,4);});
++ nx::native_vi::set_scaling(layer,2);check(nx::native_vi::scaling_mode()==2);reject([&]{nx::native_vi::close_display(display);});
++ nx::native_vi::close_layer(layer);check(nx::native_vi::scaling_mode()==0);reject([&]{nx::native_vi::native_window(layer);});
++ nx::native_vi::close_display(display);check(!nx::native_vi::display_valid(display));DestroyWindow(window);
++ std::cout<<"vi_state checks="<<n<<" PASS\n";return 0;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
 +++ b/tests/window_controller_test.cpp
 @@ -0,0 +1,23 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -820,7 +2576,7 @@
 +#include <stdexcept>
 +namespace {HWND current{};uint64_t generation=1;}
 +namespace nx::plat {void* create_window(){return current;}uint64_t window_generation(){return generation;}}
-+namespace nx {void log(const char*,...){}[[noreturn]]void fatal(const char*,...){throw std::runtime_error("fatal");}uint32_t Service::handle(IpcCtx&){throw std::runtime_error("unsupported");}}
++namespace nx {void mk8_bind_display(void*,uint64_t){}void log(const char*,...){}[[noreturn]]void fatal(const char*,...){throw std::runtime_error("fatal");}uint32_t Service::handle(IpcCtx&){throw std::runtime_error("unsupported");}}
 +int main(){try{
 + unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("window assertion");};
 + WNDCLASSW cls{};cls.lpfnWndProc=DefWindowProcW;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"Mk8NativeRightsTest";RegisterClassW(&cls);

@@ -6,9 +6,11 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration currently builds and passes eight component suites. Real
-MK8D startup commits native owned-window rights and stops at unsupported
-`ISelfController` command 13; no native game frame is established.
+Windows integration now passes thirteen CPU/component suites and a twelve-check
+native GPU device fixture on an RX 9070 XT. Actual MK8D startup enters `nnMain`,
+mounts its content image, creates an owned layer, applies ScaleToWindow and creates
+a real Vulkan device through `nvnDeviceInitialize`. Its next unsupported call is
+`nvnDeviceSetWindowOriginMode`. No native game frame is established.
 
 The adaptation adds an MK8D target, loads and initializes main/subsdk0/sdk,
 uses an existing checked LZ4 implementation without installing a package, and
@@ -20,8 +22,11 @@ Additional regressions exercise the actual ELF loader, domain transport, respons
 commit ordering and real owned Win32 window validation.
 
 Unknown imports, unknown IPC services/commands, unhandled SVCs and NVN tracing
-stubs stop execution. Other upstream handlers still need semantic review.
-Wonder-specific NVN capability values, the SDK ABI, object behavior, shader
+stubs stop execution. Other upstream handlers still need semantic review. Missing required offline
+shader translations now stop execution instead of publishing an incomplete program.
+The builder adapter explicitly supports the inspected SDK API 53.105 and reads
+constant device properties from its compiled getter; hardware-dependent properties
+remain explicit unsupported cases. Other SDK ABI details, object behavior, shader
 coverage, audio and input are not established for MK8D. The generated function
 reports do not prove complete instruction coverage or correct execution. This
 experimental runtime has a different memory/dispatch model from the existing
@@ -49,7 +54,12 @@ that produced those libraries. A normal build compiles the generated modules.
 
 Keep generated code, module images, builds and game data under ignored local
 paths. `NX_DATA_ROOT` selects the local directory containing `analysis/`;
-`NX_ROMFS_IMAGE` selects the supplied RomFS image. Use fresh output/state paths.
+`NX_ROMFS_IMAGE` selects the supplied RomFS image. `NX_NPDM` and
+`NX_NPDM_SHA256` select and pin its matching metadata (recorded by generation).
+`NX_SHOW_INACTIVE=1` creates the owned window without foreground activation;
+focus policy parks hidden/minimized execution.
+`native_device_fixture` runs CPU rejection checks; its explicit `--gpu` mode
+creates and drains a native Vulkan device without loading guest modules. Use fresh output/state paths.
 Native startup, live rendering and gameplay must be verified before these
 instructions can be treated as a working-game build guide. The project's full
 native release gate remains unchanged.

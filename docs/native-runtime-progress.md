@@ -4,18 +4,43 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R148, reconstructing 143 generic adapted files.
-All 37 component suites and the 479-check native GPU fixture pass. A production
+The current source recipe is R150, reconstructing 150 generic adapted files.
+All 37 component suites and the 635-check native GPU fixture pass. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
 
+R150 corrects a second color defect: the original RGB565 cup icons store red in
+the low five bits, while the old Vulkan mapping used the high five bits. An
+authored GPU regression reproduces the wrong packed red value on the old runtime
+and checks all primary channels after the correction.
+
+The lighting capture also shows a BC3 texture requested through an unsigned
+integer view. The old runtime ignores that view and the sampled cubemap is black.
+The new bounded path creates compatible block views, restricts image-view usages,
+and sizes render areas in blocks. GPU tests write distinct colors into all six
+faces at two mip levels, read back every compressed block and sample the result.
+The two texture-compression pixel stages are rebuilt offline with explicit
+unsigned outputs; incompatible fragment-output/target types stop execution.
+All 88 runtime objects were rebuilt, and static analysis of the five changed
+implementation files reports no diagnostics. The original-game lighting result
+and race rendering still require validation.
+
+The latest R148 run passes the previous course particle shader and stops at a
+missing stadium-flag stage. A wider inventory extracts 2,283 map-object stages;
+all 2,053 missing stages now translate, including seven fixed control prefixes
+whose complete source records are retained privately. Along with the other
+Mushroom Cup models and effects, the private cache now holds 7,239 stages.
+AMD accepts all 2,055 newly staged modules, including two integer-output
+replacements. This is module acceptance, without pipeline or gameplay credit.
+The R150 game run is testing the updated native renderer and cache.
+
 The native buffer-to-texture operation now validates active recording, real source
 pools, copied SDK texture descriptors and bounded copy regions. Actual Vulkan
 readbacks check R8/RG8/RGBA transfers, submission-time CPU data, earlier GPU writes
 and partial updates. The original game records both decoded video-plane copies
-and advances to its color-correction shader. The private cache now holds 4,618
+and advances to its color-correction shader. An earlier cache held 4,618
 offline-translated stages. An explicit graphics V10 profile permits checked 3D
 float sampling. The live lookup texture identified by the game is packed RGB11F;
 the new bounded 8x8x8 path reuses existing block-linear conversion and exact float

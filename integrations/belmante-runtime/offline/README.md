@@ -10,7 +10,7 @@ Add this directory with `add_subdirectory` after the bridge target is defined in
 a local prepared shader-tool build. Build with at most two compiler jobs. Run:
 
 ```
-mk8_offline_nvn_shader own-code.bin own-control.bin 1 own-output.spv [2:byte-offset[:3d|:cube|:array2d|:cube-array|:2d-shadow|:array2d-shadow] ...]
+mk8_offline_nvn_shader own-code.bin own-control.bin 1 own-output.spv [--color-uint-mask=1] [2:byte-offset[:3d|:cube|:array2d|:cube-array|:2d-shadow|:array2d-shadow] ...]
 python test_offline_shader.py path/to/mk8_offline_nvn_shader
 ```
 
@@ -30,13 +30,18 @@ upload or draw. Depth comparisons also require depth mode, format and comparison
 sampler state. Cubemaps use six faces in storage sizing. Missing/incompatible
 textures stop execution. The graphics tool supports inspected read-only storage-buffer bindings with explicit resource sidecars; writes and other resource classes remain unsupported. Live native physical backing and bounds are checked before upload. The
 separate raw-compute tool below supports its inspected buffer/texture subset. Required absent metadata
-fails; the tool does not select a default type for unspecified slots. Fifteen authored
+fails; the tool does not select a default type for unspecified slots. Twenty-five authored
 parser/profile cases pass, including invalid/duplicate slots and viewport state.
 
-The diagnostic profile uses SPIR-V 1.0, float attributes/outputs and triangle
-topology. Those are explicit specialization assumptions. Translation and driver
+The diagnostic profile uses SPIR-V 1.0, float vertex attributes and triangle
+topology. Fragment outputs default to float. `--color-uint-mask=N` explicitly
+selects unsigned 32-bit outputs at locations 0 through 7 using a decimal bitmask
+from 1 through 255; vertex stages and malformed/duplicate masks are rejected.
+The runtime checks output types against integer render targets. The two inspected
+texture-compression stages use mask 1 for native integer BC3 block views.
+These are explicit specialization assumptions. Translation and driver
 module creation do not prove draw-state compatibility, pipeline validity,
-rendering equivalence or gameplay. The local startup cache contains 4,488 pretranslated graphics/compute stages from the inspected
+rendering equivalence or gameplay. The local cache contains 7,239 pretranslated graphics/compute stages from the inspected
 asset set, with Vulkan module acceptance. This is not full-game shader coverage;
 startup passes application display-version metadata and continues into further RaceCommon assets. Game-linked inputs, SPIR-V and
 builds stay private. Missing required translations remain fatal in the runtime.

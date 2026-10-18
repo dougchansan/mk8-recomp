@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix="offline-nvn-test-") as temporary:
     code_path = root / "authored-code.bin"
     code_path.write_bytes(code)
     checks = 0
-    def run(name, data, viewport, success, extra=()):
+    def run(name, data, viewport, success, extra=(), output_mask=None):
         global checks
         ctrl = root / (name + ".ctrl")
         output = root / (name + ".spv")
@@ -36,6 +36,8 @@ with tempfile.TemporaryDirectory(prefix="offline-nvn-test-") as temporary:
             assert output.read_bytes()[:4] == struct.pack("<I", 0x07230203)
             report = json.loads(result.stdout)
             assert report["uniforms"] == report["storage"] == report["textures"] == 0
+            if output_mask is not None:
+                assert report['stage_tag'] == 5 and report['color_uint_mask'] == output_mask
         else:
             assert not output.exists() and not output.with_suffix(".profile").exists(), name
         checks += 1
@@ -56,4 +58,16 @@ with tempfile.TemporaryDirectory(prefix="offline-nvn-test-") as temporary:
     run("volume-slot-parser", control, "1", True, ("2:40:3d",))
     run("volume-shadow-rejected", control, "1", False, ("2:40:3d-shadow",))
     run("wrong-texture-viewport", control, "0", False, ("2:40",))
+    run("vertex-uint-output-rejected", control, "1", False, ("--color-uint-mask=1",))
+    put(code, 0x30, 5 << 10)  # Authored fragment SPH, same EXIT-only program.
+    code_path.write_bytes(code)
+    run("fragment-float-output-default", control, "1", True, output_mask=0)
+    run("fragment-uint-output-zero", control, "1", False, ("--color-uint-mask=0",))
+    run("fragment-uint-output-one", control, "1", True, ("--color-uint-mask=1",), output_mask=1)
+    run("fragment-uint-output-all", control, "1", True, ("--color-uint-mask=255",), output_mask=255)
+    run("fragment-uint-output-overflow", control, "1", False, ("--color-uint-mask=256",))
+    run("fragment-uint-output-empty", control, "1", False, ("--color-uint-mask=",))
+    run("fragment-uint-output-trailing", control, "1", False, ("--color-uint-mask=1x",))
+    run("fragment-uint-output-negative", control, "1", False, ("--color-uint-mask=-1",))
+    run("fragment-uint-output-duplicate", control, "1", False, ("--color-uint-mask=1","--color-uint-mask=2"))
 print(f"offline shader authored cases={checks} PASS")

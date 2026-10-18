@@ -13,6 +13,7 @@
 #include <sstream>
 #include <filesystem>
 #include <set>
+#include <string_view>
 std::vector<std::byte> read(const char* name, size_t limit) {
     std::ifstream f(name,std::ios::binary|std::ios::ate);
     const auto size=f.tellg();
@@ -26,7 +27,7 @@ uint32_t word(const std::vector<std::byte>& b,size_t offset) {
     uint32_t v;std::memcpy(&v,b.data()+offset,4);return v;
 }
 int main(int argc,char** argv) {try {
-    if(argc<5||argc>37)throw std::runtime_error("Usage: offline_nvn_shader code.bin ctrl.bin viewport-transform-0-or-1 output.spv");
+    if(argc<5||argc>38)throw std::runtime_error("Usage: offline_nvn_shader code.bin ctrl.bin viewport-transform-0-or-1 output.spv [--color-uint-mask=decimal] [texture profiles]");
     const std::string viewport=argv[3];
     if(viewport!="0"&&viewport!="1")throw std::runtime_error("explicit viewport profile required");
     if(argc>5&&viewport!="1")throw std::runtime_error("textured profile currently requires viewport transform enabled");
@@ -49,8 +50,20 @@ int main(int argc,char** argv) {try {
     std::set<unsigned> slots;
     std::map<unsigned,Shader::TextureType> slot_types;
     std::map<unsigned,bool> slot_shadow;
+    unsigned color_uint_mask=0;
+    bool color_profile_given=false;
     for(int arg=5;arg<argc;++arg) {
         const std::string text=argv[arg];
+        constexpr std::string_view color_option="--color-uint-mask=";
+        if(text.starts_with(color_option)) {
+            unsigned mask=0;
+            const auto [end,error]=std::from_chars(text.data()+color_option.size(),text.data()+text.size(),mask);
+            if(color_profile_given||tag!=5||error!=std::errc{}||end!=text.data()+text.size()||mask==0||mask>255)
+                throw std::runtime_error("invalid or duplicate fragment uint output profile");
+            color_uint_mask=mask;
+            color_profile_given=true;
+            continue;
+        }
         if(!text.starts_with("2:"))throw std::runtime_error("profile requires driver texture bank2 and decimal byte offset");
         const auto suffix=text.find(':',2);const auto numeric_end=suffix==std::string::npos?text.size():suffix;
         const bool cube=suffix!=std::string::npos&&text.substr(suffix)==":cube";
@@ -79,6 +92,8 @@ int main(int argc,char** argv) {try {
     // Diagnostic profile is explicit, never evidence of matching draw state.
     Shader::RuntimeInfo runtime{};runtime.input_topology=Shader::InputTopology::Triangles;
     runtime.generic_input_types.fill(Shader::AttributeType::Float);runtime.color_output_types.fill(Shader::AttributeType::Float);runtime.previous_stage_stores.mask.set();
+    for(unsigned location=0;location<8;++location)
+        if(color_uint_mask&(1u<<location))runtime.color_output_types[location]=Shader::AttributeType::UnsignedInt;
     Shader::Maxwell::ConvertLegacyToGeneric(program,runtime);
     Shader::Profile profile{};profile.unified_descriptor_binding=true;profile.need_fastmath_off=true;
     Shader::Backend::Bindings bindings{};
@@ -169,6 +184,6 @@ int main(int argc,char** argv) {try {
     if(!resource_file)throw std::runtime_error("graphics resource output failed");
     std::ofstream f(argv[4],std::ios::binary);f.write(reinterpret_cast<const char*>(spv.data()),spv.size()*4);
     if(!f)throw std::runtime_error("output write failed");
-    std::cout<<"{\"offline_diagnostic\":true,\"stage_tag\":"<<tag<<",\"words\":"<<spv.size()<<",\"uniforms\":"<<program.info.constant_buffer_descriptors.size()<<",\"storage\":"<<program.info.storage_buffers_descriptors.size()<<",\"textures\":"<<program.info.texture_descriptors.size()<<",\"native_game_frame\":false}\n";
+    std::cout<<"{\"offline_diagnostic\":true,\"stage_tag\":"<<tag<<",\"color_uint_mask\":"<<color_uint_mask<<",\"words\":"<<spv.size()<<",\"uniforms\":"<<program.info.constant_buffer_descriptors.size()<<",\"storage\":"<<program.info.storage_buffers_descriptors.size()<<",\"textures\":"<<program.info.texture_descriptors.size()<<",\"native_game_frame\":false}\n";
     return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

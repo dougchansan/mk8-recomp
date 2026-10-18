@@ -5403,6 +5403,25 @@
 +}
 +}
 --- /dev/null
++++ b/runtime/src/nvn/native_bc3_block_view.h
+@@ -0,0 +1,16 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++
++namespace nx::nvn {
++inline bool native_bc3_block_candidate(uint32_t format, uint32_t target, uint32_t samples) {
++    return (format == 0x44 || format == 0x48) && samples <= 1 &&
++        (target == 1 || target == 4 || target == 8 || target == 9);
++}
++inline bool native_bc3_integer_view(uint32_t format, uint32_t view) {
++    return (format == 0x44 || format == 0x48) && view == 0x2f;
++}
++inline uint32_t native_bc3_block_extent(uint32_t texels) {
++    return texels / 4 + (texels % 4 != 0);
++}
++}
+--- /dev/null
 +++ b/runtime/src/nvn/native_buffer_texture_copy.h
 @@ -0,0 +1,16 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -6003,6 +6022,27 @@
 +NX_HLE("nvnCommandBufferCopyBufferToTexture",CopyBufferToTexture);
  
  }  // namespace nx::nvn
+--- a/runtime/src/nvn/nvn_debug.cpp
++++ b/runtime/src/nvn/nvn_debug.cpp
+@@ -514,6 +514,18 @@
+             }
+             log("snapshot %llx: %ux%u rgba16f, %llu NaN, %llu Inf of %llu values, largest finite %g", (unsigned long long)snap.draw, snap.w,
+                 snap.h, (unsigned long long)nan, (unsigned long long)inf, (unsigned long long)n, big);
++            const uint64_t bytes = uint64_t(snap.w) * snap.h * 8;
++            if (bytes <= (4u << 20)) {
++                char name[64];
++                std::snprintf(name, sizeof name, "/frames/00000_%llx.raw", (unsigned long long)snap.draw);
++                if (FILE* file = plat::fopen_utf8(plat::data_root() + name, "wb")) {
++                    const uint32_t header[3] = {snap.w, snap.h, uint32_t(snap.raw_format)};
++                    const bool saved = std::fwrite(header, sizeof(uint32_t), 3, file) == 3 &&
++                        std::fwrite(p, 1, size_t(bytes), file) == size_t(bytes);
++                    const bool closed = std::fclose(file) == 0;
++                    if (!saved || !closed) log("native HDR snapshot write incomplete");
++                }
++            }
+             p_vkUnmapMemory(vk_device(), snap.s.buffer_memory);
+         } else if (snap.raw_format && p_vkMapMemory(vk_device(), snap.s.buffer_memory, 0, VK_WHOLE_SIZE, 0, &p) == VK_SUCCESS) {
+             char name[64];
 --- a/runtime/src/nvn/nvn_device.cpp
 +++ b/runtime/src/nvn/nvn_device.cpp
 @@ -1,129 +1,80 @@
@@ -6216,7 +6256,7 @@
 +NX_HLE("nvnDeviceGetWindowOriginMode",nx::nvn::DeviceGetOrigin);
 --- a/runtime/src/nvn/nvn_draw.cpp
 +++ b/runtime/src/nvn/nvn_draw.cpp
-@@ -11,11 +11,14 @@
+@@ -11,11 +11,15 @@
  #include <cstring>
  #include <set>
  
@@ -6225,13 +6265,35 @@
 +#include "native_raster_policy.h"
  #include "nvn_ultrawide.h"
  #include "platform.h"
++#include "native_bc3_block_view.h"
  
  namespace nx::nvn {
 +VkPhysicalDevice vk_physical();
  
  using namespace nx::vk;
  
-@@ -207,20 +210,27 @@
+@@ -150,8 +154,18 @@
+         colors[k].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+         colors[k].loadOp = fresh >> k & 1 ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+         colors[k].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+-        extent = {std::min(extent.width, std::max(1u, img->width >> level)),
+-                  std::min(extent.height, std::max(1u, img->height >> level))};
++        uint32_t attachment_width = std::max(1u, img->width >> level);
++        uint32_t attachment_height = std::max(1u, img->height >> level);
++        if (img->block_texel_views && formats[k] == VK_FORMAT_R32G32B32A32_UINT) {
++            attachment_width = native_bc3_block_extent(attachment_width);
++            attachment_height = native_bc3_block_extent(attachment_height);
++            if (std::getenv("NX_TRACE_BLOCKS")) {
++                static unsigned traced = 0;
++                if (traced++ < 24) log("native BC3 block attachment %llx level %u layer %u: %ux%u blocks",
++                    (unsigned long long)t.colors[k], level, t.views.layer[k], attachment_width, attachment_height);
++            }
++        }
++        extent = {std::min(extent.width, attachment_width), std::min(extent.height, attachment_height)};
+     }
+     GpuImage* dimg = t.depth ? image_of(t.depth) : nullptr;
+     g_pass_images[8] = dimg;
+@@ -207,20 +221,27 @@
      if (shaders)
          for (const ShaderInfo* s : *shaders)
              if (s->stage == ShaderStage::Compute) cs = s;
@@ -6262,7 +6324,7 @@
      draw_end_rendering(cb, 2);
      gather_textures(stages);
      build_sets(cb, stages, layout);
-@@ -256,6 +266,7 @@
+@@ -256,6 +277,7 @@
  }
  
  bool draw(VkCommandBuffer cb, const Targets& t, uint32_t mode, bool indexed, const Cmd& c) {
@@ -6280,6 +6342,61 @@
      // Command-buffer rasterizer state (nvn_raster.cpp), per face 0 front, 1 back. NVN's defaults: masks 0xFF, ref 0.
      uint8_t stencil_ref[2] = {0, 0}, stencil_compare_mask[2] = {0xFF, 0xFF}, stencil_write_mask[2] = {0xFF, 0xFF};
      float bias_factor = 0, bias_units = 0, bias_clamp = 0;  // SetPolygonOffsetClamp
+--- a/runtime/src/nvn/nvn_format.cpp
++++ b/runtime/src/nvn/nvn_format.cpp
+@@ -43,7 +43,7 @@
+     /* 0x34 */ {VK_FORMAT_D32_SFLOAT, 1}, {VK_FORMAT_D32_SFLOAT_S8_UINT, 3} /* D24S8 */, {VK_FORMAT_D32_SFLOAT_S8_UINT, 3},
+     /* 0x37 */ {VK_FORMAT_R8G8B8A8_SRGB, 0} /* RGBX */, {VK_FORMAT_R8G8B8A8_SRGB, 0},
+     /* 0x39 */ {VK_FORMAT_A4B4G4R4_UNORM_PACK16, 0}, {VK_FORMAT_A1R5G5B5_UNORM_PACK16, 0},
+-    /* 0x3b */ {VK_FORMAT_A1R5G5B5_UNORM_PACK16, 0}, {VK_FORMAT_R5G6B5_UNORM_PACK16, 0},
++    /* 0x3b */ {VK_FORMAT_A1R5G5B5_UNORM_PACK16, 0}, {VK_FORMAT_B5G6R5_UNORM_PACK16, 0}, // NVN RGB565: red occupies bits 0..4.
+     /* 0x3d */ {VK_FORMAT_A2B10G10R10_UNORM_PACK32, 0}, {VK_FORMAT_A2B10G10R10_UINT_PACK32, 0},
+     // 0x3f R11G11B10F becomes RGBA16F: Maxwell stores negative/NaN results of blending as 0 in this unsigned float
+     // format, Metal writes Inf/NaN, and the NaN spread through every later pass (bloom, the dialog's frosted-glass
+--- a/runtime/src/nvn/nvn_image.cpp
++++ b/runtime/src/nvn/nvn_image.cpp
+@@ -6,6 +6,7 @@
+ #include <tuple>
+ 
+ #include "nvn_vk.h"
++#include "native_bc3_block_view.h"
+ 
+ namespace nx::nvn {
+ 
+@@ -181,6 +182,13 @@
+     ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+     ci.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+     if (!compressed) ci.usage |= aspect ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
++    const bool block_views = img->mutable_format &&
++        native_bc3_block_candidate(t->format, t->target, t->samples) &&
++        (ci.format == VK_FORMAT_BC3_UNORM_BLOCK || ci.format == VK_FORMAT_BC3_SRGB_BLOCK);
++    if (block_views) {
++        ci.flags |= VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
++        ci.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
++    }
+     {
+         VkFormatProperties fp{};
+         p_vkGetPhysicalDeviceFormatProperties(vk_physical(), ci.format, &fp);
+@@ -189,6 +197,7 @@
+     }
+     ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+     if (!image_supported(ci, t->format)) return nullptr;
++    img->block_texel_views = block_views && (ci.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+     if (!check(p_vkCreateImage(vk_device(), &ci, nullptr, &img->image), "vkCreateImage")) return nullptr;
+     VkMemoryRequirements req{};
+     p_vkGetImageMemoryRequirements(vk_device(), img->image, &req);
+@@ -204,6 +213,11 @@
+     vi.image = img->image;
+     vi.viewType = img->view_type;
+     vi.format = img->format;
++    VkImageViewUsageCreateInfo sampled_usage{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
++    if (img->block_texel_views) {
++        sampled_usage.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
++        vi.pNext = &sampled_usage;
++    }
+     // A sampled depth/stencil view reads depth.
+     vi.subresourceRange = {aspect == 3 ? VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT) : img->aspect, 0, img->levels, 0,
+                            img->layers};
 --- a/runtime/src/nvn/nvn_objects.cpp
 +++ b/runtime/src/nvn/nvn_objects.cpp
 @@ -2,6 +2,8 @@
@@ -6683,7 +6800,7 @@
 +NX_HLE("nvnTextureCompare",nx::nvn::TextureCompare);
 --- a/runtime/src/nvn/nvn_pipeline.cpp
 +++ b/runtime/src/nvn/nvn_pipeline.cpp
-@@ -15,6 +15,8 @@
+@@ -15,9 +15,12 @@
  #include <tuple>
  #include <unordered_map>
  
@@ -6692,7 +6809,23 @@
  #include "nvn_pipeline.h"
  #include "nvn_ultrawide.h"
  #include "platform.h"
-@@ -169,7 +171,7 @@
++#include "native_bc3_block_view.h"
+ 
+ namespace nx::nvn {
+ 
+@@ -27,6 +30,11 @@
+ // blends in linear) and samples them the same way. Ignoring it lost one conversion per draw: far too much contrast
+ // and saturation (docs/nvn/DEBUG.md #29).
+ VkFormat view_format(const GpuImage& img, uint32_t nvn) {
++    if (native_bc3_integer_view(img.nvn_format, nvn)) {
++        if (!img.block_texel_views)
++            throw std::invalid_argument("native BC3 integer block views are unavailable for this image");
++        return VK_FORMAT_R32G32B32A32_UINT;
++    }
+     if (VkFormat f; bc_view_format(img, nvn, f)) return f;  // decoded BC (nvn_bc.cpp)
+     if (!nvn || nvn == img.nvn_format || img.alpha_from_r || img.aspect != VK_IMAGE_ASPECT_COLOR_BIT) return img.format;
+     VkFormat f = vk_format(nvn);
+@@ -169,7 +177,7 @@
      bool img1d = img.view_type == VK_IMAGE_VIEW_TYPE_1D || img.view_type == VK_IMAGE_VIEW_TYPE_1D_ARRAY;
      switch (type) {
          case VK_IMAGE_VIEW_TYPE_CUBE:
@@ -6701,7 +6834,18 @@
          case VK_IMAGE_VIEW_TYPE_3D: return img3d;
          case VK_IMAGE_VIEW_TYPE_1D:
          case VK_IMAGE_VIEW_TYPE_1D_ARRAY: return img1d;
-@@ -217,7 +219,7 @@
+@@ -213,11 +221,18 @@
+         if (type == VK_IMAGE_VIEW_TYPE_CUBE) layers = 6;
+         if (type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) layers -= layers % 6;
+         if (!view_compatible(img, type, layers)) return VK_NULL_HANDLE;
++        if (img.block_texel_views && format == VK_FORMAT_R32G32B32A32_UINT &&
++            (type != VK_IMAGE_VIEW_TYPE_2D || levels != 1 || layers != 1)) return VK_NULL_HANDLE;
++        VkImageViewUsageCreateInfo sampled_usage{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
++        if (img.block_texel_views) {
++            sampled_usage.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
++            ci.pNext = &sampled_usage;
++        }
+         ci.subresourceRange = {img.aspect == (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
                                     ? VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT)
                                     : img.aspect,
                                 base, levels, min_layer, layers};
@@ -6710,19 +6854,40 @@
      }
      if (v) hit = {key, v};  // never a null one: those are tried again
      return v;
-@@ -289,6 +291,7 @@
+@@ -289,6 +304,14 @@
  // ---- graphics pipelines ---------------------------------------------------------------------------------------------
  
  VkPipeline graphics_pipeline(const PipelineKey& key, const ProgramLayout& layout) {
 +    if(key.topology==0)fatal("native point primitive rendering requires a point-size shader profile");
++    if (key.fs) for (const auto& output : key.fs->refl.outputs) {
++        if (output.location >= key.color_count || key.color_formats[output.location] == VK_FORMAT_UNDEFINED) continue;
++        const bool integer = key.color_formats[output.location] == VK_FORMAT_R32G32B32A32_UINT;
++        if ((integer && output.type != ScalarType::Uint) || (!integer && output.type == ScalarType::Uint))
++            fatal("native fragment output profile mismatch shader %s location %u type %u target %u",
++                key.fs->hash.c_str(), output.location, unsigned(output.type), unsigned(key.color_formats[output.location]));
++    }
      // By the key's bytes, as before, but hashed (nvn_pipeline.h) instead of a ~700-byte std::string built and
      // compared down a tree per draw; and the last entry first: consecutive draws mostly share their state.
      using Key = ByteKey<sizeof(PipelineKey)>;
-@@ -568,15 +571,31 @@
+@@ -554,6 +577,8 @@
+ 
+ VkImageView attachment_view(GpuImage& img, uint32_t level, uint32_t layer, VkFormat format) {
+     if (format == VK_FORMAT_UNDEFINED) format = img.format;
++    if (img.block_texel_views && format != VK_FORMAT_R32G32B32A32_UINT)
++        throw std::invalid_argument("native BC3 attachments require an integer block view");
+     level = std::min(level, img.levels - 1);
+     // A 3D image's slice is a layer of its 2D-array-compatible views, counted at this level.
+     layer = std::min(layer, img.view_type == VK_IMAGE_VIEW_TYPE_3D ? std::max(1u, img.depth >> level) - 1 : img.layers - 1);
+@@ -568,15 +593,36 @@
          ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
          ci.format = format;
          ci.subresourceRange = {img.aspect, level, 1, layer, 1};
 -        if (p_vkCreateImageView(vk_device(), &ci, nullptr, &v) != VK_SUCCESS) v = img.view;
++        VkImageViewUsageCreateInfo attachment_usage{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
++        if (img.block_texel_views) {
++            attachment_usage.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
++            ci.pNext = &attachment_usage;
++        }
 +        if (p_vkCreateImageView(vk_device(), &ci, nullptr, &v) != VK_SUCCESS) v = VK_NULL_HANDLE;
      }
      return v;
@@ -6751,7 +6916,7 @@
      bool dirty = t->dirty.exchange(false);
      uint64_t dirty_lo = t->dirty_lo.exchange(UINT64_MAX), dirty_hi = t->dirty_hi.exchange(0);
      if (dirty_hi <= dirty_lo) dirty_lo = 0, dirty_hi = UINT64_MAX;  // marked without a range: all of it
-@@ -595,8 +614,14 @@
+@@ -595,8 +641,14 @@
          }
      }
      // A texture already on the GPU that the CPU wrote part of: only those bytes go again (the glyph cache).
@@ -6766,7 +6931,7 @@
      if (img->layout == VK_IMAGE_LAYOUT_UNDEFINED) {  // never written: black, not garbage
          transition(cb, *img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
          VkImageSubresourceRange r{img->aspect, 0, img->levels, 0, img->layers};
-@@ -609,11 +634,12 @@
+@@ -609,11 +661,12 @@
  }
  
  VkImageView sampled_view(VkCommandBuffer cb, uint64_t texture, const ImageShape& shape, const ViewInfo* view,
@@ -6780,7 +6945,7 @@
          if (++no_image % 100000 == 1) log("nvn/vk: dummy sampled: %llu with no image, %llu with an incompatible view",
                                            (unsigned long long)no_image, (unsigned long long)incompatible);
          return dummy_view(cb, shape);
-@@ -643,6 +669,7 @@
+@@ -643,6 +696,7 @@
      }
      VkImageView v = view_of(*img, view_type(shape), vi);
      if (!v) {
@@ -7501,7 +7666,15 @@
      PresentTimer timer;
 --- a/runtime/src/nvn/nvn_vk.h
 +++ b/runtime/src/nvn/nvn_vk.h
-@@ -35,6 +35,8 @@
+@@ -27,6 +27,7 @@
+     VkComponentMapping swizzle{};  // for sampling (attachment views stay identity)
+     bool storage = false;          // created with VK_IMAGE_USAGE_STORAGE_BIT (compute shaders write it)
+     bool mutable_format = true;
++    bool block_texel_views = false; // BC3 storage with admitted integer attachment views.
+     uint64_t rendered_at = 0;      // the pass-end serial of the last pass that rendered into it (nvn_draw.cpp, G4)    // views may use another format (MUTABLE_FORMAT; nvn_image.cpp, ubwc_flags)
+     // An R8 texture always read as (1, 1, 1, R) (a glyph cache): stored as RGBA8 (255, 255, 255, R) and sampled
+     // without swizzle. MoltenVK returned alpha 0 for that view swizzle on a 2D-array view, so all text was invisible.
+@@ -35,6 +36,8 @@
      bool uw = false;          // NX_ULTRAWIDE: a widened render target (nvn_ultrawide.cpp)
  };
  
@@ -7510,7 +7683,7 @@
  VkDevice vk_device();
  bool vk_depth_clip_control();
  // The core features the device was created with (all the GPU has): depthClamp, depthBiasClamp, depthBounds, ...
-@@ -225,6 +227,8 @@
+@@ -225,6 +228,8 @@
  std::shared_ptr<CmdList> submit_command_list(uint64_t handle);  // command_list(), once per handle per submit
  void submit_lists_reset();  // at each submit's start (draw_begin_submit)
  
@@ -9424,6 +9597,157 @@
 + for(auto bad:{sps(100,32,38),sps(77,257,1)}){bool rejected=false;try{native_video::avc_info(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
 + auto wrong=main;wrong[0]=0x68;bool rejected=false;try{native_video::avc_info(wrong);}catch(const std::invalid_argument&){rejected=true;}check(rejected);std::vector<uint8_t> annex{0,0,0,1};annex.insert(annex.end(),main.begin(),main.end());annex.insert(annex.end(),{0,0,1,0x68,0xaa});auto nals=native_video::avc_nals(annex);check(nals.size()==2&&nals[0].size()==main.size()&&nals[1][0]==0x68);check(native_video::avc_nals(std::span<const uint8_t>{}).empty());std::printf("AVC SPS metadata checks=%u PASS\n",checks);}
 --- /dev/null
++++ b/tests/native_bc3_block_probe.h
+@@ -0,0 +1,102 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/nvn_draw_state.h"
++#include <cstring>
++#include <iostream>
++#include "native_bc3_sample_probe.h"
++
++template<class Check> void native_bc3_block_probe(Check check) {
++    using namespace nx;
++    using namespace nx::nvn;
++    const auto key = kernel_alloc(256, 4096);
++    auto& texture = make<Texture>(key);
++    texture.target = 8;
++    texture.width = texture.height = 8;
++    texture.depth = 6;
++    texture.levels = 2;
++    texture.format = 0x44;
++    {
++        std::lock_guard lock(gpu_lock());
++        auto* image = image_of(key);
++        check(image && image->image && image->layers == 6 && image->levels == 2);
++        const auto format = view_format(*image, 0x2f);
++        if (format != VK_FORMAT_R32G32B32A32_UINT)
++            std::cerr << "BC3 integer block view rejected: actual Vulkan format=" << format << '\n';
++        check(format == VK_FORMAT_R32G32B32A32_UINT);
++        auto command = frame_begin(false);
++        clears_begin_submit();
++        constexpr uint16_t colours[] = {0xf800, 0x07e0, 0x001f, 0xffff, 0xffe0, 0x07ff};
++        for (unsigned level = 0; level < 2; ++level) {
++            Targets targets{};
++            targets.color_count = 6;
++            VkClearAttachment clear[6]{};
++            for (unsigned face = 0; face < 6; ++face) {
++                targets.colors[face] = key;
++                targets.views.format[face] = 0x2f;
++                targets.views.level[face] = level;
++                targets.views.layer[face] = face;
++                clear[face].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
++                clear[face].colorAttachment = face;
++                const uint32_t endpoint = colours[(face + level) % 6];
++                clear[face].clearValue.color.uint32[0] = 0x0000ffff;
++                clear[face].clearValue.color.uint32[2] = endpoint | (endpoint << 16);
++            }
++            pass_begin(command, targets);
++            const uint32_t extent = 2 >> level;
++            check(pass_extent().width == extent && pass_extent().height == extent);
++            VkClearRect rectangle{};
++            rectangle.rect.extent = {extent, extent};
++            rectangle.layerCount = 1;
++            vk::p_vkCmdClearAttachments(command, 6, clear, 1, &rectangle);
++            pass_mark_written(0x3f);
++            draw_end_rendering(command);
++        }
++        check(image->rendered && !image->uploaded && texture.memory == 0);
++        const auto readback = upload_alloc(480, 16);
++        transition(command, *image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
++        VkBufferImageCopy copies[12]{};
++        uint32_t offset = 0;
++        for (unsigned level = 0; level < 2; ++level) {
++            const uint32_t extent = 8 >> level;
++            const uint32_t bytes = level ? 16 : 64;
++            for (unsigned face = 0; face < 6; ++face) {
++                auto& copy = copies[level * 6 + face];
++                copy.bufferOffset = readback.offset + offset;
++                copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, face, 1};
++                copy.imageExtent = {extent, extent, 1};
++                offset += bytes;
++            }
++        }
++        check(offset == 480);
++        vk::p_vkCmdCopyImageToBuffer(command, image->image,
++            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 12, copies);
++        VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
++        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
++        barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
++        barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++        barrier.buffer = readback.buffer;
++        barrier.offset = readback.offset;
++        barrier.size = 480;
++        vk::p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
++            VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &barrier, 0, nullptr);
++        frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, true);
++        offset = 0;
++        for (unsigned level = 0; level < 2; ++level) {
++            for (unsigned face = 0; face < 6; ++face) {
++                const uint32_t endpoint = colours[(face + level) % 6];
++                const uint32_t expected[] = {0x0000ffff, 0, endpoint | (endpoint << 16), 0};
++                for (unsigned block = 0; block < (level ? 1u : 4u); ++block) {
++                    for (unsigned word = 0; word < 4; ++word) {
++                        uint32_t actual = 0;
++                        std::memcpy(&actual, readback.ptr + offset, sizeof actual);
++                        check(actual == expected[word]);
++                        offset += 4;
++                    }
++                }
++            }
++        }
++        check(offset == 480);
++    }
++    native_bc3_sample_probe(key, check);
++    destroy(key);
++}
+--- /dev/null
++++ b/tests/native_bc3_sample_probe.h
+@@ -0,0 +1,43 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/nvn_draw_state.h"
++#include <cmath>
++template<class Check> void native_bc3_sample_probe(uint64_t texture,Check check){
++ using namespace nx;using namespace nx::nvn;
++ // Authored SPIR-V: two explicit-LOD samplerCube lookups selecting the +X and +Z faces.
++ const uint32_t code[]={ 0x07230203u,0x00010000u,0x00000000u,0x00000020u,0x00000000u,0x00020011u,0x00000001u,0x0003000eu,
++ 0x00000000u,0x00000001u,0x0005000fu,0x00000005u,0x00000019u,0x6e69616du,0x00000000u,0x00060010u,
++ 0x00000019u,0x00000011u,0x00000001u,0x00000001u,0x00000001u,0x00040047u,0x00000009u,0x00000022u,
++ 0x00000000u,0x00040047u,0x00000009u,0x00000021u,0x00000000u,0x00040047u,0x00000011u,0x00000022u,
++ 0x00000000u,0x00040047u,0x00000011u,0x00000021u,0x00000001u,0x00040047u,0x0000000du,0x00000006u,
++ 0x00000010u,0x00030047u,0x0000000fu,0x00000003u,0x00050048u,0x0000000fu,0x00000000u,0x00000023u,
++ 0x00000000u,0x00020013u,0x00000001u,0x00030021u,0x00000002u,0x00000001u,0x00030016u,0x00000003u,
++ 0x00000020u,0x00040017u,0x00000004u,0x00000003u,0x00000004u,0x00040017u,0x00000005u,0x00000003u,
++ 0x00000003u,0x00090019u,0x00000006u,0x00000003u,0x00000003u,0x00000000u,0x00000000u,0x00000000u,
++ 0x00000001u,0x00000000u,0x0003001bu,0x00000007u,0x00000006u,0x00040020u,0x00000008u,0x00000000u,
++ 0x00000007u,0x0004003bu,0x00000008u,0x00000009u,0x00000000u,0x00040015u,0x0000000au,0x00000020u,
++ 0x00000000u,0x0004002bu,0x0000000au,0x0000000bu,0x00000000u,0x0004002bu,0x0000000au,0x0000000cu,
++ 0x00000001u,0x0004002bu,0x0000000au,0x0000000eu,0x00000002u,0x0004001cu,0x0000000du,0x00000004u,
++ 0x0000000eu,0x0003001eu,0x0000000fu,0x0000000du,0x00040020u,0x00000010u,0x00000002u,0x0000000fu,
++ 0x0004003bu,0x00000010u,0x00000011u,0x00000002u,0x00040020u,0x00000012u,0x00000002u,0x00000004u,
++ 0x0004002bu,0x00000003u,0x00000013u,0x3e000000u,0x0004002bu,0x00000003u,0x00000015u,0x3f600000u,
++ 0x0004002bu,0x00000003u,0x00000016u,0x00000000u,0x0006002cu,0x00000005u,0x00000017u,0x00000015u,
++ 0x00000013u,0x00000013u,0x0006002cu,0x00000005u,0x00000018u,0x00000013u,0x00000013u,0x00000015u,
++ 0x00050036u,0x00000001u,0x00000019u,0x00000000u,0x00000002u,0x000200f8u,0x0000001au,0x0004003du,
++ 0x00000007u,0x0000001bu,0x00000009u,0x00070058u,0x00000004u,0x0000001cu,0x0000001bu,0x00000017u,
++ 0x00000002u,0x00000016u,0x00070058u,0x00000004u,0x0000001du,0x0000001bu,0x00000018u,0x00000002u,
++ 0x00000016u,0x00060041u,0x00000012u,0x0000001eu,0x00000011u,0x0000000bu,0x0000000bu,0x0003003eu,
++ 0x0000001eu,0x0000001cu,0x00060041u,0x00000012u,0x0000001fu,0x00000011u,0x0000000bu,0x0000000cu,
++ 0x0003003eu,0x0000001fu,0x0000001du,0x000100fdu,0x00010038u};
++ const auto device=vk_device();std::lock_guard lock(gpu_lock());auto command=frame_begin(false);auto* image=ensure_contents(command,texture);check(image&&image->view_type==VK_IMAGE_VIEW_TYPE_CUBE&&image->width==8&&image->height==8&&image->layers==6&&image->levels==2);transition(command,*image,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
++ VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};sampler_info.magFilter=sampler_info.minFilter=VK_FILTER_NEAREST;sampler_info.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST;sampler_info.addressModeU=sampler_info.addressModeV=sampler_info.addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;sampler_info.maxAnisotropy=1;
++ VkSampler sampler=VK_NULL_HANDLE;check(vk::p_vkCreateSampler(device,&sampler_info,nullptr,&sampler)==VK_SUCCESS);
++ VkDescriptorSetLayoutBinding bindings[2]={{0,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr},{1,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr}};VkDescriptorSetLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};layout_info.bindingCount=2;layout_info.pBindings=bindings;VkDescriptorSetLayout layout=VK_NULL_HANDLE;check(vk::p_vkCreateDescriptorSetLayout(device,&layout_info,nullptr,&layout)==VK_SUCCESS);
++ VkPipelineLayoutCreateInfo pipeline_layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};pipeline_layout_info.setLayoutCount=1;pipeline_layout_info.pSetLayouts=&layout;VkPipelineLayout pipeline_layout=VK_NULL_HANDLE;check(vk::p_vkCreatePipelineLayout(device,&pipeline_layout_info,nullptr,&pipeline_layout)==VK_SUCCESS);
++ VkShaderModuleCreateInfo module_info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};module_info.codeSize=sizeof code;module_info.pCode=code;VkShaderModule module=VK_NULL_HANDLE;check(vk::p_vkCreateShaderModule(device,&module_info,nullptr,&module)==VK_SUCCESS);
++ VkComputePipelineCreateInfo pipeline_info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};pipeline_info.stage={VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};pipeline_info.stage.stage=VK_SHADER_STAGE_COMPUTE_BIT;pipeline_info.stage.module=module;pipeline_info.stage.pName="main";pipeline_info.layout=pipeline_layout;VkPipeline pipeline=VK_NULL_HANDLE;check(vk::p_vkCreateComputePipelines(device,VK_NULL_HANDLE,1,&pipeline_info,nullptr,&pipeline)==VK_SUCCESS);
++ auto output=upload_alloc(32,256);std::memset(output.ptr,0xcc,32);const auto set=descriptor_set(layout);VkDescriptorImageInfo sampled{sampler,image->view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};VkDescriptorBufferInfo buffer{output.buffer,output.offset,32};VkWriteDescriptorSet writes[2]{};for(auto& write:writes){write.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;write.dstSet=set;write.descriptorCount=1;}writes[0].dstBinding=0;writes[0].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;writes[0].pImageInfo=&sampled;writes[1].dstBinding=1;writes[1].descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;writes[1].pBufferInfo=&buffer;vk::p_vkUpdateDescriptorSets(device,2,writes,0,nullptr);vk::p_vkCmdBindPipeline(command,VK_PIPELINE_BIND_POINT_COMPUTE,pipeline);vk::p_vkCmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_COMPUTE,pipeline_layout,0,1,&set,0,nullptr);vk::p_vkCmdDispatch(command,1,1,1);
++ VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=output.buffer;barrier.offset=output.offset;barrier.size=32;vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++ float actual[8];std::memcpy(actual,output.ptr,sizeof actual);const float expected[8]={1,0,0,1,1,1,0,1};for(unsigned n=0;n<8;++n)check(std::isfinite(actual[n])&&std::fabs(actual[n]-expected[n])<1e-6f);
++ vk::p_vkDestroyPipeline(device,pipeline,nullptr);vk::p_vkDestroyShaderModule(device,module,nullptr);vk::p_vkDestroyPipelineLayout(device,pipeline_layout,nullptr);vk::p_vkDestroyDescriptorSetLayout(device,layout,nullptr);vk::p_vkDestroySampler(device,sampler,nullptr);
++}
+--- /dev/null
 +++ b/tests/native_buffer_texture_probe.h
 @@ -0,0 +1,32 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -9477,7 +9801,7 @@
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,234 @@
+@@ -0,0 +1,239 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -9510,12 +9834,15 @@
 +#include "native_volume_sample_probe.h"
 +#include "native_small_r11_probe.h"
 +#include "native_gpu_volume_probe.h"
++#include "native_rgb565_probe.h"
++#include "native_bc3_block_probe.h"
 +#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
 +#ifdef _WIN32
 + if(argc==4&&std::string_view(argv[1])=="--avc-private")return codec_probe::run(argv[2],std::strtoull(argv[3],nullptr,16));
 +#endif
-+ const bool gpu=argc==2&&std::string_view(argv[1])=="--gpu";if(argc>1&&!gpu)throw std::runtime_error("expected --gpu or no arguments");
++ const bool block_probe=argc==2&&std::string_view(argv[1])=="--gpu-block";
++ const bool gpu=block_probe||(argc==2&&std::string_view(argv[1])=="--gpu");if(argc>1&&!gpu)throw std::runtime_error("expected --gpu, --gpu-block or no arguments");
 + if(gpu){if(_putenv_s("NX_PIPELINED","1"))throw std::runtime_error("fixture pipeline mode setup failed");}
 + unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("native device assertion "+std::to_string(n));};
 + for(const char* name:{"_ZN2nv20SetGraphicsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_","_ZN2nv28SetGraphicsDevtoolsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_"}){auto setter=nx::hle_lookup(name);check(setter!=nullptr);nx::CPU invalid_allocator{};bool rejected=false;try{setter(invalid_allocator);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
@@ -9707,6 +10034,8 @@
 + commands.x[0]=command_key;api("nvnCommandBufferFinalize");commands.x[0]=memory_key;api("nvnMemoryPoolFinalize");nx::nvn::destroy(target);
 + }
 + native_gpu_volume_probe(check);
++ if(!block_probe)native_rgb565_probe(check);
++ native_bc3_block_probe(check);
 + native_small_r11_probe(check);
 + native_buffer_texture_probe(device,check);
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
@@ -9770,6 +10099,71 @@
 +#include "native_readonly_storage.h"
 +#include <iostream>
 +int main(int argc,char** argv){try{if(argc!=2)throw std::runtime_error("fixture directory required");unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("readonly storage assertion");};auto path=std::filesystem::path(argv[1])/"valid.bin";nx::NativeReadonlyStorage image(path,"9ac056b20af5fb961ccf89de921573d4b4b87e0c7a4640f98fcc2fcc6436e3fc");check(image.size()==std::filesystem::file_size(path));auto header=image.read(0,8);check(header.size()==8&&header[0]==80);check(image.read(image.size(),0).empty());bool rejected=false;try{image.read(image.size(),1);}catch(const std::out_of_range&){rejected=true;}check(rejected);rejected=false;try{nx::NativeReadonlyStorage bad(path,std::string(64,'0'));}catch(const std::invalid_argument&){rejected=true;}check(rejected);auto writer=_wfsopen(path.c_str(),L"r+b",_SH_DENYNO);check(writer==nullptr);if(writer)fclose(writer);std::cout<<"readonly storage checks="<<checks<<" PASS\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/native_rgb565_probe.h
+@@ -0,0 +1,62 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/nvn_draw_state.h"
++#include <cstring>
++#include <iostream>
++
++template<class Check> void native_rgb565_probe(Check check) {
++    using namespace nx;
++    using namespace nx::nvn;
++    // Authored primary colours. NVN RGB565 puts red in bits 0..4,
++    // green in 5..10 and blue in 11..15. No title data enters this fixture.
++    constexpr uint16_t expected[] = {0x001f, 0x07e0, 0xf800};
++    for (unsigned channel = 0; channel < 3; ++channel) {
++        const auto key = kernel_alloc(256, 4096);
++        auto& texture = make<Texture>(key);
++        texture.target = 1;
++        texture.width = texture.height = 2;
++        texture.depth = texture.levels = 1;
++        texture.format = 0x3c;
++        {
++            std::lock_guard lock(gpu_lock());
++            auto* image = image_of(key);
++            check(image && image->image && image->width == 2 && image->height == 2);
++            const auto command = frame_begin(false);
++            transition(command, *image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
++            VkClearColorValue colour{};
++            colour.float32[channel] = colour.float32[3] = 1.0f;
++            const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
++            vk::p_vkCmdClearColorImage(command, image->image,
++                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &colour, 1, &range);
++            image->rendered = true;
++            const auto readback = upload_alloc(8, 4);
++            transition(command, *image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
++            VkBufferImageCopy copy{};
++            copy.bufferOffset = readback.offset;
++            copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
++            copy.imageExtent = {2, 2, 1};
++            vk::p_vkCmdCopyImageToBuffer(command, image->image,
++                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1, &copy);
++            VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
++            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
++            barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
++            barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++            barrier.buffer = readback.buffer;
++            barrier.offset = readback.offset;
++            barrier.size = 8;
++            vk::p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
++                VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &barrier, 0, nullptr);
++            frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, true);
++            for (unsigned pixel = 0; pixel < 4; ++pixel) {
++                uint16_t value = 0;
++                std::memcpy(&value, readback.ptr + pixel * 2, sizeof value);
++                if (value != expected[channel])
++                    std::cerr << "RGB565 channel=" << channel << " pixel=" << pixel
++                        << " packed=0x" << std::hex << value << " expected=0x"
++                        << expected[channel] << std::dec << '\n';
++                check(value == expected[channel]);
++            }
++        }
++        destroy(key);
++    }
++}
 --- /dev/null
 +++ b/tests/native_sampled_profile_test.cpp
 @@ -0,0 +1,5 @@

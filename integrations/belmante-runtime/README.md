@@ -6,8 +6,13 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 37 CPU/component suites and a 321-check native
-GPU fixture on an RX 9070 XT. Actual MK8D startup reaches its owned window,
+Windows integration now passes 37 CPU/component suites and a 635-check native
+GPU fixture on an RX 9070 XT. R150 reconstructs 150 generic adapted files. Its
+RGB565 correction and bounded BC3 integer block views pass authored GPU encoding,
+face/mip readback and compressed-sampling regressions. Integer fragment outputs
+are compiled offline and checked against actual render-target types. The original
+game run is validating these changes; correct lighting and race rendering remain
+unverified. Actual MK8D startup reaches its owned window,
 Vulkan device/queue, three presentation textures, command-buffer setup, native
 save mounts and first texture upload. Copied texture/sampler descriptors now
 compare using the inspected SDK 53 layout. The inspected 2D packaged texture layout and shared debug-label storage are

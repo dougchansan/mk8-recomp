@@ -1,9 +1,21 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -36,6 +36,70 @@
+@@ -36,6 +36,86 @@
  option(NX_TESTS "Build the standalone unit tests" OFF)
  if(NX_TESTS AND NOT ANDROID)
      enable_testing()
++    add_executable(native_font_bundle_test tests/native_font_bundle_test.cpp)
++    target_include_directories(native_font_bundle_test PRIVATE runtime/src)
++    add_test(NAME native_font_bundle COMMAND native_font_bundle_test)
++    add_executable(native_audio_sdk_layout_test tests/native_audio_sdk_layout_test.cpp)
++    target_include_directories(native_audio_sdk_layout_test PRIVATE runtime/src)
++    add_test(NAME native_audio_sdk_layout COMMAND native_audio_sdk_layout_test)
++    add_executable(native_volume_profile_test tests/native_volume_profile_test.cpp)
++    target_include_directories(native_volume_profile_test PRIVATE runtime/src)
++    add_test(NAME native_volume_profile COMMAND native_volume_profile_test)
++    add_executable(native_compute_profile_test tests/native_compute_profile_test.cpp)
++    target_include_directories(native_compute_profile_test PRIVATE runtime/src)
++    add_test(NAME native_compute_profile COMMAND native_compute_profile_test)
 +    add_executable(native_texture_layers_test tests/native_texture_layers_test.cpp)
 +    target_include_directories(native_texture_layers_test PRIVATE runtime/src)
 +    add_test(NAME native_texture_layers COMMAND native_texture_layers_test)
@@ -68,10 +80,14 @@
 +    target_include_directories(romfs_image_test PRIVATE runtime/src)
 +    set(NX_ROMFS_FIXTURES "${CMAKE_SOURCE_DIR}/tests/romfs-fixtures" CACHE PATH "Authored RomFS test inputs")
 +    add_test(NAME romfs_image COMMAND romfs_image_test "${NX_ROMFS_FIXTURES}")
++    add_executable(native_readonly_storage_test tests/native_readonly_storage_test.cpp)
++    target_include_directories(native_readonly_storage_test PRIVATE runtime/src)
++    target_link_libraries(native_readonly_storage_test PRIVATE bcrypt)
++    add_test(NAME native_readonly_storage COMMAND native_readonly_storage_test "${NX_ROMFS_FIXTURES}")
      add_executable(gpu_pick_test tests/gpu_pick_test.cpp runtime/src/nvn/nvn_gpu_pick.cpp)
      target_compile_definitions(gpu_pick_test PRIVATE NX_GPU_PICK_STANDALONE)
      target_include_directories(gpu_pick_test PRIVATE runtime/src/nvn)
-@@ -67,7 +131,14 @@
+@@ -67,7 +147,14 @@
      return()
  endif()
  
@@ -87,7 +103,7 @@
      file(GLOB src CONFIGURE_DEPENDS "${NX_GEN_DIR}/${mod}/*.cpp")
      add_library(game_${mod} STATIC ${src})
      target_include_directories(game_${mod} PRIVATE runtime/include "${NX_GEN_DIR}/${mod}")
-@@ -84,8 +155,10 @@
+@@ -84,8 +171,10 @@
          target_compile_options(game_${mod} PRIVATE -O2 -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
      endif()
  endforeach()
@@ -98,7 +114,7 @@
      runtime/src/main.cpp
      runtime/src/sampler.cpp
      runtime/src/loader.cpp
-@@ -93,6 +166,12 @@
+@@ -93,6 +182,12 @@
      runtime/src/kernel.cpp
      runtime/src/kernel_watch.cpp
      runtime/src/ipc.cpp
@@ -111,7 +127,7 @@
      runtime/src/svc_am.cpp
      runtime/src/svc_set.cpp
      runtime/src/svc_misc.cpp
-@@ -101,6 +180,7 @@
+@@ -101,6 +196,7 @@
      runtime/src/hle_fs.cpp
      runtime/src/svc_account.cpp
      runtime/src/hle_ro.cpp
@@ -119,7 +135,7 @@
      runtime/src/hle_vi.cpp
      runtime/src/hle_hid.cpp
      runtime/src/hle_net.cpp
-@@ -185,7 +265,7 @@
+@@ -185,7 +281,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -128,7 +144,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +276,7 @@
+@@ -196,7 +292,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -137,7 +153,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,16 +288,35 @@
+@@ -208,16 +304,36 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -165,6 +181,7 @@
 +    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt)
 +    if(NX_TESTS)
 +        add_executable(native_device_fixture tests/native_device_fixture.cpp $<TARGET_OBJECTS:nx_runtime_objects>)
++        target_compile_definitions(native_device_fixture PRIVATE NX_AUTHORED_IMAGE_PATH="${NX_ROMFS_FIXTURES}/valid.bin")
 +        target_include_directories(native_device_fixture PRIVATE runtime/include runtime/src "${NX_VULKAN_SDK}/Include")
 +        target_link_libraries(native_device_fixture PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt)
 +        target_link_options(native_device_fixture PRIVATE /STACK:67108864 /HIGHENTROPYVA:NO /MAP)
@@ -258,18 +275,157 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +int platform_entry();
 +int main(){return platform_entry();}
+--- a/runtime/src/hle_audio.cpp
++++ b/runtime/src/hle_audio.cpp
+@@ -15,6 +15,8 @@
+ #include <thread>
+ #include <vector>
+ 
++#include "native_audio_sdk_layout.h"
++#include "nvn/native_guest_span.h"
+ #include "kernel.h"
+ #include "platform.h"
+ 
+@@ -179,8 +181,8 @@
+ // the frame's commands and runs the sdk's own DSP command processor on the calling thread, and its render system
+ // (impl + 0x60) signals its own event, which has no kernel object in process. A guest thread of ours renders every
+ // 5 ms and signals the game's event itself, then sends the frame's final mix to the host device.
+-constexpr uint64_t kRendererVtable = 0xd04910;     // sdk: vtable of the sf object wrapping AudioRendererImpl
+-constexpr uint64_t kExecuteRendering = 0x20cac8;   // sdk: AudioRendererImpl::ExecuteAudioRendererRendering
++uint64_t audio_execute(){auto fn=find_symbol("_ZN2nn5audio6server24AudioRendererManagerImpl17AudioRendererImpl29ExecuteAudioRendererRenderingEv");if(!fn)fatal("native SDK audio rendering entry missing");return fn;}
++uint32_t audio_getter_offset(const char* name){auto fn=find_symbol(name);if(!fn||!nvn::native_guest_span(fn,8,1))fatal("native audio getter missing");return sdk53_audio_u32_getter_offset(ld<uint32_t>(fn),ld<uint32_t>(fn+4));}
+ 
+ // The in-process render system hands the client a readable handle of 0 for the renderer's event (there is no
+ // kernel event behind it), so the SystemEvent the game waits on is ours: an InterProcessEventType keeps its
+@@ -190,19 +192,12 @@
+ std::mutex g_renderers_lock;
+ std::vector<uint64_t> g_renderers;  // AudioRendererImpl*
+ 
+-uint64_t sdk_base() {
+-    static uint64_t base = [] {
+-        const LoadedModule* m = module_at(find_symbol("nvnBootstrapLoader"));
+-        return m ? m->base : 0;
+-    }();
+-    return base;
+-}
+-
+ // The AudioRendererImpl behind an AudioRendererHandle: an sf object whose vtable pointer is that one, within two
+ // pointer hops of the handle.
+ uint64_t find_renderer(uint64_t handle) {
+-    uint64_t vptr = sdk_base() + kRendererVtable + 0x10;
+-    auto valid = [](uint64_t p) { return p >= kModuleBase && p < kKernelBase + kKernelSize && (p & 7) == 0; };
++    const auto table=find_symbol("_ZTVN2nn2sf6detail38ObjectImplFactoryWithStatefulAllocatorINS0_4impl6detail16ImplTemplateBaseINS_5audio6detail14IAudioRendererES8_NS1_18EmplacedImplHolderINS6_6server24AudioRendererManagerImpl17AudioRendererImplEEESD_EENS0_24StatefulAllocationPolicyINS0_16ExpHeapAllocatorEEEE6ObjectE");
++    if(!table)fatal("native audio renderer object type missing");const uint64_t vptr=table+0x10;
++    auto valid = [](uint64_t p) { return (p&7)==0&&nvn::native_guest_span(p,0x40,1); };
+     for (uint64_t a = 0; a < 0x40; a += 8) {
+         uint64_t p = ld<uint64_t>(handle + a);
+         if (!valid(p)) continue;
+@@ -223,7 +218,7 @@
+ // 5 ms frame to s16 stereo and queues it on the device. Command header: {u32 magic 0xcafebabe; u8 enabled; s8 id;
+ // s16 size; u32 estimated time}. DeviceSink (CommandBuffer::Generate<DeviceSink>, sdk+211e10): +0x128 the mix
+ // buffers (or the upsampler's), +0x130 input count, +0x134 s16 buffer index per input.
+-constexpr uint8_t kCmdDownMix6chTo2ch = 17, kCmdDeviceSink = 19;
++constexpr uint16_t kCmdDownMix6chTo2ch = 13, kCmdDeviceSink = 15;
+ constexpr int kFrame = 240;          // samples per 5 ms at 48 kHz
+ constexpr int kBlocks = 64;          // 320 ms of output blocks
+ constexpr uint32_t kMaxQueued = 12;  // 60 ms in the device queue: past that, frames are dropped
+@@ -258,27 +253,25 @@
+ }
+ 
+ void capture_device_sink(uint64_t proc) {  // proc: nn::audio::dsp::CommandListProcessor after Process
+-    uint64_t cmd = ld<uint64_t>(proc) + 0x20;  // the list header, then the commands (+8 is the cursor: at the end)
+-    uint32_t count = ld<uint32_t>(proc + 0x1c), samples = ld<uint32_t>(proc + 0x20), rate = ld<uint32_t>(proc + 0x28);
+-    uint32_t frames = rate == 48000 ? samples : kFrame;  // other rates: the upsampler's 48 kHz buffers
+-    bool downmixed = false;
+-    for (uint32_t i = 0; i < count && ld<uint32_t>(cmd) == 0xcafebabe; i++, cmd += ld<int16_t>(cmd + 6)) {
+-        if (!ld<uint8_t>(cmd + 4)) continue;
+-        uint8_t id = ld<uint8_t>(cmd + 5);
+-        if (id == kCmdDownMix6chTo2ch) downmixed = true;
+-        if (id != kCmdDeviceSink) continue;
+-        uint64_t buffers = ld<uint64_t>(cmd + 0x128);
+-        uint32_t inputs = ld<uint32_t>(cmd + 0x130);
+-        static bool once = false;
+-        if (!once) {
+-            once = true;
+-            log("audio: device sink '%s', %u inputs%s, %u samples at %u Hz", reinterpret_cast<const char*>(cmd + 0x20),
+-                inputs, downmixed ? " (downmixed to stereo)" : "", samples, rate);
+-        }
+-        if (!buffers || !inputs || frames != kFrame) continue;
+-        auto ch = [&](uint32_t k) {
+-            return reinterpret_cast<const int32_t*>(buffers + uint64_t(ld<int16_t>(cmd + 0x134 + 2 * k)) * frames * 4);
+-        };
++    if(!nvn::native_guest_span(proc,0x38,1))fatal("native audio processor storage unavailable");
++    uint64_t cmd=ld<uint64_t>(proc)+0x20;
++    const uint32_t count=ld<uint32_t>(proc+0x1c),samples=ld<uint32_t>(proc+0x20),rate=ld<uint32_t>(proc+0x24),buffer_count=ld<uint32_t>(proc+0x30);
++    if(count>65536||samples!=kFrame||rate!=48000)fatal("unsupported native audio command cadence");
++    bool downmixed=false;
++    for(uint32_t i=0;i<count;++i){
++        if(!nvn::native_guest_span(cmd,0x14,1))fatal("native audio command header unreadable");
++        const auto command_size=ld<uint16_t>(cmd+4);
++        if(command_size<0x14||!nvn::native_guest_span(cmd,command_size,1))fatal("native audio command range unreadable");
++        const auto command=sdk53_audio_command({reinterpret_cast<const uint8_t*>(cmd),command_size});
++        const uint64_t current=cmd;cmd+=command.size;
++        if(!command.enabled)continue;
++        if(command.id==kCmdDownMix6chTo2ch)downmixed=true;
++        if(command.id!=kCmdDeviceSink)continue;
++        if(command.size<0x130)fatal("native audio device sink truncated");
++        const uint64_t buffers=ld<uint64_t>(current+0x118);const uint32_t inputs=ld<uint32_t>(current+0x120);
++        if(!inputs)continue;
++        if(inputs>6||!buffers)fatal("native audio sink channel layout unsupported");
++        auto ch=[&](uint32_t channel){const uint32_t index=ld<uint8_t>(current+0x124+channel);if(index>=buffer_count)fatal("native audio mix index out of range");const auto address=buffers+uint64_t(index)*kFrame*4;if(!nvn::native_guest_span(address,kFrame*4,1))fatal("native audio mix span unreadable");return reinterpret_cast<const int32_t*>(address);};
+         const int32_t* l = ch(0);
+         const int32_t* r = inputs > 1 ? ch(1) : l;
+         // Six channels without the sdk's own downmix (FL FR FC LFE RL RR): fold them to stereo here.
+@@ -418,7 +411,7 @@
+             std::memcpy(saved, c.x, sizeof saved);
+             c.x[0] = impl;
+             std::lock_guard lk(g_render_system);
+-            call(c, sdk_base() + kExecuteRendering);
++            call(c, audio_execute());
+             last_rc = c.x[0];
+             std::memcpy(c.x, saved, sizeof saved);
+             std::lock_guard pk(g_pace_lock);  // counted under the render lock (AudioRenderSystemUpdate)
+@@ -470,16 +463,21 @@
+     uint64_t rc = c.x[0];
+     uint64_t impl = rc == 0 ? find_renderer(handle) : 0;
+     log("audio: renderer opened (result %llx), impl %llx", (unsigned long long)rc, (unsigned long long)impl);
+-    if (!impl) return;
++    if(rc==0&&!impl)fatal("native SDK audio renderer identity was not found");
++    if(!impl)return;
+     // ExecuteAudioRendererRendering only renders in the manual execution mode on the CPU rendering device
+     // (AudioRenderSystem::GetExecutionMode / GetRenderingDevice == 1, at render system + 0x2d0 / + 0x2d4); the game
+     // opens the renderer in the automatic mode, where the ADSP renders on its own. Our 5 ms thread is that ADSP, so
+     // the renderer is switched to manual/CPU; otherwise every call failed with 0x40299 and nothing was ever rendered
+     // (streamed music never advanced, and the opening cutscene waited for it forever).
+-    uint64_t system = impl + 0x60;
+-    log("audio: execution mode %u, rendering device %u -> 1, 1", ld<uint32_t>(system + 0x2d0), ld<uint32_t>(system + 0x2d4));
+-    st<uint32_t>(system + 0x2d0, 1);
+-    st<uint32_t>(system + 0x2d4, 1);
++    const auto execute=audio_execute();if(!nvn::native_guest_span(execute+0x10,4,1))fatal("native audio system layout unavailable");
++    const auto system_offset=sdk53_audio_system_offset(ld<uint32_t>(execute+0x10));
++    const auto execution_offset=audio_getter_offset("_ZNK2nn5audio6server17AudioRenderSystem16GetExecutionModeEv");
++    const auto device_offset=audio_getter_offset("_ZNK2nn5audio6server17AudioRenderSystem18GetRenderingDeviceEv");
++    const uint64_t system=impl+system_offset;
++    if(!nvn::native_guest_span(system+execution_offset,4,3)||!nvn::native_guest_span(system+device_offset,4,3))fatal("native audio system fields are not writable");
++    log("audio: native SDK execution/device fields %x/%x values=%u/%u ->manual CPU",execution_offset,device_offset,ld<uint32_t>(system+execution_offset),ld<uint32_t>(system+device_offset));
++    st<uint32_t>(system+execution_offset,1);st<uint32_t>(system+device_offset,1);
+     {
+         std::lock_guard lk(g_renderers_lock);
+         g_renderers.push_back(impl);
 --- a/runtime/src/hle_fs.cpp
 +++ b/runtime/src/hle_fs.cpp
-@@ -21,6 +21,8 @@
+@@ -21,6 +21,10 @@
  #include <nx/runtime.h>
  
  #include "platform.h"
 +#include "romfs_image.h"
++#include "native_readonly_storage.h"
++#include "nvn/native_guest_span.h"
 +#include <optional>
  
  namespace fs = std::filesystem;
  
-@@ -66,10 +68,14 @@
+@@ -66,10 +70,14 @@
  struct File {
      FILE* f;
      std::string path;
@@ -285,7 +441,7 @@
  };
  std::map<uint64_t, std::shared_ptr<File>> g_files;
  
-@@ -94,7 +100,8 @@
+@@ -94,7 +102,8 @@
      return nullptr;
  }
  struct Dir {
@@ -295,7 +451,7 @@
      size_t pos = 0;
  };
  std::map<uint64_t, Dir> g_dirs;
-@@ -117,11 +124,25 @@
+@@ -117,11 +126,30 @@
      if (it == g_mounts.end()) return {};
      std::string rest = guest.substr(colon + 1);
      while (!rest.empty() && (rest[0] == '/' || rest[0] == '\\')) rest.erase(0, 1);
@@ -310,9 +466,14 @@
 + static const auto image=[]()->std::shared_ptr<RomfsImage>{const char* path=std::getenv("NX_ROMFS_IMAGE");return path?std::make_shared<RomfsImage>(fs::u8path(path)):nullptr;}();
 + return image;
 +}
++std::shared_ptr<NativeReadonlyStorage> system_mii_archive;
++fs::path system_mii_root(){return (data_root()/"extract"/"system-mii").lexically_normal();}
++bool under_image_root(const fs::path& path,const fs::path& root){auto relative=path.lexically_normal().lexically_relative(root);if(relative.empty()||relative.is_absolute())return false;for(const auto& part:relative)if(part=="..")return false;return true;}
++std::shared_ptr<RomfsImage> romfs_image_for(const fs::path& path){return system_mii_archive&&under_image_root(path,system_mii_root())?system_mii_archive->image():romfs_image();}
 +std::optional<std::string> romfs_relative(const fs::path& p) {
-+ if(!romfs_image() || p.empty())return {};
-+ auto rel=p.lexically_normal().lexically_relative((data_root()/"extract"/"romfs").lexically_normal());
++ if(p.empty()||!romfs_image_for(p))return {};
++ const auto root=system_mii_archive&&under_image_root(p,system_mii_root())?system_mii_root():(data_root()/"extract"/"romfs").lexically_normal();
++ auto rel=p.lexically_normal().lexically_relative(root);
 + if(rel.empty()||rel.is_absolute())return {};
 + for(const auto& part:rel)if(part=="..")return {};
 + auto generic=rel.generic_u8string();
@@ -325,7 +486,23 @@
      g_mounts[name] = p;
      log("fs: mounted %s: -> %s", name.c_str(), p.string().c_str());
  }
-@@ -146,6 +167,23 @@
+@@ -139,6 +167,15 @@
+     c.x[0] = kOk;
+ }
+ 
++void QueryMountSystemDataCacheSize(CPU& c){if(c.x[1]!=0x0100000000000802ull||!nvn::native_guest_span(c.x[0],8,2)){c.x[0]=kPathNotFound;return;}st<uint64_t>(c.x[0],0);c.x[0]=kOk;}
++void MountSystemData(CPU& c){
++    std::lock_guard lock(g_fs);if(c.x[1]!=0x0100000000000802ull){c.x[0]=kPathNotFound;return;}
++    const char* image=std::getenv("NX_MII_ROMFS_IMAGE"),*digest=std::getenv("NX_MII_ROMFS_SHA256");if(!image||!digest){c.x[0]=kPathNotFound;return;}
++    const auto name=cstr(c.x[0]);if(name.empty()||name.find_first_of(":/\\")!=std::string::npos){c.x[0]=kPathNotFound;return;}
++    if(!system_mii_archive)system_mii_archive=std::make_shared<NativeReadonlyStorage>(fs::u8path(image),digest);
++    mount(name,system_mii_root());c.x[0]=kOk;
++}
++
+ void EnsureSaveData(CPU& c) { c.x[0] = kOk; }
+ 
+ void MountSaveData(CPU& c) {
+@@ -146,6 +183,23 @@
      std::string name = cstr(c.x[0]);
      mount(name, data_root() / "user" / "save");
      c.x[0] = kOk;
@@ -349,34 +526,34 @@
  }
  
  void Unmount(CPU& c) {
-@@ -208,6 +246,11 @@
+@@ -208,6 +262,11 @@
  void GetEntryType(CPU& c) {  // (DirectoryEntryType* out, path)
      std::lock_guard lk(g_fs);
      fs::path p = resolve(cstr(c.x[1]));
 +    if(auto rel=romfs_relative(p)) {
-+        const auto* entry=romfs_image()->find(*rel);
++        const auto* entry=romfs_image_for(p)->find(*rel);
 +        if(!entry){c.x[0]=kPathNotFound;return;}
 +        st<uint32_t>(c.x[0],entry->directory?0:1);c.x[0]=kOk;return;
 +    }
      if (find_virtual(p)) {
          st<uint32_t>(c.x[0], 1);
          c.x[0] = kOk;
-@@ -227,6 +270,14 @@
+@@ -227,6 +286,14 @@
      std::string guest = cstr(c.x[1]);
      fs::path p = resolve(guest);
      int mode = int(c.x[2]);
 +    if(auto rel=romfs_relative(p)) {
-+        const auto* entry=romfs_image()->find(*rel);
++        const auto* entry=romfs_image_for(p)->find(*rel);
 +        if(!entry||entry->directory){note_open("OpenFile",guest,"RomFS not found");c.x[0]=kPathNotFound;return;}
 +        if(mode!=1){c.x[0]=0x292202;return;}
-+        auto file=std::make_shared<File>(romfs_image(),*entry,guest);
++        auto file=std::make_shared<File>(romfs_image_for(p),*entry,guest);
 +        auto h=g_next++;g_files.emplace(h,std::move(file));st<uint64_t>(c.x[0],h);
 +        note_open("OpenFile",guest,"RomFS image");if(trace_fs())log("fs: OpenFile(%s) -> RomFS image offset=%llu bytes=%llu",guest.c_str(),static_cast<unsigned long long>(entry->offset),static_cast<unsigned long long>(entry->size));c.x[0]=kOk;return;
 +    }
      if (const std::string* v = find_virtual(p)) {  // served from memory, through a temporary file
          FILE* f = std::tmpfile();
          if (!f) {
-@@ -259,6 +310,7 @@
+@@ -259,6 +326,7 @@
      }
      uint64_t h = g_next++;
      g_files[h] = std::make_shared<File>(f, guest);
@@ -384,7 +561,7 @@
      st<uint64_t>(c.x[0], h);
      note_open("OpenFile", guest, "ok");
      if (trace_fs()) log("fs: OpenFile(%s, %d) -> %llu", guest.c_str(), mode, (unsigned long long)h);
-@@ -273,6 +325,13 @@
+@@ -273,6 +341,13 @@
  
  void CloseFile(CPU& c) {
      std::lock_guard lk(g_fs);
@@ -398,7 +575,7 @@
      g_files.erase(c.x[0]);
  }
  
-@@ -282,6 +341,7 @@
+@@ -282,6 +357,7 @@
          c.x[0] = kTargetNotFound;
          return;
      }
@@ -406,7 +583,7 @@
      std::lock_guard lk(g_fs);  // the FILE position is shared with writers
      FILE* f = file->f;
      int64_t cur = plat::ftell64(f);
-@@ -294,7 +354,8 @@
+@@ -294,7 +370,8 @@
  
  uint64_t read_at(const File& file, int64_t off, uint64_t buf, uint64_t size) {
      uint64_t t0 = plat::monotonic_ns();
@@ -416,7 +593,7 @@
      uint64_t ms = (plat::monotonic_ns() - t0) / 1'000'000;
      if (g_trace) log("fs: read %s at %lld size %llu -> %llu", file.path.c_str(), (long long)off, (unsigned long long)size,
                       (unsigned long long)n);
-@@ -337,6 +398,7 @@
+@@ -337,6 +414,7 @@
          c.x[0] = kTargetNotFound;
          return;
      }
@@ -424,7 +601,7 @@
      std::lock_guard lk(g_fs);
      plat::fseek64(file->f, int64_t(c.x[1]), SEEK_SET);
      fwrite(reinterpret_cast<const void*>(c.x[2]), 1, c.x[3], file->f);
-@@ -347,7 +409,7 @@
+@@ -347,7 +425,7 @@
  void FlushFile(CPU& c) {
      if (auto file = open_file(c.x[0])) {
          std::lock_guard lk(g_fs);
@@ -433,18 +610,18 @@
      }
      c.x[0] = kOk;
  }
-@@ -359,7 +421,9 @@
+@@ -359,7 +437,9 @@
      fs::path p = resolve(cstr(c.x[1]));
      int mode = int(c.x[2]);
      std::error_code ec;
 -    bool found = !p.empty() && fs::is_directory(p, ec);
 +    const auto rel=romfs_relative(p);
-+    const auto* image_entry=rel?romfs_image()->find(*rel):nullptr;
++    const auto* image_entry=rel?romfs_image_for(p)->find(*rel):nullptr;
 +    bool found = rel?(image_entry&&image_entry->directory):(!p.empty() && fs::is_directory(p, ec));
      note_open("OpenDirectory", cstr(c.x[1]), found ? "ok" : "not found");
      if (trace_fs()) log("fs: OpenDirectory(%s, %d)%s", cstr(c.x[1]).c_str(), mode, found ? "" : " not found");
      if (!found) {
-@@ -367,9 +431,15 @@
+@@ -367,9 +447,15 @@
          return;
      }
      Dir d;
@@ -453,7 +630,7 @@
 -        if ((dir && (mode & 1)) || (!dir && (mode & 2))) d.entries.push_back(e);
 +    if(rel) {
 +        const auto prefix=rel->empty()?std::string{}:*rel+"/";
-+        for(const auto& [key,entry]:romfs_image()->entries()) {
++        for(const auto& [key,entry]:romfs_image_for(p)->entries()) {
 +            if(!key.starts_with(prefix))continue;
 +            const auto suffix=key.substr(prefix.size());if(suffix.empty()||suffix.find('/')!=std::string::npos)continue;
 +            if((entry.directory&&(mode&1))||(!entry.directory&&(mode&2)))d.entries.push_back({fs::u8path(suffix),entry.directory,entry.size});
@@ -463,7 +640,17 @@
      }
      uint64_t h = g_next++;
      g_dirs[h] = std::move(d);
-@@ -519,6 +589,11 @@
+@@ -471,6 +557,9 @@
+ NX_HLE("_ZN2nn2fs22QueryMountRomCacheSizeEPm", QueryMountRomCacheSize);
+ NX_HLE("_ZN2nn2fs8MountRomEPKcPvm", MountRom);
+ NX_HLE("_ZN2nn2fs14EnsureSaveDataERKNS_7account3UidE", EnsureSaveData);
++NX_HLE("_ZN2nn2fs15MountSystemDataEPKcNS_3ncm12SystemDataIdE", MountSystemData);
++NX_HLE("_ZN2nn2fs15MountSystemDataEPKcNS_3ncm12SystemDataIdEPvm", MountSystemData);
++NX_HLE("_ZN2nn2fs29QueryMountSystemDataCacheSizeEPmNS_3ncm12SystemDataIdE", QueryMountSystemDataCacheSize);
+ NX_HLE("_ZN2nn2fs13MountSaveDataEPKcRKNS_7account3UidE", MountSaveData);
+ NX_HLE("_ZN2nn2fs7UnmountEPKc", Unmount);
+ NX_HLE("_ZN2nn2fs10DeleteFileEPKc", DeleteFile);
+@@ -519,6 +608,11 @@
  }
  
  std::string read_game_file(const std::string& relative_to_romfs) {
@@ -475,7 +662,7 @@
      FILE* f = plat::fopen_utf8(utf8(data_root() / "extract" / "romfs" / fs::u8path(relative_to_romfs)), "rb");
      if (!f) return {};
      std::string s;
-@@ -530,3 +605,6 @@
+@@ -530,3 +624,6 @@
  }
  
  }  // namespace nx
@@ -1126,6 +1313,21 @@
 +#include <nx/module.h>
 +namespace nx {uint64_t module_init_offset(const ModuleInfo&);}
 --- /dev/null
++++ b/runtime/src/native_audio_sdk_layout.h
+@@ -0,0 +1,12 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++#include <cstring>
++#include <span>
++#include <stdexcept>
++namespace nx {
++inline uint32_t sdk53_audio_u32_getter_offset(uint32_t instruction,uint32_t ret){if((instruction&0xffc003ffu)!=0xb9400000u||ret!=0xd65f03c0u)throw std::invalid_argument("unsupported audio getter code");return ((instruction>>10)&0xfff)*4;}
++inline uint32_t sdk53_audio_system_offset(uint32_t instruction){if((instruction&0xffc003ffu)!=0x91000013u)throw std::invalid_argument("unsupported audio render-system code");return (instruction>>10)&0xfff;}
++struct Sdk53AudioCommand {uint16_t size,id;bool enabled;};
++inline Sdk53AudioCommand sdk53_audio_command(std::span<const uint8_t> bytes){if(bytes.size()<0x14)throw std::invalid_argument("audio command header truncated");uint32_t magic;uint16_t size,id;std::memcpy(&magic,bytes.data(),4);std::memcpy(&size,bytes.data()+4,2);std::memcpy(&id,bytes.data()+6,2);if(magic!=0xcafebabe||size<0x14||size>bytes.size())throw std::invalid_argument("audio command range/magic");return {size,id,bytes[0x10]!=0};}
++}
+--- /dev/null
 +++ b/runtime/src/native_exit_policy.h
 @@ -0,0 +1,14 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -1141,6 +1343,29 @@
 + bool is_locked()const{std::lock_guard guard(mutex);return locked;}
 +};
 +inline NativeExitPolicy& native_exit_policy(){static NativeExitPolicy value;return value;}
++}
+--- /dev/null
++++ b/runtime/src/native_font_bundle.h
+@@ -0,0 +1,20 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <array>
++#include <cstdint>
++#include <cstring>
++#include <span>
++#include <stdexcept>
++namespace nx {
++struct NativeFontRegion{uint32_t offset,size;};
++struct NativeFontLayout{uint32_t memory_size,count;std::array<NativeFontRegion,7> regions{};};
++inline NativeFontLayout native_font_layout(std::span<const uint8_t> bytes){
++ if(bytes.size()<0x100||std::memcmp(bytes.data(),"NFB1",4))throw std::invalid_argument("native font bundle header");
++ auto read=[&](size_t offset){uint32_t value;std::memcpy(&value,bytes.data()+offset,4);return value;};
++ NativeFontLayout result{read(8),read(4)};
++ if(!result.count||result.count>7||result.memory_size>0x1100000||result.memory_size<16||result.memory_size!=bytes.size()-0x100)throw std::invalid_argument("native font bundle extent");
++ uint64_t previous_end=0;
++ for(uint32_t i=0;i<result.count;++i){auto& region=result.regions[i];region={read(16+i*8),read(20+i*8)};if(region.offset<8||region.size<4||region.offset>result.memory_size||region.size>result.memory_size-region.offset||region.offset-8<previous_end)throw std::invalid_argument("native font region range");auto p=bytes.data()+0x100+region.offset;const bool ttf=(p[0]==0&&p[1]==1&&p[2]==0&&p[3]==0)||!std::memcmp(p,"OTTO",4)||!std::memcmp(p,"ttcf",4);if(!ttf)throw std::invalid_argument("native font sfnt header");previous_end=uint64_t(region.offset)+region.size;}
++ return result;
++}
 +}
 --- /dev/null
 +++ b/runtime/src/native_hid_policy.h
@@ -1167,6 +1392,37 @@
 +};
 +}
 --- /dev/null
++++ b/runtime/src/native_readonly_storage.h
+@@ -0,0 +1,28 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "romfs_image.h"
++#include <array>
++#include <memory>
++#include <windows.h>
++#include <bcrypt.h>
++namespace nx {
++class NativeReadonlyStorage {
++    std::shared_ptr<RomfsImage> image_;uint64_t size_{};
++public:
++    NativeReadonlyStorage(const std::filesystem::path& path,const std::string& expected):image_(std::make_shared<RomfsImage>(path)) {
++        size_=std::filesystem::file_size(path);if(!size_||size_>32ull*1024*1024||expected.size()!=64)throw std::invalid_argument("native archive extent/digest");
++        std::vector<uint8_t> bytes(static_cast<size_t>(size_));if(image_->read({false,0,size_},0,bytes)!=size_)throw std::runtime_error("native archive hash read failed");
++        std::array<uint8_t,32> digest{};BCRYPT_ALG_HANDLE algorithm=nullptr;
++        if(BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,nullptr,0)<0)throw std::runtime_error("native archive hash provider failed");
++        const auto hashed=BCryptHash(algorithm,nullptr,0,bytes.data(),ULONG(bytes.size()),digest.data(),ULONG(digest.size()));const auto closed=BCryptCloseAlgorithmProvider(algorithm,0);
++        if(hashed<0||closed<0)throw std::runtime_error("native archive hash failed");
++        const char* hex="0123456789abcdef";std::string actual;for(auto value:digest){actual+=hex[value>>4];actual+=hex[value&15];}if(actual!=expected)throw std::invalid_argument("native archive digest mismatch");
++    }
++    uint64_t size()const{return size_;}
++    std::shared_ptr<RomfsImage> image()const{return image_;}
++    std::vector<uint8_t> read(uint64_t offset,uint64_t count){
++        if(offset>size_||count>size_-offset)throw std::out_of_range("native archive read range");
++        std::vector<uint8_t> bytes(static_cast<size_t>(count));if(image_->read({false,0,size_},offset,bytes)!=count)throw std::runtime_error("native archive read failed");return bytes;
++    }
++};
++}
+--- /dev/null
 +++ b/runtime/src/native_touch_policy.h
 @@ -0,0 +1,17 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -1187,6 +1443,23 @@
 +};
 +}
 --- /dev/null
++++ b/runtime/src/nvn/native_compute_profile.h
+@@ -0,0 +1,14 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <array>
++#include <cstdint>
++namespace nx::nvn {
++struct ShaderInfo;
++bool native_shader_uses_compute_profile(const ShaderInfo*);
++inline bool native_compute_group_valid(std::array<uint32_t,3> control,std::array<uint32_t,3> reflected,uint32_t shared) {
++    return control==reflected&&control[0]>0&&control[1]>0&&control[2]>0&&control[0]<=1024&&control[1]<=1024&&control[2]<=64&&uint64_t(control[0])*control[1]*control[2]<=1024&&shared<=65536&&shared%4==0;
++}
++inline bool native_compute_buffer_extent_valid(uint64_t offset,uint64_t bytes,uint64_t pool_size,uint64_t limit) {
++    return bytes>0&&bytes<=limit&&offset<=pool_size&&bytes<=pool_size-offset;
++}
++}
+--- /dev/null
 +++ b/runtime/src/nvn/native_device.h
 @@ -0,0 +1,8 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -1197,6 +1470,12 @@
 +bool initialize_native_device(uint64_t,uint32_t flags);
 +void finalize_native_device(uint64_t);
 +}
+--- /dev/null
++++ b/runtime/src/nvn/native_graphics_buffer_profile.h
+@@ -0,0 +1,3 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++namespace nx::nvn {struct ShaderInfo;bool native_shader_uses_graphics_buffer_profile(const ShaderInfo*);}
 --- /dev/null
 +++ b/runtime/src/nvn/native_guest_span.h
 @@ -0,0 +1,4 @@
@@ -1213,7 +1492,7 @@
 +namespace nx::nvn {void set_native_origin(uint64_t,uint32_t);uint32_t native_window_origin();}
 --- /dev/null
 +++ b/runtime/src/nvn/native_sampled_profile.h
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,32 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include <cstdint>
@@ -1240,6 +1519,8 @@
 +inline bool native_sampled_array_shadow_compatible(uint32_t target,uint32_t layers,uint32_t samples,uint32_t format,uint32_t depth_mode,uint32_t compare_mode,uint32_t compare_func) {
 +    return native_sampled_shadow_compatible(true,target,layers,samples,format,depth_mode,compare_mode,compare_func);
 +}
++inline bool native_sampled_array_float_compatible(uint32_t target,uint32_t layers,uint32_t samples,uint32_t format){return target==4&&layers>0&&samples<=1&&native_float_color_format(format);}
++inline bool native_sampled_cube_array_float_compatible(uint32_t target,uint32_t width,uint32_t height,uint32_t layers,uint32_t samples,uint32_t format){return target==9&&width>0&&width==height&&layers>=6&&layers%6==0&&samples<=1&&native_float_color_format(format);}
 +inline bool native_sampled_cube_float_compatible(uint32_t target,uint32_t width,uint32_t height,uint32_t samples,uint32_t format) {
 +    return target==8&&width>0&&width==height&&samples<=1&&native_float_color_format(format);
 +}
@@ -1289,6 +1570,24 @@
 +// SDK53 surface construction forces six faces for target8, independently of builder depth.
 +inline uint32_t native_texture_storage_layers(uint32_t target,uint32_t depth) {return target==8?6:depth;}
 +}
+--- /dev/null
++++ b/runtime/src/nvn/native_volume_profile.h
+@@ -0,0 +1,15 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++namespace nx::nvn {
++struct Texture;
++bool native_volume_ready_for_sample(const Texture&);
++struct NativeVolumeExtent {uint32_t width,height,depth,levels,format,samples;};
++struct NativeVolumeWrite {uint32_t level,x,y,z,width,height,depth;uint64_t bytes;};
++inline bool native_volume_full_write(const NativeVolumeExtent& image,const NativeVolumeWrite& write) {
++    if(!image.width||!image.height||!image.depth||image.levels!=1||image.format!=0x25||image.samples>1)return false;
++    const uint64_t plane=uint64_t(image.width)*image.height;
++    if(plane>(64ull<<20)/image.depth)return false;
++    return !write.level&&!write.x&&!write.y&&!write.z&&write.width==image.width&&write.height==image.height&&write.depth==image.depth&&write.bytes==plane*image.depth*4;
++}
++}
 --- a/runtime/src/nvn/nvn.h
 +++ b/runtime/src/nvn/nvn.h
 @@ -45,6 +45,7 @@
@@ -1299,6 +1598,14 @@
      virtual ~Object() = default;
  };
  
+@@ -206,6 +207,7 @@
+     // Whether `writes` holds anything: set and cleared with it, under objects_lock() alone, and read without the lock
+     // (every sampled texture of every replayed draw asks; docs/nvn/PERF-PLAN.md).
+     std::atomic<bool> has_writes{false};
++    std::atomic<bool> volume_texels_complete{false};
+     // The CPU wrote the texture's memory (nvnMemoryPoolFlushMappedRange over it, e.g. a glyph cache): upload again.
+     std::atomic<bool> dirty{false};
+     // What of the memory the CPU wrote, as bytes from `memory` ([lo, hi); UINT64_MAX / 0: nothing known yet). Merged by
 --- a/runtime/src/nvn/nvn_cmd.cpp
 +++ b/runtime/src/nvn/nvn_cmd.cpp
 @@ -16,6 +16,11 @@
@@ -1648,15 +1955,53 @@
 +NX_HLE("nvnDeviceGetWindowOriginMode",nx::nvn::DeviceGetOrigin);
 --- a/runtime/src/nvn/nvn_draw.cpp
 +++ b/runtime/src/nvn/nvn_draw.cpp
-@@ -12,6 +12,7 @@
+@@ -11,11 +11,14 @@
+ #include <cstring>
  #include <set>
  
++#include "native_compute_profile.h"
  #include "nvn_draw_state.h"
 +#include "native_raster_policy.h"
  #include "nvn_ultrawide.h"
  #include "platform.h"
  
-@@ -256,6 +257,7 @@
+ namespace nx::nvn {
++VkPhysicalDevice vk_physical();
+ 
+ using namespace nx::vk;
+ 
+@@ -207,20 +210,27 @@
+     if (shaders)
+         for (const ShaderInfo* s : *shaders)
+             if (s->stage == ShaderStage::Compute) cs = s;
+-    if (!cs) return;
++    if (!cs) fatal("native compute dispatch requires a compute shader");
+     uint32_t x = uint32_t(c.i[0]), y = uint32_t(c.i[1]), z = uint32_t(c.i[2]);
+     const uint8_t* args = c.n == 1 ? guest_bytes(c.a[0]) : nullptr;  // indirect: {x, y, z}
+-    if (c.n == 1 && !args) return;
++    if (c.n == 1 && !args) fatal("native indirect compute arguments are unavailable");
+     // Written by an earlier dispatch of this submit: only the GPU knows them (vkCmdDispatchIndirect, below).
+     bool gpu_args = args && !written_separate() && written_overlaps(args, 12);
+     if (args && !gpu_args) std::memcpy(&x, args, 4), std::memcpy(&y, args + 4, 4), std::memcpy(&z, args + 8, 4);
+     if (!gpu_args && (!x || !y || !z)) return;
++    if(native_shader_uses_compute_profile(cs)) {
++        VkPhysicalDeviceProperties physical{};p_vkGetPhysicalDeviceProperties(vk_physical(),&physical);
++        const auto& limit=physical.limits;
++        if(!gpu_args&&(x>limit.maxComputeWorkGroupCount[0]||y>limit.maxComputeWorkGroupCount[1]||z>limit.maxComputeWorkGroupCount[2]))fatal("native compute dispatch exceeds physical group limits");
++        uint64_t invocations=1;for(unsigned axis=0;axis<3;++axis){if(cs->local_size[axis]>limit.maxComputeWorkGroupSize[axis])fatal("native compute local size exceeds physical limits");invocations*=cs->local_size[axis];}
++        if(invocations>limit.maxComputeWorkGroupInvocations||cs->control.shared_size>limit.maxComputeSharedMemorySize)fatal("native compute workgroup exceeds physical capacity");
++    }
+     trace_compute_once(cs, x, y, z);  // 0, 0, 0 for GPU arguments
+     trace_nan_dispatch(cs);
+     std::vector<const ShaderInfo*> stages{cs};
+     const ProgramLayout& layout = program_layout(stages);
+     VkPipeline pipeline = compute_pipeline(cs, layout);
+-    if (!pipeline) return;
++    if (!pipeline) fatal("required native compute pipeline creation failed");
+     draw_end_rendering(cb, 2);
+     gather_textures(stages);
+     build_sets(cb, stages, layout);
+@@ -256,6 +266,7 @@
  }
  
  bool draw(VkCommandBuffer cb, const Targets& t, uint32_t mode, bool indexed, const Cmd& c) {
@@ -1674,7 +2019,7 @@
  #include <atomic>
  #include <cstdlib>
  #include <cstring>
-@@ -9,6 +10,10 @@
+@@ -9,6 +10,11 @@
  #include <set>
  
  #include "nvn.h"
@@ -1682,10 +2027,11 @@
 +#include "sdk53_packaged_texture.h"
 +#include "sdk53_texture_descriptor.h"
 +#include "native_guest_span.h"
++#include "native_volume_profile.h"
  #include "nvn_ultrawide.h"
  #include "platform.h"
  
-@@ -111,6 +116,28 @@
+@@ -111,6 +117,28 @@
              (unsigned long long)p.memory, (unsigned long long)p.size, p.flags, (unsigned long long)p.gpu);
      c.x[0] = 1;
  }
@@ -1714,7 +2060,7 @@
  
  void MemoryPoolFinalize(CPU& c) {
      wait_submits_so_far(kWaitInvalidate);  // a submit replayed on another thread may still read it
-@@ -206,6 +233,8 @@
+@@ -206,6 +234,8 @@
      uint64_t memory = 0, gpu = 0;
  };
  
@@ -1723,7 +2069,7 @@
  void BufferInitialize(CPU& c) {  // NVNboolean (NVNbuffer*, const NVNbufferBuilder*)
      uint64_t guest = c.x[0], builder = c.x[1];
      auto& b = make<Buffer>(guest);
-@@ -305,18 +334,13 @@
+@@ -305,18 +335,13 @@
          std::lock_guard lk(objects_lock());
          pool_textures()[t.pool].insert(guest);
      }
@@ -1744,12 +2090,12 @@
 +    try { t.block_height_gobs=sdk53_packaged_block_height({reinterpret_cast<const uint8_t*>(builder),0x5a}); }
 +    catch(const std::invalid_argument& error){fatal("native packaged texture: %s",error.what());}
 +    if(t.block_height_gobs) {
-+        if((t.target!=1&&t.target!=4&&t.target!=8)||(t.target==1&&t.depth!=1)||t.samples>1||t.stride)fatal("packaged texture requires supported 2D/cube non-MSAA layout");
++        if((t.target!=1&&t.target!=4&&t.target!=8&&t.target!=9)||(t.target==1&&t.depth!=1)||(t.target==9&&(t.depth<6||t.depth%6))||t.samples>1||t.stride)fatal("packaged texture requires supported 2D/cube non-MSAA layout");
 +        log("nvn: packaged texture %llx %ux%u format=%u block-height=%u",static_cast<unsigned long long>(guest),t.width,t.height,t.format,t.block_height_gobs);
      }
  
      // Swizzle: single-channel textures are often read through it (a font atlas in R8 read as alpha = R); without
-@@ -336,6 +360,10 @@
+@@ -336,6 +361,10 @@
              "swizzle %u%u%u%u", (unsigned long long)guest, (unsigned long long)t.memory, t.target, t.format, t.width, t.height, t.depth, t.levels,
              t.samples, t.flags, (unsigned long long)t.storage_size, t.block_height_gobs, t.swizzle[0], t.swizzle[1],
              t.swizzle[2], t.swizzle[3]);
@@ -1760,7 +2106,7 @@
      if (!old) {
          std::lock_guard lk(objects_lock());
          note_replaced(guest);
-@@ -415,6 +443,11 @@
+@@ -415,6 +444,11 @@
      }
  }
  
@@ -1772,7 +2118,23 @@
  void TextureFinalize(CPU& c) {
      auto guard = reinit_guard();
      uint64_t guest = c.x[0];
-@@ -652,6 +685,19 @@
+@@ -455,6 +489,7 @@
+     auto copy = std::make_unique<Texture>();
+     copy->target = t->target, copy->format = t->format, copy->flags = t->flags, copy->levels = t->levels;
+     copy->samples = t->samples, copy->depth_stencil_mode = t->depth_stencil_mode;
++    copy->volume_texels_complete.store(t->volume_texels_complete.load(std::memory_order_acquire));
+     copy->width = t->width, copy->height = t->height, copy->depth = t->depth, copy->stride = t->stride;
+     copy->pool = t->pool, copy->offset = t->offset, copy->storage_size = t->storage_size;
+     copy->memory = t->memory, copy->gpu = t->gpu, copy->block_height_gobs = t->block_height_gobs;
+@@ -548,6 +583,7 @@
+     if (n == 1 || n == 100 || n == 1000)
+         log("nvn: WriteTexels #%llu into %llx (%ux%u fmt %#x): %ux%ux%u at %u,%u,%u level %u", (unsigned long long)n,
+             (unsigned long long)c.x[0], t->width, t->height, t->format, w.w, w.h, w.d, w.x, w.y, w.z, w.level);
++    if(t->target==2&&native_volume_full_write({t->width,t->height,t->depth,t->levels,t->format,t->samples},{w.level,w.x,w.y,w.z,w.w,w.h,w.d,w.data.size()}))t->volume_texels_complete.store(true,std::memory_order_release);
+     t->writes.push_back(std::move(w));
+     t->has_writes.store(true, std::memory_order_release);
+ }
+@@ -652,6 +688,19 @@
  
  NX_HLE("nvnMemoryPoolInitialize", MemoryPoolInitialize);
  NX_HLE("nvnMemoryPoolFinalize", MemoryPoolFinalize);
@@ -1792,7 +2154,7 @@
  NX_HLE("nvnMemoryPoolMap", MemoryPoolMap);
  NX_HLE("nvnMemoryPoolMapVirtual", MemoryPoolMapVirtual);
  NX_HLE("nvnTextureWriteTexels", TextureWriteTexels);
-@@ -663,6 +709,7 @@
+@@ -663,6 +712,7 @@
  NX_HLE("nvnMemoryPoolFlushMappedRange", MemoryPoolFlushMappedRange);
  NX_HLE("nvnMemoryPoolInvalidateMappedRange", MemoryPoolInvalidateMappedRange);
  NX_HLE("nvnBufferInitialize", BufferInitialize);
@@ -1800,12 +2162,55 @@
  NX_HLE("nvnBufferFinalize", BufferFinalize);
  NX_HLE("nvnBufferMap", BufferMap);
  NX_HLE("nvnBufferGetAddress", BufferGetAddress);
-@@ -703,3 +750,5 @@
+@@ -703,3 +753,5 @@
  NX_HLE("nvnDeviceGetImageHandle", DeviceGetImageHandle);
  
  }  // namespace nx::nvn
 +
 +NX_HLE("nvnTextureCompare",nx::nvn::TextureCompare);
+--- a/runtime/src/nvn/nvn_pipeline.cpp
++++ b/runtime/src/nvn/nvn_pipeline.cpp
+@@ -15,6 +15,7 @@
+ #include <tuple>
+ #include <unordered_map>
+ 
++#include "native_volume_profile.h"
+ #include "nvn_pipeline.h"
+ #include "nvn_ultrawide.h"
+ #include "platform.h"
+@@ -573,10 +574,21 @@
+     return v;
+ }
+ 
++bool native_volume_ready_for_sample(const Texture& texture) {
++    std::shared_lock guard(objects_lock());
++    if(texture.target!=2||!texture.volume_texels_complete.load(std::memory_order_acquire))return false;
++    if(texture.image&&texture.image->texels&&texture.image->uploaded&&!texture.dirty.load(std::memory_order_acquire))return true;
++    for(const auto& write:texture.writes)if(native_volume_full_write(
++        {texture.width,texture.height,texture.depth,texture.levels,texture.format,texture.samples},
++        {write.level,write.x,write.y,write.z,write.w,write.h,write.d,write.data.size()}))return true;
++    return false;
++}
++
+ GpuImage* ensure_contents(VkCommandBuffer cb, uint64_t texture) {
+     Texture* t = get<Texture>(texture);
+     GpuImage* img = t ? image_of(texture) : nullptr;
+     if (!img) return nullptr;
++    if(t->target==2&&!native_volume_ready_for_sample(*t))fatal("native volume upload requires complete single-level RGBA8 texel data");
+     bool dirty = t->dirty.exchange(false);
+     uint64_t dirty_lo = t->dirty_lo.exchange(UINT64_MAX), dirty_hi = t->dirty_hi.exchange(0);
+     if (dirty_hi <= dirty_lo) dirty_lo = 0, dirty_hi = UINT64_MAX;  // marked without a range: all of it
+@@ -595,8 +607,10 @@
+         }
+     }
+     // A texture already on the GPU that the CPU wrote part of: only those bytes go again (the glyph cache).
++    if(t->target==2)upload=false; // complete API texels bypass unsupported raw 3D tiling
+     if (upload) upload_texture(cb, *t, *img, img->uploaded && dirty ? dirty_lo : 0, img->uploaded && dirty ? dirty_hi : UINT64_MAX);
+     apply_texel_writes(cb, *t, *img);
++    if(t->target==2&&img->texels)img->uploaded=true;
+     if (img->layout == VK_IMAGE_LAYOUT_UNDEFINED) {  // never written: black, not garbage
+         transition(cb, *img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+         VkImageSubresourceRange r{img->aspect, 0, img->levels, 0, img->layers};
 --- a/runtime/src/nvn/nvn_program.cpp
 +++ b/runtime/src/nvn/nvn_program.cpp
 @@ -36,9 +36,10 @@
@@ -1981,25 +2386,68 @@
  NX_HLE("nvnSamplerGetMinMagFilter", GetMinMagFilter);
 --- a/runtime/src/nvn/nvn_sets.cpp
 +++ b/runtime/src/nvn/nvn_sets.cpp
-@@ -9,6 +9,7 @@
+@@ -9,6 +9,11 @@
  #include <string>
  
  #include "nvn_draw_state.h"
 +#include "native_sampled_profile.h"
++#include "native_compute_profile.h"
++#include "native_graphics_buffer_profile.h"
++#include "native_guest_span.h"
++#include "native_volume_profile.h"
  #include "nvn_ultrawide.h"
  
  namespace nx::nvn::replay {
-@@ -657,6 +658,15 @@
+@@ -451,6 +456,33 @@
+         return s->stage == ShaderStage::Compute &&
+                (all_write_backs() || (b.binding < 64 && written_storage_bindings(s) >> b.binding & 1));
+     };
++    // Required compute bindings must resolve before recording uploads or writes.
++    for(const auto* shader:shaders)if(native_shader_uses_compute_profile(shader)||native_shader_uses_graphics_buffer_profile(shader)) {
++        const auto stage=api_stage(shader->stage);
++        const auto writes=written_storage_bindings(shader);
++        for(const auto& binding:shader->refl.bindings) {
++            if(binding.set>=2)continue; // separately checked by gather_textures
++            const auto source=binding.nvn.source;
++            if(source==NvnSource::DriverConstants)continue;
++            if(source==NvnSource::ConstantData) {
++                if(shader->constants.empty())fatal("required native compute constant data is empty");
++                continue;
++            }
++            const bool storage_binding=source==NvnSource::StorageBuffer;
++            const bool uniform_binding=source==NvnSource::UniformBlock||source==NvnSource::UniformAsStorage;
++            const auto index=binding.nvn.index;
++            if((!storage_binding&&!uniform_binding)||index<0||index>=(storage_binding?16:18))fatal("required native compute binding is unsupported");
++            const auto range=storage_binding?g_state.storage[stage][index]:g_state.uniforms[stage][index];
++            uint64_t offset=0;const auto* pool=range.address?pool_at_gpu(range.address,&offset):nullptr;
++            const bool writable=storage_binding&&binding.binding<64&&((writes>>binding.binding)&1);
++            if(native_shader_uses_graphics_buffer_profile(shader)&&writable)fatal("graphics storage writes require native integration");
++            if(!storage_binding&&binding.set==1&&binding.binding<64&&((writes>>binding.binding)&1))fatal("native compute writes through a uniform descriptor are unsupported");
++            const uint64_t limit=storage_binding?16ull<<20:0x10000;
++            if(!pool||!pool->memory||!native_compute_buffer_extent_valid(offset,range.size,pool->size,limit)||
++               offset>UINT64_MAX-pool->memory||!native_guest_span(pool->memory+offset,range.size,writable?3:1))
++                fatal("required native compute buffer is missing or outside supported backing index=%d storage=%d address=%llx bytes=%llu",index,int(storage_binding),static_cast<unsigned long long>(range.address),static_cast<unsigned long long>(range.size));
++        }
++    }
+     // The written ranges first (nvn_written.cpp): two bindings of one dispatch that meet get one copy, and bindings
+     // that read what the dispatch writes see it, as on the GPU.
+     for (const ShaderInfo* s : shaders)
+@@ -657,6 +689,20 @@
              else
                  texture = 0;
          }
 +        if(native_shader_uses_sampled_float_profile(s)) {
 +            const auto* actual=texture?get<Texture>(texture):nullptr;
 +            const uint32_t format=actual?(r.view.format?r.view.format:actual->format):0;
-+            const bool compatible=actual&&(b->image.depth?
-+                native_sampled_shadow_compatible(b->image.arrayed,actual->target,actual->depth,actual->samples,format,actual->depth_stencil_mode,r.sampler.compare_mode,r.sampler.compare_func):
-+                (b->image.dim==3?native_sampled_cube_float_compatible(actual->target,actual->width,actual->height,actual->samples,format):
-+                 native_sampled_2d_float_compatible(actual->target,actual->depth,actual->samples,format)));
++            bool compatible=false;
++            if(actual){
++                if(b->image.dim==2)compatible=native_volume_ready_for_sample(*actual);
++                else if(b->image.depth)compatible=native_sampled_shadow_compatible(b->image.arrayed,actual->target,actual->depth,actual->samples,format,actual->depth_stencil_mode,r.sampler.compare_mode,r.sampler.compare_func);
++                else if(b->image.arrayed&&b->image.dim==3)compatible=native_sampled_cube_array_float_compatible(actual->target,actual->width,actual->height,actual->depth,actual->samples,format);
++                else if(b->image.arrayed)compatible=native_sampled_array_float_compatible(actual->target,actual->depth,actual->samples,format);
++                else if(b->image.dim==3)compatible=native_sampled_cube_float_compatible(actual->target,actual->width,actual->height,actual->samples,format);
++                else compatible=native_sampled_2d_float_compatible(actual->target,actual->depth,actual->samples,format);
++            }
 +            if(!compatible)fatal("bound texture does not match offline sampled float shader profile shader=%s slot=%d target=%u depth=%u format=%u compare=%u/%u",s->hash.c_str(),b->nvn.index,actual?actual->target:0,actual?actual->depth:0,format,r.sampler.compare_mode,r.sampler.compare_func);
 +        }
          r.texture = texture;
@@ -2007,27 +2455,38 @@
          if (!texture) continue;
 --- a/runtime/src/nvn/nvn_shaders.cpp
 +++ b/runtime/src/nvn/nvn_shaders.cpp
-@@ -11,6 +11,8 @@
+@@ -11,6 +11,11 @@
  #include <algorithm>
  #include <cstdio>
  #include <cstring>
 +#include <unordered_set>
 +#include "native_sampled_profile.h"
++#include "native_compute_profile.h"
++#include "native_graphics_buffer_profile.h"
++#include "native_volume_profile.h"
  
  #ifndef NX_SHADERS_STANDALONE
  #include <memory>
-@@ -224,6 +226,7 @@
+@@ -224,6 +229,9 @@
      std::unordered_map<std::string, std::unique_ptr<ShaderInfo>> by_hash;  // null: no usable .spv (logged once)
      std::unordered_map<std::string, std::string> resources;                // results.tsv, hash -> resources
      bool resources_loaded = false;
 +    std::unordered_set<std::string> sampled_float;
++    std::unordered_set<std::string> raw_compute;
++    std::unordered_set<std::string> readonly_graphics;
  };
  
  Cache& cache() {
-@@ -232,6 +235,11 @@
+@@ -232,6 +240,17 @@
  }
  
  }  // namespace
++
++bool native_shader_uses_graphics_buffer_profile(const ShaderInfo* shader){auto& cache_ref=cache();std::lock_guard guard(cache_ref.lock);return shader&&cache_ref.readonly_graphics.contains(shader->hash);}
++
++bool native_shader_uses_compute_profile(const ShaderInfo* shader) {
++    auto& k=cache();std::lock_guard guard(k.lock);return shader&&k.raw_compute.contains(shader->hash);
++}
 +
 +bool native_shader_uses_sampled_float_profile(const ShaderInfo* shader) {
 +    auto& k=cache();std::lock_guard guard(k.lock);
@@ -2036,27 +2495,61 @@
  
  const ShaderInfo* shader_by_hash(const std::string& hash) {
      Cache& k = cache();
-@@ -293,6 +301,24 @@
+@@ -293,6 +312,58 @@
          log("nvn: shader %s: %s", hash.c_str(), error.c_str());
          return nullptr;
      }
 +    std::string profile;
 +    if(read_whole(dir+hash+".profile",profile)) {
++        const std::string compute="NVN_NATIVE_PROFILE_V4 raw-compute local0";
++        const std::string textured="NVN_NATIVE_PROFILE_V5 raw-compute sampled2d-float local0";
++        const std::string volume="NVN_NATIVE_PROFILE_V6 raw-compute sampled-float local0";
++        const bool volume_allowed=profile==volume+"\n"||profile==volume+"\r\n";
++        const bool textures_allowed=volume_allowed||profile==textured+"\n"||profile==textured+"\r\n";
++        if(textures_allowed||profile==compute+"\n"||profile==compute+"\r\n") {
++            if(info->stage!=ShaderStage::Compute||!native_compute_group_valid(
++                {c.local_size[0],c.local_size[1],c.local_size[2]},
++                {info->refl.local_size[0],info->refl.local_size[1],info->refl.local_size[2]},c.shared_size))fatal("offline compute workgroup metadata mismatch");
++            for(const auto& binding:info->refl.bindings) {
++                const auto source=binding.nvn.source;
++                if(binding.set==2&&textures_allowed) {
++                    if(binding.type!=DescriptorType::CombinedImageSampler||binding.count!=1||binding.image.arrayed||binding.image.depth||binding.image.ms||
++                       (binding.image.dim!=1&&(!volume_allowed||binding.image.dim!=2))||binding.image.component!=ScalarType::Float||source!=NvnSource::SamplerBinding||binding.nvn.index<0||binding.nvn.index>=32)fatal("offline compute texture profile mismatch");
++                    k.sampled_float.insert(hash);continue;
++                }
++                if(binding.count!=1||binding.set>1||
++                   (binding.type!=DescriptorType::UniformBuffer&&binding.type!=DescriptorType::StorageBuffer)||
++                   (source!=NvnSource::DriverConstants&&source!=NvnSource::ConstantData&&source!=NvnSource::UniformBlock&&source!=NvnSource::UniformAsStorage&&source!=NvnSource::StorageBuffer))fatal("offline compute binding metadata unsupported");
++            }
++            k.raw_compute.insert(hash);
++        } else {
 +        const std::string legacy="NVN_NATIVE_PROFILE_V1 normalized2d-float viewport1 triangles float-attributes";
 +        const std::string expected="NVN_NATIVE_PROFILE_V2 normalized-sampled-float viewport1 triangles float-attributes";
 +        const std::string shadow="NVN_NATIVE_PROFILE_V3 normalized-sampled-float-shadow viewport1 triangles float-attributes";
-+        const bool shadow_allowed=profile==shadow+"\n"||profile==shadow+"\r\n";
++        const std::string readonly="NVN_NATIVE_PROFILE_V8 readonly-graphics-buffers viewport1 triangles float-attributes";
++        const std::string arrays="NVN_NATIVE_PROFILE_V7 normalized-sampled-float-arrays viewport1 triangles float-attributes";
++        const std::string buffer_arrays="NVN_NATIVE_PROFILE_V9 readonly-graphics-buffers-arrays viewport1 triangles float-attributes";
++        const bool readonly_arrays=profile==buffer_arrays+"\n"||profile==buffer_arrays+"\r\n";
++        const bool arrays_allowed=readonly_arrays||profile==arrays+"\n"||profile==arrays+"\r\n";
++        const bool readonly_buffers=readonly_arrays||profile==readonly+"\n"||profile==readonly+"\r\n";
++        const bool shadow_allowed=arrays_allowed||readonly_buffers||profile==shadow+"\n"||profile==shadow+"\r\n";
 +        const bool cube_allowed=shadow_allowed||profile==expected+"\n"||profile==expected+"\r\n";
 +        if(!cube_allowed&&profile!=legacy+"\n"&&profile!=legacy+"\r\n")fatal("unrecognized native offline shader profile");
 +        for(const auto& binding:info->refl.bindings) {
 +            if(binding.type==DescriptorType::UniformBuffer)continue;
++            if(readonly_buffers&&binding.set==1) {
++                if(info->stage==ShaderStage::Compute||binding.type!=DescriptorType::StorageBuffer||binding.count!=1||binding.nvn.source!=NvnSource::StorageBuffer||binding.nvn.index<0||binding.nvn.index>=16||binding.binding>=64||((written_storage_bindings(info.get())>>binding.binding)&1))fatal("readonly graphics storage profile mismatch");
++                continue;
++            }
 +            const bool shape_allowed=(!binding.image.arrayed&&!binding.image.depth&&(binding.image.dim==1||(cube_allowed&&binding.image.dim==3)))||
-+                (shadow_allowed&&binding.image.dim==1&&binding.image.depth);
++                (shadow_allowed&&binding.image.dim==1&&binding.image.depth)||(arrays_allowed&&binding.image.arrayed&&!binding.image.depth&&(binding.image.dim==1||binding.image.dim==3));
 +            if(binding.set!=2||binding.type!=DescriptorType::CombinedImageSampler||binding.count!=1||!shape_allowed||binding.image.ms||
 +               binding.image.component!=ScalarType::Float||binding.nvn.source!=NvnSource::SamplerBinding||
 +               binding.nvn.index<0||binding.nvn.index>=32)fatal("offline sampled profile does not match reflected shader");
 +        }
 +        k.sampled_float.insert(hash);
++        if(readonly_buffers)k.readonly_graphics.insert(hash);
++        }
 +    }
      if (g_trace)
          log("nvn: shader %s %s: %zu bindings, %zu inputs, %zu outputs, c[1] %u bytes", hash.c_str(),
@@ -2130,7 +2623,7 @@
 +    uint32_t packaged=0;
 +    try {packaged=sdk53_packaged_block_height({reinterpret_cast<const uint8_t*>(builder),0x5a});}
 +    catch(const std::invalid_argument& error){fatal("native packaged storage: %s builder=%llx packed=%04x dimensions=%ux%ux%u levels=%u format=%u stride=%u lr=%llx",error.what(),static_cast<unsigned long long>(builder),ld<uint16_t>(builder+0x58),width,height,depth,levels,format,stride,static_cast<unsigned long long>(c.x[30]));}
-+    if(packaged&&((target!=1&&target!=4&&target!=8)||(target==1&&depth!=1)||samples>1))fatal("packaged storage requires supported 2D/cube non-MSAA layout");
++    if(packaged&&((target!=1&&target!=4&&target!=8&&target!=9)||(target==1&&depth!=1)||(target==9&&(depth<6||depth%6))||samples>1))fatal("packaged storage requires supported 2D/cube non-MSAA layout");
 +    uint32_t bh0 = packaged?packaged:block_height_gobs(div_up(height, f.block_h));
      for (uint32_t level = 0; level < levels; level++) {
          uint32_t w = std::max(1u, width >> level), h = std::max(1u, height >> level);
@@ -2562,17 +3055,25 @@
      return svc("IApplicationFunctions", [](Service& s) {
 --- a/runtime/src/svc_misc.cpp
 +++ b/runtime/src/svc_misc.cpp
-@@ -1,6 +1,9 @@
+@@ -1,6 +1,17 @@
  // Small services that only need to answer "yes, fine": parental controls, add-on content, logging, power.
  #include <cstdlib>
 +#include <array>
 +#include <mutex>
++#include <windows.h>
++#include <atomic>
++#include <chrono>
++#include "platform.h"
  #include "ipc.h"
++#include "native_readonly_storage.h"
++#include "native_font_bundle.h"
++#include <bcrypt.h>
++#include "nvn/native_guest_span.h"
 +#include "mk8_verified_services.h"
  
  namespace nx {
  
-@@ -24,10 +27,10 @@
+@@ -24,10 +35,138 @@
      s.cmds[1] = [](IpcCtx& c) { c.push_object(parental_control()); return 0u; };  // CreateServiceWithoutInitialize
  }
  
@@ -2584,10 +3085,138 @@
 +ServiceRegistrar r_pctl_s("pctl:s", [] { return mk8_verified_parental("pctl:s"); });
 +ServiceRegistrar r_pctl_a("pctl:a", [] { return mk8_verified_parental("pctl:a"); });
 +ServiceRegistrar r_pctl_r("pctl:r", [] { return mk8_verified_parental("pctl:r"); });
++
++std::shared_ptr<Service> native_archive_storage(std::shared_ptr<NativeReadonlyStorage> image) {
++    return make("NativeReadonlyStorage",[image](Service& service){
++        service.cmds[4]=[image](IpcCtx& ctx){if(ctx.in_size)return 0xe401u;ctx.push<uint64_t>(image->size());return 0u;};
++        service.cmds[0]=[image](IpcCtx& ctx){
++            if(ctx.in_size!=16||!ctx.a.empty()||!ctx.x.empty()||ctx.b.size()>1||ctx.c.size()>1)return 0xe401u;
++            const auto offset=ctx.arg<uint64_t>(0),count=ctx.arg<uint64_t>(8);const auto output=ctx.out_buf(0);
++            if(offset>image->size()||count>image->size()-offset||count>output.size||(count&&!nvn::native_guest_span(output.addr,count,2)))return 0xe401u;
++            auto bytes=image->read(offset,count);
++            ctx.validate_reply=[output,count]{return !count||nvn::native_guest_span(output.addr,count,2);};
++            ctx.commit_reply=[output,bytes=std::move(bytes)]{if(!bytes.empty())std::memcpy(reinterpret_cast<void*>(output.addr),bytes.data(),bytes.size());};
++            return 0u;
++        };
++    });
++}
++
++std::shared_ptr<Service> native_shared_fonts(){
++    struct State{std::mutex lock;std::shared_ptr<KSharedMemory> memory;NativeFontLayout layout{};};auto state=std::make_shared<State>();
++    auto load=[state]{
++        if(state->memory)return;
++        const char* path=std::getenv("NX_FONT_BUNDLE"),*expected=std::getenv("NX_FONT_BUNDLE_SHA256");if(!path||!expected||std::strlen(expected)!=64)fatal("native shared fonts require a pinned local bundle");
++        FILE* file=_wfsopen(std::filesystem::u8path(path).c_str(),L"rb",_SH_DENYWR);if(!file)fatal("native shared font bundle unavailable");
++        _fseeki64(file,0,SEEK_END);auto length=_ftelli64(file);_fseeki64(file,0,SEEK_SET);if(length<0x100||length>0x1100100){fclose(file);fatal("native shared font bundle size");}
++        std::vector<uint8_t> bytes(static_cast<size_t>(length));bool read=fread(bytes.data(),1,bytes.size(),file)==bytes.size();fclose(file);if(!read)fatal("native shared font bundle read");
++        BCRYPT_ALG_HANDLE algorithm=nullptr;std::array<uint8_t,32> digest{};if(BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,nullptr,0)<0)fatal("native font hash provider");auto hashed=BCryptHash(algorithm,nullptr,0,bytes.data(),ULONG(bytes.size()),digest.data(),ULONG(digest.size()));auto closed=BCryptCloseAlgorithmProvider(algorithm,0);if(hashed<0||closed<0)fatal("native font hash");const char* hex="0123456789abcdef";std::string actual;for(auto value:digest){actual+=hex[value>>4];actual+=hex[value&15];}if(actual!=expected)fatal("native font bundle identity mismatch");
++        state->layout=native_font_layout(bytes);state->memory=make_shared_memory("native shared fonts",0x1100000);std::memcpy(reinterpret_cast<void*>(state->memory->host),bytes.data()+0x100,state->layout.memory_size);log("pl: native shared fonts loaded regions=%u",state->layout.count);
++    };
++    return make("NativeSharedFontService",[state,load](Service& service){
++        for(const uint32_t command:{0u,1u,2u,3u})service.cmds[command]=[state,load,command](IpcCtx& ctx){
++            if(ctx.in_size<4||ctx.in_size>16||!ctx.a.empty()||!ctx.b.empty())return 0xe401u;std::lock_guard guard(state->lock);load();const auto type=ctx.arg<uint32_t>(0);if(type>=state->layout.count)return 0xe401u;
++            if(command==1)ctx.push<uint32_t>(1);if(command==2)ctx.push<uint32_t>(state->layout.regions[type].size);if(command==3)ctx.push<uint32_t>(state->layout.regions[type].offset);return 0u;
++        };
++        service.cmds[4]=[state,load](IpcCtx& ctx){if(ctx.in_size)return 0xe401u;std::lock_guard guard(state->lock);load();ctx.out_copy.push_back(handle_add(state->memory));return 0u;};
++        service.cmds[5]=[state,load](IpcCtx& ctx){
++            if(ctx.in_size!=8||!ctx.a.empty()||!ctx.x.empty())return 0xe401u;std::lock_guard guard(state->lock);load();
++            const auto codes=ctx.out_buf(0),offsets=ctx.out_buf(1),sizes=ctx.out_buf(2);const uint32_t count=uint32_t(std::min<uint64_t>({6,state->layout.count,codes.size/4,offsets.size/4,sizes.size/4}));
++            const uint64_t bytes=uint64_t(count)*4;
++            if(bytes&&(!nvn::native_guest_span(codes.addr,bytes,2)||!nvn::native_guest_span(offsets.addr,bytes,2)||!nvn::native_guest_span(sizes.addr,bytes,2)))return 0xe401u;
++            std::array<uint32_t,6> code_values{},offset_values{},size_values{};for(uint32_t i=0;i<count;++i){code_values[i]=i;offset_values[i]=state->layout.regions[i].offset;size_values[i]=state->layout.regions[i].size;}
++            ctx.push<uint32_t>(1);ctx.push<uint32_t>(count);
++            ctx.validate_reply=[codes,offsets,sizes,bytes]{return !bytes||(nvn::native_guest_span(codes.addr,bytes,2)&&nvn::native_guest_span(offsets.addr,bytes,2)&&nvn::native_guest_span(sizes.addr,bytes,2));};
++            ctx.commit_reply=[codes,offsets,sizes,bytes,code_values,offset_values,size_values]{if(bytes){std::memcpy(reinterpret_cast<void*>(codes.addr),code_values.data(),bytes);std::memcpy(reinterpret_cast<void*>(offsets.addr),offset_values.data(),bytes);std::memcpy(reinterpret_cast<void*>(sizes.addr),size_values.data(),bytes);}};
++            log("pl: native font priority regions=%u",count);return 0u;
++        };
++
++    });
++}
++ServiceRegistrar r_pl("pl:u",[]{return native_shared_fonts();});
++
++ServiceRegistrar r_friend("friend:u",[]{
++    return make("NativeFriendCreator",[](Service& service){
++        service.cmds[0]=[](IpcCtx& ctx){if(ctx.in_size||!ctx.a.empty()||!ctx.b.empty()||!ctx.in_objects.empty())return 0xe401u;ctx.push_object(make("NativeOfflineFriendService"));return 0u;};
++    });
++});
++
++std::shared_ptr<Service> native_play_reports(){
++    static const uint64_t session=(uint64_t(GetCurrentProcessId())<<32)^uint64_t(std::chrono::steady_clock::now().time_since_epoch().count());
++    return make("NativePlayReport",[](Service& service){
++        service.cmds[10400]=[](IpcCtx& ctx){if(ctx.in_size)return 0xe401u;ctx.push<uint64_t>(session);return 0u;};
++        for(const uint32_t command:{10100u,10101u})service.cmds[command]=[command](IpcCtx& ctx){
++            if(ctx.in_size<(command==10101?24u:8u)||ctx.in_size>32||ctx.a.size()>1||ctx.x.size()>1||!ctx.b.empty()||!ctx.c.empty())return 0xe401u;
++            const auto a=ctx.a.empty()?Buffer{}:ctx.a[0],x=ctx.x.empty()?Buffer{}:ctx.x[0];
++            if(a.size>(8ull<<20)||x.size>(8ull<<20)||(a.size&&!nvn::native_guest_span(a.addr,a.size,1))||(x.size&&!nvn::native_guest_span(x.addr,x.size,1)))return 0xe401u;
++            std::vector<uint8_t> record;const uint32_t magic=0x3152504e;auto append=[&](const void* data,size_t bytes){const auto* first=static_cast<const uint8_t*>(data);record.insert(record.end(),first,first+bytes);};
++            append(&magic,4);append(&command,4);append(&a.size,8);append(&x.size,8);if(a.size)append(reinterpret_cast<const void*>(a.addr),size_t(a.size));if(x.size)append(reinterpret_cast<const void*>(x.addr),size_t(x.size));
++            static std::atomic<uint64_t> sequence{0};const auto directory=std::filesystem::u8path(plat::data_root())/"user"/"play-reports";std::error_code error;std::filesystem::create_directories(directory,error);if(error)return 0xe401u;
++            const auto path=directory/(std::to_string(GetCurrentProcessId())+"-"+std::to_string(++sequence)+".bin");HANDLE file=CreateFileW(path.c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);if(file==INVALID_HANDLE_VALUE)return 0xe401u;
++            DWORD written=0;const bool good=WriteFile(file,record.data(),DWORD(record.size()),&written,nullptr)&&written==record.size()&&FlushFileBuffers(file);const bool closed=CloseHandle(file);if(!good||!closed)return 0xe401u;
++            log("prepo: native local report saved command=%u bytes=%llu",command,static_cast<unsigned long long>(record.size()));return 0u;
++        };
++    });
++}
++ServiceRegistrar r_prepo("prepo:u",[]{return native_play_reports();});
++
++std::shared_ptr<Service> native_fsp_proxy() {
++    struct State{std::mutex lock;uint32_t process=0;std::shared_ptr<NativeReadonlyStorage> mii;};auto state=std::make_shared<State>();
++    return make("NativeFileSystemProxy",[state](Service& service){
++        service.cmds[1]=[state](IpcCtx& ctx){
++            if(ctx.in_size<8||ctx.in_size>16||!ctx.send_pid||!ctx.a.empty()||!ctx.b.empty()||!ctx.x.empty()||!ctx.c.empty()||!ctx.in_copy.empty()||!ctx.in_move.empty()||!ctx.in_objects.empty())return 0xe401u;
++            const uint32_t trusted=GetCurrentProcessId();
++            ctx.validate_reply=[state,trusted]{std::lock_guard lock(state->lock);return !state->process||state->process==trusted;};
++            ctx.commit_reply=[state,trusted]{std::lock_guard lock(state->lock);state->process=trusted;log("fsp: native process binding committed pid=%u",trusted);};
++            return 0u;
++        };
++        service.cmds[202]=[state](IpcCtx& ctx){
++            std::lock_guard lock(state->lock);if(!state->process)return 0xe401u;
++            if(ctx.in_size<16||ctx.in_size>24||!ctx.a.empty()||!ctx.b.empty()||!ctx.x.empty()||!ctx.c.empty())return 0xe401u;
++            const auto storage=ctx.arg<uint8_t>(0);const auto data_id=ctx.arg<uint64_t>(8);
++            if((storage==0||storage==3)&&data_id==0x0100000000000802ull) {
++                const char* path=std::getenv("NX_MII_ROMFS_IMAGE"),*digest=std::getenv("NX_MII_ROMFS_SHA256");
++                if(path&&digest) {
++                    if(!state->mii)state->mii=std::make_shared<NativeReadonlyStorage>(std::filesystem::u8path(path),digest);
++                    ctx.push_object(native_archive_storage(state->mii));log("fsp: native read-only Mii data archive opened bytes=%llu",static_cast<unsigned long long>(state->mii->size()));return 0u;
++                }
++            }
++            log("fsp: native data archive unavailable storage=%u data-id=%016llx",unsigned(storage),static_cast<unsigned long long>(data_id));
++            return 0x202u; // No matching native system-data archive is mounted.
++        };
++        service.cmds[1005]=[state](IpcCtx& ctx){std::lock_guard lock(state->lock);if(!state->process)return 0xe401u;if(ctx.in_size||!ctx.a.empty()||!ctx.b.empty())return 0xe401u;ctx.push<uint32_t>(0);log("fsp: native access-log mode disabled");return 0u;};
++    });
++}
++ServiceRegistrar r_fsp("fsp-srv",[]{return native_fsp_proxy();});
++
++std::shared_ptr<Service> native_mii_database(){
++    return make("IMiiDatabaseService",[](Service& service){
++        service.cmds[1]=[](IpcCtx& ctx){if(ctx.in_size)return 0xe401u;ctx.push<uint8_t>(0);return 0u;};
++        for(const uint32_t command:{0u,2u,3u,4u})service.cmds[command]=[command](IpcCtx& ctx){
++            if(ctx.in_size<4||ctx.in_size>16||(ctx.arg<uint32_t>(0)&~3u))return 0xe401u;
++            if(command==0)ctx.push<uint8_t>(0);else ctx.push<uint32_t>(0);
++            log("mii: empty native database query command=%u sources=%u",command,ctx.arg<uint32_t>(0));return 0u;
++        };
++    });
++}
++
++std::shared_ptr<Service> native_mii_manager(const char* port) {
++    return make(port,[](Service& service){
++        service.cmds[0]=[](IpcCtx& ctx){
++            if(ctx.in_size<4||ctx.in_size>16||!ctx.a.empty()||!ctx.b.empty()||!ctx.x.empty()||!ctx.c.empty()||!ctx.in_objects.empty()||!ctx.in_copy.empty()||!ctx.in_move.empty())return 0xe401u;
++            const auto key=ctx.arg<uint32_t>(0);
++            if(key!=0&&key!=0xa523b78f)return 0xe401u;
++            ctx.push_object(native_mii_database());
++            log("mii: native database interface opened key=%x",key);
++            return 0u;
++        };
++    });
++}
++ServiceRegistrar r_mii_editor("mii:e",[]{return native_mii_manager("mii:e");});
++ServiceRegistrar r_mii_user("mii:u",[]{return native_mii_manager("mii:u");});
  
  ServiceRegistrar r_lm("lm", [] {
      return make("lm", [](Service& s) {
-@@ -35,9 +38,17 @@
+@@ -35,9 +174,17 @@
      });
  });
  
@@ -3680,8 +4309,24 @@
 + std::cout<<"module_init checks="<<checks<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
++++ b/tests/native_audio_sdk_layout_test.cpp
+@@ -0,0 +1,5 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "native_audio_sdk_layout.h"
++#include <array>
++#include <iostream>
++int main(){unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("audio layout assertion");};check(nx::sdk53_audio_u32_getter_offset(0xb9400000u|((0x238u/4)<<10),0xd65f03c0)==0x238);check(nx::sdk53_audio_system_offset(0x91000013u|(0x60u<<10))==0x60);bool bad=false;try{nx::sdk53_audio_u32_getter_offset(0xf9400000,0xd65f03c0);}catch(const std::invalid_argument&){bad=true;}check(bad);std::array<uint8_t,0x130> bytes{};uint32_t magic=0xcafebabe;uint16_t size=0x130,id=15;std::memcpy(bytes.data(),&magic,4);std::memcpy(bytes.data()+4,&size,2);std::memcpy(bytes.data()+6,&id,2);bytes[0x10]=1;auto command=nx::sdk53_audio_command(bytes);check(command.size==0x130&&command.id==15&&command.enabled);bytes[4]=0;bytes[5]=0;bad=false;try{nx::sdk53_audio_command(bytes);}catch(const std::invalid_argument&){bad=true;}check(bad);std::cout<<"audio layout checks="<<checks<<" PASS\n";}
+--- /dev/null
++++ b/tests/native_compute_profile_test.cpp
+@@ -0,0 +1,5 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/native_compute_profile.h"
++#include <iostream>
++#include <stdexcept>
++int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("compute profile assertion");};check(native_compute_group_valid({32,1,1},{32,1,1},0));check(!native_compute_group_valid({32,1,1},{64,1,1},0));check(!native_compute_group_valid({0,1,1},{0,1,1},0));check(!native_compute_group_valid({1024,2,1},{1024,2,1},0));check(!native_compute_group_valid({1,1,65},{1,1,65},0));check(!native_compute_group_valid({32,1,1},{32,1,1},3));check(!native_compute_group_valid({32,1,1},{32,1,1},65540));check(native_compute_buffer_extent_valid(16,32,48,64));check(!native_compute_buffer_extent_valid(49,1,48,64));check(!native_compute_buffer_extent_valid(16,33,48,64));check(!native_compute_buffer_extent_valid(0,0,48,64));check(!native_compute_buffer_extent_valid(0,65,128,64));check(!native_compute_buffer_extent_valid(UINT64_MAX,2,UINT64_MAX,64));std::cout<<"compute profile checks="<<checks<<" PASS\n";}
+--- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,84 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +// Same compiled runtime as the game, but no guest modules are loaded or executed.
 +#include <nx/runtime.h>
@@ -3690,7 +4335,9 @@
 +#include "nvn/native_device.h"
 +#include "nvn/native_raster_policy.h"
 +#include "nvn/nvn_vk.h"
++namespace nx::nvn {std::recursive_mutex& gpu_lock();GpuImage* ensure_contents(VkCommandBuffer,uint64_t);}
 +#include <iostream>
++#include <cstdlib>
 +#include <string_view>
 +namespace {
 +unsigned callback_calls=0;uint64_t expected_control=0;
@@ -3702,6 +4349,7 @@
 +}
 +int main(int argc,char** argv){try{
 + const bool gpu=argc==2&&std::string_view(argv[1])=="--gpu";if(argc>1&&!gpu)throw std::runtime_error("expected --gpu or no arguments");
++ if(gpu){if(_putenv_s("NX_PIPELINED","1"))throw std::runtime_error("fixture pipeline mode setup failed");}
 + unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("native device assertion "+std::to_string(n));};
 + check(nx::find_symbol("nnMain")==0);nx::memory_init();const auto device=nx::kernel_alloc(7008,16);
 + check(!nx::nvn::initialize_native_device(device,0));
@@ -3717,6 +4365,12 @@
 + fs.x[0]=file;fs.x[1]=0;fs.x[2]=io+32;fs.x[3]=8;fs.x[4]=io+64;file_api("_ZN2nn2fs9WriteFileENS0_10FileHandleElPKvmRKNS0_11WriteOptionE");check(fs.x[0]==0);
 + fs.x[0]=text_area;file_api("_ZN2nn2fs14CommitSaveDataEPKc");check(fs.x[0]==0);fs.x[0]=file;file_api("_ZN2nn2fs9CloseFileENS0_10FileHandleE");
 + fs.x[0]=io;fs.x[1]=text_area+128;fs.x[2]=1;file_api("_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci");check(fs.x[0]==0);const auto reopened=nx::ld<uint64_t>(io);fs.x[0]=reopened;fs.x[1]=0;fs.x[2]=io+80;fs.x[3]=8;file_api("_ZN2nn2fs8ReadFileENS0_10FileHandleElPvm");check(fs.x[0]==0&&!std::memcmp(reinterpret_cast<void*>(io+80),"saveTest",8));fs.x[0]=reopened;file_api("_ZN2nn2fs9CloseFileENS0_10FileHandleE");
++ auto friends=nx::make_service("friend:u");nx::IpcCtx friend_open;friend_open.cmd=0;check(friends->handle(friend_open)==0&&friend_open.out_objects.size()==1);check(friend_open.out_objects[0]->name=="NativeOfflineFriendService");
++ auto reports=nx::make_service("prepo:u");nx::IpcCtx report_session;report_session.cmd=10400;check(reports->handle(report_session)==0&&report_session.out.size()==8);uint64_t native_report_session=0;std::memcpy(&native_report_session,report_session.out.data(),8);check(native_report_session!=0);nx::IpcCtx malformed_report;malformed_report.cmd=10100;check(reports->handle(malformed_report)!=0);
++ auto fsp=nx::make_service("fsp-srv");nx::IpcCtx unbound_log;unbound_log.cmd=1005;check(fsp->handle(unbound_log)!=0&&unbound_log.out.empty());uint64_t fsp_placeholder=0;nx::IpcCtx bind_fsp;bind_fsp.cmd=1;bind_fsp.in=reinterpret_cast<const uint8_t*>(&fsp_placeholder);bind_fsp.in_size=8;check(fsp->handle(bind_fsp)!=0);bind_fsp.send_pid=true;check(fsp->handle(bind_fsp)==0&&bool(bind_fsp.commit_reply)&&bind_fsp.validate_reply());nx::IpcCtx pending_log;pending_log.cmd=1005;check(fsp->handle(pending_log)!=0);bind_fsp.commit_reply();nx::IpcCtx bound_log;bound_log.cmd=1005;check(fsp->handle(bound_log)==0&&bound_log.out.size()==4);
++ uint64_t missing_archive[2]={3,0x0100000000000809ull};nx::IpcCtx missing_data;missing_data.cmd=202;missing_data.in=reinterpret_cast<const uint8_t*>(missing_archive);missing_data.in_size=16;check(fsp->handle(missing_data)==0x202&&missing_data.out_objects.empty());
++ _putenv_s("NX_MII_ROMFS_IMAGE",NX_AUTHORED_IMAGE_PATH);_putenv_s("NX_MII_ROMFS_SHA256","9ac056b20af5fb961ccf89de921573d4b4b87e0c7a4640f98fcc2fcc6436e3fc");text(text_area+512,"nativeSystem");auto mount_system=nx::hle_lookup("_ZN2nn2fs15MountSystemDataEPKcNS_3ncm12SystemDataIdE");check(mount_system!=nullptr);fs.x[0]=text_area+512;fs.x[1]=0x0100000000000802ull;mount_system(fs);check(fs.x[0]==0);text(text_area+640,"nativeSystem:/dir/data.bin");fs.x[0]=io;fs.x[1]=text_area+640;fs.x[2]=1;file_api("_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci");check(fs.x[0]==0);const auto system_file=nx::ld<uint64_t>(io);fs.x[0]=system_file;fs.x[1]=0;fs.x[2]=io+80;fs.x[3]=6;file_api("_ZN2nn2fs8ReadFileENS0_10FileHandleElPvm");check(fs.x[0]==0&&!std::memcmp(reinterpret_cast<void*>(io+80),"hello!",6));fs.x[0]=system_file;file_api("_ZN2nn2fs9CloseFileENS0_10FileHandleE");_putenv_s("NX_MII_ROMFS_IMAGE","");_putenv_s("NX_MII_ROMFS_SHA256","");
++ auto mii=nx::make_service("mii:e");uint32_t mii_key=0;nx::IpcCtx mii_open;mii_open.cmd=0;mii_open.in=reinterpret_cast<const uint8_t*>(&mii_key);mii_open.in_size=4;check(mii->handle(mii_open)==0);check(mii_open.out_objects.size()==1&&mii_open.out_objects[0]->name=="IMiiDatabaseService");uint32_t mii_sources=3;nx::IpcCtx empty_miis;empty_miis.cmd=3;empty_miis.in=reinterpret_cast<uint8_t*>(&mii_sources);empty_miis.in_size=4;check(mii_open.out_objects[0]->handle(empty_miis)==0&&empty_miis.out.size()==4);mii_key=2;nx::IpcCtx bad_mii;bad_mii.cmd=0;bad_mii.in=reinterpret_cast<const uint8_t*>(&mii_key);bad_mii.in_size=4;check(mii->handle(bad_mii)!=0&&bad_mii.out_objects.empty());
 + auto account=nx::make_service("acc:u0");nx::IpcCtx manager_request;manager_request.cmd=101;check(account->handle(manager_request)==0&&manager_request.out_objects.size()==1);auto manager=manager_request.out_objects[0];nx::IpcCtx availability;availability.cmd=0;check(manager->handle(availability)==0&&availability.out.size()==1&&availability.out[0]==0);
 + nx::IpcCtx offline;offline.cmd=130;check(manager->handle(offline)!=0&&offline.out.empty());
 + auto applet_service=nx::make_service("appletOE");nx::IpcCtx open_proxy;open_proxy.cmd=0;check(applet_service->handle(open_proxy)==0&&open_proxy.out_objects.size()==1);auto proxy=open_proxy.out_objects[0];nx::IpcCtx common_request;common_request.cmd=0;check(proxy->handle(common_request)==0);auto common=common_request.out_objects[0];nx::IpcCtx self_request;self_request.cmd=1;check(proxy->handle(self_request)==0);auto self=self_request.out_objects[0];
@@ -3747,6 +4401,13 @@
 + commands.x[0]=cb;api("nvnCommandBufferFinalize");commands.x[0]=pool_key;api("nvnMemoryPoolFinalize");
 + const auto texture_a=nx::kernel_alloc(256,16),texture_b=nx::kernel_alloc(256,16);auto& ta=nx::nvn::make<nx::nvn::Texture>(texture_a);auto& tb=nx::nvn::make<nx::nvn::Texture>(texture_b);ta.pool=tb.pool=0x1234;ta.offset=tb.offset=64;ta.format=tb.format=0x25;ta.width=tb.width=16;ta.height=tb.height=16;ta.depth=tb.depth=1;ta.levels=tb.levels=1;ta.samples=tb.samples=1;
 + nx::CPU compare{};auto cmp=nx::hle_lookup("nvnTextureCompare");check(cmp!=nullptr);compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==1);tb.width=32;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);tb.width=16;tb.swizzle[3]=0;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);compare.x[0]=texture_a;compare.x[1]=texture_a;cmp(compare);check(compare.x[0]==1);text(text_area+512,"owned texture label");auto label=nx::hle_lookup("nvnTextureSetDebugLabel");check(label!=nullptr);compare.x[0]=texture_a;compare.x[1]=text_area+512;label(compare);check(ta.debug_label=="owned texture label");text(text_area+512,"changed input");check(ta.debug_label=="owned texture label");compare.x[0]=texture_a;compare.x[1]=0;label(compare);check(ta.debug_label.empty());nx::nvn::destroy(texture_a);nx::nvn::destroy(texture_b);
++ const auto volume_key=nx::kernel_alloc(256,16),volume_data=nx::kernel_alloc(256,16),volume_region=nx::kernel_alloc(32,16);nx::vm_set(volume_data,256,nx::kMemHeap,3);nx::vm_set(volume_region,32,nx::kMemHeap,3);
++ auto& volume=nx::nvn::make<nx::nvn::Texture>(volume_key);volume.target=2;volume.width=volume.height=volume.depth=4;volume.levels=1;volume.format=0x25;volume.samples=0;
++ for(unsigned z=0;z<4;++z)for(unsigned y=0;y<4;++y)for(unsigned x=0;x<4;++x){const auto at=volume_data+((z*4+y)*4+x)*4;nx::st<uint8_t>(at,x*17);nx::st<uint8_t>(at+1,y*31);nx::st<uint8_t>(at+2,z*47);nx::st<uint8_t>(at+3,255);}
++ for(unsigned k=0;k<6;++k)nx::st<uint32_t>(volume_region+k*4,k<3?0:4);
++ nx::CPU volume_cpu{};volume_cpu.x[0]=volume_key;volume_cpu.x[1]=0;volume_cpu.x[2]=volume_region;volume_cpu.x[3]=volume_data;auto write_volume=nx::hle_lookup("nvnTextureWriteTexels");check(write_volume!=nullptr);write_volume(volume_cpu);check(volume.volume_texels_complete.load());
++ {std::lock_guard lock(nx::nvn::gpu_lock());auto command=nx::nvn::frame_begin(false);auto* image=nx::nvn::ensure_contents(command,volume_key);check(image&&image->view_type==VK_IMAGE_VIEW_TYPE_3D&&image->uploaded&&image->texels);auto readback=nx::nvn::upload_alloc(256,16);nx::nvn::transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);VkBufferImageCopy region{};region.bufferOffset=readback.offset;region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};region.imageExtent={4,4,4};nx::vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&region);VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=readback.buffer;barrier.offset=readback.offset;barrier.size=256;nx::vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);check(std::memcmp(readback.ptr,reinterpret_cast<void*>(volume_data),256)==0);}
++ nx::nvn::destroy(volume_key);
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
@@ -3759,6 +4420,14 @@
 +#include <stdexcept>
 +int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("exit policy assertion");};nx::NativeExitPolicy p;check(!p.is_locked());check(!p.lock_exit()&&p.is_locked());check(!p.lock_exit()&&p.is_locked());check(!p.request_close()&&p.is_locked());check(p.unlock_exit()&&!p.is_locked());check(p.lock_exit());nx::NativeExitPolicy q;check(q.request_close());check(q.lock_exit());std::cout<<"native_exit_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
++++ b/tests/native_font_bundle_test.cpp
+@@ -0,0 +1,5 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "native_font_bundle.h"
++#include <vector>
++#include <iostream>
++int main(){unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("font bundle assertion");};std::vector<uint8_t> bytes(0x100+32);std::memcpy(bytes.data(),"NFB1",4);auto put=[&](size_t offset,uint32_t value){std::memcpy(bytes.data()+offset,&value,4);};put(4,1);put(8,32);put(16,8);put(20,16);bytes[0x109]=1;auto layout=nx::native_font_layout(bytes);check(layout.count==1&&layout.regions[0].offset==8&&layout.regions[0].size==16);for(unsigned mode=0;mode<3;++mode){auto bad=bytes;if(mode==0)bad[0]=0;if(mode==1){uint32_t value=33;std::memcpy(bad.data()+20,&value,4);}if(mode==2)bad[0x109]=0;bool rejected=false;try{nx::native_font_layout(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"font bundle checks="<<checks<<" PASS\n";}
+--- /dev/null
 +++ b/tests/native_hid_policy_test.cpp
 @@ -0,0 +1,5 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -3767,13 +4436,20 @@
 +#include <iostream>
 +int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("HID policy assertion");};nx::NativeHidPolicy p;check(p.style(0)==0);p.initialize();check(p.style(0)==1&&p.style(1)==0&&p.style(32)==0);p.styles(0);check(p.style(0)==0);p.styles(1);std::array<uint32_t,1> ids{1};p.supported_ids(ids);check(p.style(0)==0);ids[0]=0;p.supported_ids(ids);check(p.style(0)==1);p.handheld_mode(2);check(p.handheld_mode()==2);p.disconnect(0);check(p.style(0)==0);p.initialize();check(p.style(0)==1);bool bad=false;try{p.handheld_mode(3);}catch(const std::invalid_argument&){bad=true;}check(bad&&p.handheld_mode()==2);ids[0]=99;bad=false;try{p.supported_ids(ids);}catch(const std::invalid_argument&){bad=true;}check(bad&&p.style(0)==1);std::cout<<"native_hid_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
++++ b/tests/native_readonly_storage_test.cpp
+@@ -0,0 +1,4 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "native_readonly_storage.h"
++#include <iostream>
++int main(int argc,char** argv){try{if(argc!=2)throw std::runtime_error("fixture directory required");unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("readonly storage assertion");};auto path=std::filesystem::path(argv[1])/"valid.bin";nx::NativeReadonlyStorage image(path,"9ac056b20af5fb961ccf89de921573d4b4b87e0c7a4640f98fcc2fcc6436e3fc");check(image.size()==std::filesystem::file_size(path));auto header=image.read(0,8);check(header.size()==8&&header[0]==80);check(image.read(image.size(),0).empty());bool rejected=false;try{image.read(image.size(),1);}catch(const std::out_of_range&){rejected=true;}check(rejected);rejected=false;try{nx::NativeReadonlyStorage bad(path,std::string(64,'0'));}catch(const std::invalid_argument&){rejected=true;}check(rejected);auto writer=_wfsopen(path.c_str(),L"r+b",_SH_DENYNO);check(writer==nullptr);if(writer)fclose(writer);std::cout<<"readonly storage checks="<<checks<<" PASS\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
+--- /dev/null
 +++ b/tests/native_sampled_profile_test.cpp
 @@ -0,0 +1,5 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "nvn/native_sampled_profile.h"
 +#include <iostream>
 +#include <stdexcept>
-+int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("sampled profile assertion");};for(unsigned format:{0x25u,0x4bu,0x79u,0x95u,0xau})check(native_sampled_2d_float_compatible(1,1,1,format));for(unsigned format:{0u,3u,4u,0x27u,0x31u,0x32u,0x33u,0x3eu,0x51u,0xffffffffu})check(!native_sampled_2d_float_compatible(1,1,1,format));for(unsigned target:{0u,2u,3u,4u,5u,6u,7u,8u,9u,0xffffffffu})check(!native_sampled_2d_float_compatible(target,1,1,0x25));check(!native_sampled_2d_float_compatible(1,2,1,0x25));check(!native_sampled_2d_float_compatible(1,1,4,0x25));check(native_sampled_2d_float_compatible(1,1,0,0x25));check(native_sampled_cube_float_compatible(8,16,16,1,0x25));check(native_sampled_cube_float_compatible(8,16,16,0,0x4b));check(!native_sampled_cube_float_compatible(1,16,16,1,0x25));check(!native_sampled_cube_float_compatible(8,16,8,1,0x25));check(!native_sampled_cube_float_compatible(8,0,0,1,0x25));check(!native_sampled_cube_float_compatible(8,16,16,4,0x25));check(!native_sampled_cube_float_compatible(8,16,16,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_array_shadow_compatible(4,4,1,format,0,1,4));check(!native_sampled_array_shadow_compatible(1,4,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,0,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,4,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x25,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,1,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,0,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,0));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,9));check(native_sampled_shadow_compatible(false,1,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,4,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,4,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x25,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x34,0,0,4));std::cout<<"sampled profile checks="<<checks<<" PASS\n";}
++int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("sampled profile assertion");};for(unsigned format:{0x25u,0x4bu,0x79u,0x95u,0xau})check(native_sampled_2d_float_compatible(1,1,1,format));for(unsigned format:{0u,3u,4u,0x27u,0x31u,0x32u,0x33u,0x3eu,0x51u,0xffffffffu})check(!native_sampled_2d_float_compatible(1,1,1,format));for(unsigned target:{0u,2u,3u,4u,5u,6u,7u,8u,9u,0xffffffffu})check(!native_sampled_2d_float_compatible(target,1,1,0x25));check(!native_sampled_2d_float_compatible(1,2,1,0x25));check(!native_sampled_2d_float_compatible(1,1,4,0x25));check(native_sampled_2d_float_compatible(1,1,0,0x25));check(native_sampled_cube_float_compatible(8,16,16,1,0x25));check(native_sampled_cube_float_compatible(8,16,16,0,0x4b));check(!native_sampled_cube_float_compatible(1,16,16,1,0x25));check(!native_sampled_cube_float_compatible(8,16,8,1,0x25));check(!native_sampled_cube_float_compatible(8,0,0,1,0x25));check(!native_sampled_cube_float_compatible(8,16,16,4,0x25));check(!native_sampled_cube_float_compatible(8,16,16,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_array_shadow_compatible(4,4,1,format,0,1,4));check(!native_sampled_array_shadow_compatible(1,4,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,0,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,4,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x25,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,1,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,0,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,0));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,9));check(native_sampled_shadow_compatible(false,1,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,4,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,4,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x25,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x34,0,0,4));check(native_sampled_array_float_compatible(4,3,1,0x25));check(!native_sampled_array_float_compatible(4,0,1,0x25));check(!native_sampled_array_float_compatible(1,3,1,0x25));check(native_sampled_cube_array_float_compatible(9,16,16,12,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,7,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,8,12,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,4,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,1,0x27));std::cout<<"sampled profile checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_texture_layers_test.cpp
 @@ -0,0 +1,5 @@
@@ -3790,6 +4466,14 @@
 +#include <array>
 +#include <iostream>
 +int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("touch policy assertion");};nx::NativeTouchPolicy p;std::array<uint8_t,nx::NativeTouchPolicy::StateBytes> state{};check(p.states(state,1)==0);p.initialize();check(p.states(state,0)==0);check(p.states(state,1)==1);uint64_t sample=0;std::memcpy(&sample,state.data(),8);check(sample==1);for(size_t i=8;i<state.size();++i)check(state[i]==0);check(p.states(state,16)==1);std::memcpy(&sample,state.data(),8);check(sample==2);bool bad=false;try{p.states(std::span<uint8_t>(state).first(4),1);}catch(const std::invalid_argument&){bad=true;}check(bad);std::cout<<"native_touch_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/native_volume_profile_test.cpp
+@@ -0,0 +1,5 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/native_volume_profile.h"
++#include <iostream>
++#include <stdexcept>
++int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("volume coverage assertion");};NativeVolumeExtent image{4,4,4,1,0x25,0};NativeVolumeWrite write{0,0,0,0,4,4,4,256};check(native_volume_full_write(image,write));write.bytes=255;check(!native_volume_full_write(image,write));write.bytes=256;write.z=1;check(!native_volume_full_write(image,write));write.z=0;write.level=1;check(!native_volume_full_write(image,write));write.level=0;image.levels=2;check(!native_volume_full_write(image,write));image.levels=1;image.format=0x27;check(!native_volume_full_write(image,write));image.format=0x25;image.samples=4;check(!native_volume_full_write(image,write));image={0xffffffffu,0xffffffffu,0xffffffffu,1,0x25,0};check(!native_volume_full_write(image,write));std::cout<<"volume coverage checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/romfs_image_probe.cpp
 @@ -0,0 +1,12 @@

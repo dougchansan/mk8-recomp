@@ -1,6 +1,6 @@
 # Native runtime progress
 
-Updated 2026-10-17. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
+Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
 
 ## Belmante runtime adoption
 
@@ -9,12 +9,12 @@ The isolated Windows target uses MIT-licensed SuperMarioWonderRecomp revision
 main/subsdk0/SDK form three static libraries and a local standalone executable.
 The Vulkan dispatch table is regenerated for the already installed headers.
 
-Twenty-four CPU/component suites pass, including SDK 53 texture/sampler
+Twenty-nine CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 95-check GPU fixture creates and drains a real device and queue on
+A separate 118-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
-configuration without loading guest modules. The real image's 1,122 directories,
+configuration without loading guest modules. The 29th component suite validates the bounded font-bundle parser. The real image's 1,122 directories,
 6,597 files and eight native sample reads match an independent parser.
 
 Actual MK8D startup enters `nnMain`, mounts its content, creates an owned native
@@ -25,18 +25,38 @@ cache setup now handles copied texture and sampler descriptors and reaches the
 first texture upload. Debug labels now share owned native object storage.
 Packaged texture layouts carry block height into storage sizing and upload.
 With the local offline graphics cache, startup passes the previous textured
-shader setup and reaches a required compute shader whose older raw-code layout
-still needs integration. There is still no native game frame or playable result.
+shader setup, raw compute program setup and system-resource mounting. It now
+starts the SDK53 software audio render thread and loads sound banks, then reaches
+UI and RaceCommon asset loading. The latest run stops at application display-version metadata (IApplicationFunctions command 23). There is still no native game frame or playable result.
 
 The [offline shader diagnostic](../integrations/belmante-runtime/offline/README.md)
 uses the existing shader-only compiler libraries. Thirteen authored parser/profile
-cases pass. The cache contains 1,050 graphics shader stages from inspected startup
+cases pass. The cache contains 3,703 pretranslated graphics/compute shader stages from inspected startup
 assets, with Vulkan module acceptance and no pipeline/draw credit. Explicit
-profiles cover normalized 2D/cube float sampling and depth comparisons on 2D or
+profiles cover normalized 2D/cube/array float sampling and depth comparisons on 2D or
 array textures; live bindings must match before upload/draw. Cubemap storage uses
 six faces. This is not complete shader coverage or proof of draw-state
-compatibility. Compute, packaged 3D/multisample layouts and remaining shader
-resource classes require integration.
+compatibility. Seven older raw compute kernels now translate offline with actual
+workgroup/shared metadata and checked native buffer bindings. The 3D noise-volume
+path uses complete single-level RGBA8 API texels; an authored 4x4x4 volume passes
+all 256 bytes through native Vulkan upload/readback. Raw tiled volumes, multisample
+layouts and remaining resource classes still require integration.
+
+The font adapter maps seven privately supplied, verified system fonts into native shared memory and serves font metadata and language queries. No font contents are distributed.
+
+The optional system-data adapter reads the owner's existing Mii archive through
+an identity-pinned read-only image. Its local extraction verified the NCA section
+hash and 357 IVFC blocks; neither system contents nor keys are published. Native
+system mounts and ordinary file calls now use the same image reader. The local
+avatar database is empty; generation and mutation remain unsupported. FSP process
+binding commits after its reply, and archive output is staged until reply completion.
+
+Native audio now resolves the inspected SDK53 renderer and execution entry by
+symbol, validates its layout getters, and decodes that SDK's command format.
+The earlier audio-startup timeout is gone in the latest probe. The render thread
+runs and sound-bank reads advance, but these probes are muted and do not prove
+audible output or complete audio correctness. Local play-report and offline-friend
+interfaces have begun integration; their remaining calls still stop explicitly.
 
 The owned window does not activate or change the foreground. Fresh startup
 processes stop at explicit unsupported calls and close without a timeout. These

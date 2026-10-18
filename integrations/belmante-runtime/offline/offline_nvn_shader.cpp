@@ -56,13 +56,15 @@ int main(int argc,char** argv) {try {
         const bool cube=suffix!=std::string::npos&&text.substr(suffix)==":cube";
         const bool array_shadow=suffix!=std::string::npos&&text.substr(suffix)==":array2d-shadow";
         const bool shadow=array_shadow||(suffix!=std::string::npos&&text.substr(suffix)==":2d-shadow");
-        if(suffix!=std::string::npos&&!cube&&!shadow)throw std::runtime_error("unsupported sampled profile type");
+        const bool array_color=suffix!=std::string::npos&&text.substr(suffix)==":array2d";
+        const bool cube_array=suffix!=std::string::npos&&text.substr(suffix)==":cube-array";
+        if(suffix!=std::string::npos&&!cube&&!shadow&&!array_color&&!cube_array)throw std::runtime_error("unsupported sampled profile type");
         unsigned offset=0;auto [end,error]=std::from_chars(text.data()+2,text.data()+numeric_end,offset);
         if(error!=std::errc{}||end!=text.data()+numeric_end||offset<0x20||offset>0x118||(offset-0x20)%8||!slots.insert(offset).second)
             throw std::runtime_error("invalid or duplicate normalized2D float profile slot");
         const uint32_t symbol=1+(offset-0x20)/8;
         constants.push_back({2,offset,symbol});
-        const auto type=array_shadow?Shader::TextureType::ColorArray2D:(cube?Shader::TextureType::ColorCube:Shader::TextureType::Color2D);
+        const auto type=cube_array?Shader::TextureType::ColorArrayCube:((array_shadow||array_color)?Shader::TextureType::ColorArray2D:(cube?Shader::TextureType::ColorCube:Shader::TextureType::Color2D));
         slot_types.emplace(offset,type);slot_shadow.emplace(offset,shadow);
         textures.push_back({symbol,type,native_shaders::NativePixelFormat::RGBA8Unorm});
     }
@@ -79,16 +81,19 @@ int main(int argc,char** argv) {try {
     Shader::Maxwell::ConvertLegacyToGeneric(program,runtime);
     Shader::Profile profile{};profile.unified_descriptor_binding=true;profile.need_fastmath_off=true;
     Shader::Backend::Bindings bindings{};
-    if (!program.info.storage_buffers_descriptors.empty() ||
-        !program.info.texture_buffer_descriptors.empty() || !program.info.image_descriptors.empty() ||
+    if (!program.info.texture_buffer_descriptors.empty() || !program.info.image_descriptors.empty() ||
         !program.info.image_buffer_descriptors.empty()) throw std::runtime_error("resource mapping beyond uniform buffers is not integrated");
     for(const auto& descriptor:program.info.constant_buffer_descriptors)
         if(descriptor.count!=1)throw std::runtime_error("uniform arrays require further integration");
     for(const auto& descriptor:program.info.texture_descriptors)
         if(slots.empty()||descriptor.count!=1||descriptor.cbuf_index!=2||!slots.contains(descriptor.cbuf_offset)||descriptor.type!=slot_types.at(descriptor.cbuf_offset)||descriptor.is_depth!=slot_shadow.at(descriptor.cbuf_offset))
             throw std::runtime_error("sampled profile mismatch: type="+std::to_string(static_cast<unsigned>(descriptor.type))+" depth="+std::to_string(descriptor.is_depth)+" count="+std::to_string(descriptor.count)+" bank="+std::to_string(descriptor.cbuf_index)+" offset="+std::to_string(descriptor.cbuf_offset));
+    for(const auto& descriptor:program.info.storage_buffers_descriptors) {
+        const unsigned base=tag==5?0x510:0x110;
+        if(descriptor.is_written||descriptor.count!=1||descriptor.cbuf_index!=0||descriptor.cbuf_offset<base||descriptor.cbuf_offset>=base+0x100||(descriptor.cbuf_offset-base)%16)throw std::runtime_error("graphics storage descriptor is outside readonly native table");
+    }
     auto spv=Shader::Backend::SPIRV::EmitSPIRV(profile,runtime,program,bindings);
-    if(bindings.unified!=program.info.constant_buffer_descriptors.size()+program.info.texture_descriptors.size())throw std::runtime_error("unsupported descriptor binding layout");
+    if(bindings.unified!=program.info.constant_buffer_descriptors.size()+program.info.storage_buffers_descriptors.size()+program.info.texture_descriptors.size())throw std::runtime_error("unsupported descriptor binding layout");
     // Match the native runtime's per-stage uniform binding range; retain names.
     std::map<uint32_t,unsigned> uniform_ids;
     for (size_t at=5;at<spv.size();) {
@@ -106,15 +111,18 @@ int main(int argc,char** argv) {try {
         at+=count;
     }
     if(uniform_ids.size()!=program.info.constant_buffer_descriptors.size())throw std::runtime_error("uniform variable mapping mismatch");
-    std::map<uint32_t,unsigned> sampled_ids;
+    std::map<uint32_t,unsigned> sampled_ids,storage_ids;
     for(size_t at=5;at<spv.size();at+=spv[at]>>16) {
         if((spv[at]&65535)==71&&(spv[at]>>16)==4&&spv[at+2]==33&&!uniform_ids.contains(spv[at+1])) {
             const auto old_binding=spv[at+3],first=unsigned(uniform_ids.size());
-            if(old_binding<first||old_binding-first>=program.info.texture_descriptors.size())throw std::runtime_error("unexpected sampled binding");
-            sampled_ids.emplace(spv[at+1],old_binding-first);
+            if(old_binding<first)throw std::runtime_error("unexpected resource binding");
+            const auto storage_count=program.info.storage_buffers_descriptors.size();
+            if(old_binding-first<storage_count)storage_ids.emplace(spv[at+1],old_binding-first);
+            else if(old_binding-first-storage_count<program.info.texture_descriptors.size())sampled_ids.emplace(spv[at+1],unsigned(old_binding-first-storage_count));
+            else throw std::runtime_error("unexpected sampled binding");
         }
     }
-    if(sampled_ids.size()!=program.info.texture_descriptors.size())throw std::runtime_error("sampled variable mapping mismatch");
+    if(storage_ids.size()!=program.info.storage_buffers_descriptors.size()||sampled_ids.size()!=program.info.texture_descriptors.size())throw std::runtime_error("sampled variable mapping mismatch");
     unsigned remapped=0;
     for(size_t at=5;at<spv.size();at+=spv[at]>>16) {
         if((spv[at]&65535)==71&&(spv[at]>>16)==4&&uniform_ids.contains(spv[at+1])) {
@@ -130,9 +138,15 @@ int main(int argc,char** argv) {try {
             if(spv[at+2]==33)spv[at+3]=(tag==5?128:0)+sampled_ids.at(spv[at+1]);
             if(spv[at+2]==34)spv[at+3]=2;
         }
-        if(op==5&&count>=3&&sampled_ids.contains(spv[at+1])) {
+        if(op==71&&count==4&&storage_ids.contains(spv[at+1])) {
+            if(spv[at+2]==33)spv[at+3]=(tag==5?16:0)+storage_ids.at(spv[at+1]);
+            if(spv[at+2]==34)spv[at+3]=1;
+        }
+        if(op==5&&count>=3&&storage_ids.contains(spv[at+1])) {
+            const auto text=std::string(tag==5?"fp_s":"vp_s")+std::to_string(storage_ids.at(spv[at+1]));const auto words=(text.size()+1+3)/4;auto begin=named.size();named.resize(begin+2+words,0);named[begin]=uint32_t((words+2)<<16)|5;named[begin+1]=spv[at+1];std::memcpy(named.data()+begin+2,text.c_str(),text.size());
+        } else if(op==5&&count>=3&&sampled_ids.contains(spv[at+1])) {
             const auto& descriptor=program.info.texture_descriptors.at(sampled_ids.at(spv[at+1]));
-            std::ostringstream name;name<<(tag==5?"fp":"vp")<<(descriptor.is_depth?(descriptor.type==Shader::TextureType::ColorArray2D?"_tArrayShadow_cb2_":"_tShadow_cb2_"):(descriptor.type==Shader::TextureType::ColorCube?"_tCube_cb2_":"_t_cb2_"))<<std::hex<<descriptor.cbuf_offset/4;
+            std::ostringstream name;name<<(tag==5?"fp":"vp")<<(descriptor.is_depth?(descriptor.type==Shader::TextureType::ColorArray2D?"_tArrayShadow_cb2_":"_tShadow_cb2_"):(descriptor.type==Shader::TextureType::ColorArrayCube?"_tCubeArray_cb2_":(descriptor.type==Shader::TextureType::ColorArray2D?"_tArray_cb2_":(descriptor.type==Shader::TextureType::ColorCube?"_tCube_cb2_":"_t_cb2_"))))<<std::hex<<descriptor.cbuf_offset/4;
             const auto text=name.str();const auto words=(text.size()+1+3)/4;
             const auto begin=named.size();named.resize(begin+2+words,0);
             named[begin]=uint32_t((words+2)<<16)|5;named[begin+1]=spv[at+1];
@@ -140,11 +154,16 @@ int main(int argc,char** argv) {try {
         } else named.insert(named.end(),spv.begin()+at,spv.begin()+at+count);
     }
     spv=std::move(named);
-    if(!sampled_ids.empty()) {
+    if(!sampled_ids.empty()||!storage_ids.empty()) {
         auto path=std::filesystem::path(argv[4]);path.replace_extension(".profile");
-        std::ofstream metadata(path,std::ios::binary);metadata<<"NVN_NATIVE_PROFILE_V3 normalized-sampled-float-shadow viewport1 triangles float-attributes\n";
+        std::ofstream metadata(path,std::ios::binary);metadata<<(storage_ids.empty()?"NVN_NATIVE_PROFILE_V7 normalized-sampled-float-arrays viewport1 triangles float-attributes\n":"NVN_NATIVE_PROFILE_V9 readonly-graphics-buffers-arrays viewport1 triangles float-attributes\n");
         if(!metadata)throw std::runtime_error("profile output write failed");
     }
+    auto resource_path=std::filesystem::path(argv[4]);resource_path.replace_extension(".resources");std::ofstream resource_file(resource_path);
+    for(const auto& [id,bank]:uniform_ids)resource_file<<"cb"<<bank<<"=s0b"<<(tag==5?18:0)+1+bank<<' ';
+    for(const auto& [id,index]:storage_ids){const auto& descriptor=program.info.storage_buffers_descriptors.at(index);resource_file<<"sb[c0+0x"<<std::hex<<descriptor.cbuf_offset/4<<std::dec<<"]=s1b"<<(tag==5?16:0)+index<<' ';}
+    for(const auto& [id,index]:sampled_ids){const auto& descriptor=program.info.texture_descriptors.at(index);resource_file<<"texTexture2D[c2:"<<descriptor.cbuf_offset/4<<"]=s2b"<<(tag==5?128:0)+index<<' ';}
+    if(!resource_file)throw std::runtime_error("graphics resource output failed");
     std::ofstream f(argv[4],std::ios::binary);f.write(reinterpret_cast<const char*>(spv.data()),spv.size()*4);
     if(!f)throw std::runtime_error("output write failed");
     std::cout<<"{\"offline_diagnostic\":true,\"stage_tag\":"<<tag<<",\"words\":"<<spv.size()<<",\"uniforms\":"<<program.info.constant_buffer_descriptors.size()<<",\"storage\":"<<program.info.storage_buffers_descriptors.size()<<",\"textures\":"<<program.info.texture_descriptors.size()<<",\"native_game_frame\":false}\n";

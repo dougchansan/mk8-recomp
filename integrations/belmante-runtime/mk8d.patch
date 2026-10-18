@@ -1,9 +1,12 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -36,6 +36,95 @@
+@@ -36,6 +36,98 @@
  option(NX_TESTS "Build the standalone unit tests" OFF)
  if(NX_TESTS AND NOT ANDROID)
      enable_testing()
++    add_executable(sdk53_sampler_values_test tests/sdk53_sampler_values_test.cpp)
++    target_include_directories(sdk53_sampler_values_test PRIVATE runtime/src)
++    add_test(NAME sdk53_sampler_values COMMAND sdk53_sampler_values_test)
 +    add_executable(sdk53_texture_wire_test tests/sdk53_texture_wire_test.cpp)
 +    target_include_directories(sdk53_texture_wire_test PRIVATE runtime/src)
 +    add_test(NAME sdk53_texture_wire COMMAND sdk53_texture_wire_test)
@@ -96,7 +99,7 @@
      add_executable(gpu_pick_test tests/gpu_pick_test.cpp runtime/src/nvn/nvn_gpu_pick.cpp)
      target_compile_definitions(gpu_pick_test PRIVATE NX_GPU_PICK_STANDALONE)
      target_include_directories(gpu_pick_test PRIVATE runtime/src/nvn)
-@@ -67,7 +156,14 @@
+@@ -67,7 +159,14 @@
      return()
  endif()
  
@@ -112,7 +115,7 @@
      file(GLOB src CONFIGURE_DEPENDS "${NX_GEN_DIR}/${mod}/*.cpp")
      add_library(game_${mod} STATIC ${src})
      target_include_directories(game_${mod} PRIVATE runtime/include "${NX_GEN_DIR}/${mod}")
-@@ -84,8 +180,10 @@
+@@ -84,8 +183,10 @@
          target_compile_options(game_${mod} PRIVATE -O2 -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
      endif()
  endforeach()
@@ -123,7 +126,7 @@
      runtime/src/main.cpp
      runtime/src/sampler.cpp
      runtime/src/loader.cpp
-@@ -93,6 +191,12 @@
+@@ -93,6 +194,12 @@
      runtime/src/kernel.cpp
      runtime/src/kernel_watch.cpp
      runtime/src/ipc.cpp
@@ -136,7 +139,7 @@
      runtime/src/svc_am.cpp
      runtime/src/svc_set.cpp
      runtime/src/svc_misc.cpp
-@@ -101,6 +205,7 @@
+@@ -101,6 +208,7 @@
      runtime/src/hle_fs.cpp
      runtime/src/svc_account.cpp
      runtime/src/hle_ro.cpp
@@ -144,7 +147,7 @@
      runtime/src/hle_vi.cpp
      runtime/src/hle_hid.cpp
      runtime/src/hle_net.cpp
-@@ -185,7 +290,7 @@
+@@ -185,7 +293,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -153,7 +156,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +301,7 @@
+@@ -196,7 +304,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -162,7 +165,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,16 +313,36 @@
+@@ -208,16 +316,36 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -5511,18 +5514,14 @@
      t->writes.push_back(std::move(w));
      t->has_writes.store(true, std::memory_order_release);
  }
-@@ -573,6 +616,31 @@
- NX_TEXTURE_GETTER(TextureGetMemoryPool, pool)
- NX_TEXTURE_GETTER(TextureGetMemoryOffset, offset)
- NX_TEXTURE_GETTER(TextureGetStorageSize, storage_size)
-+// Vulkan image requirements account for implementation-owned resource memory.
-+// This backend exposes no additional client-managed NVN ZCull allocation.
-+// https://docs.vulkan.org/refpages/latest/refpages/source/VkMemoryRequirements.html
-+void TextureGetZCullStorageSize(CPU& c) {
-+    std::lock_guard guard(objects_lock());const auto key=c.x[0];
+@@ -556,10 +599,32 @@
+ void TextureWriteTexelsStrided(CPU& c) { write_texels(c, c.x[4], c.x[5]); }
+ void TextureFlushTexels(CPU&) {}  // coherent: the writes above are what matters
+ 
++uint64_t texture_identity_locked(uint64_t key) {
 +    if(auto found=objects().find(key);found!=objects().end()) {
-+        if(!dynamic_cast<Texture*>(found->second.get()))throw std::invalid_argument("native ZCull query object type");
-+        c.x[0]=0;return;
++        if(!dynamic_cast<Texture*>(found->second.get()))throw std::invalid_argument("native texture query object type");
++        return key;
 +    }
 +    // SDK53 permits descriptor copies. Accept a readable copy only while its
 +    // complete published resource identity still names a live native texture.
@@ -5533,17 +5532,93 @@
 +            const std::array<uint32_t,13> fields={texture->flags,texture->target,texture->width,texture->height,texture->depth,texture->levels,texture->format,texture->samples,texture->swizzle[0],texture->swizzle[1],texture->swizzle[2],texture->swizzle[3],texture->depth_stencil_mode};
 +            bool match=(ld<uint32_t>(key+0x54)&3)==format_aspect(texture->format);
 +            for(size_t i=0;i<fields.size()&&match;++i)match=ld<uint32_t>(key+0x20+i*4)==fields[i];
-+            if(match){c.x[0]=0;log("nvn: ZCull descriptor copy matched live native texture");return;}
++            if(match){log("nvn: descriptor copy matched live native texture");return owner;}
 +        }
 +    }
-+    if(native_guest_span(key,0xb0,1))log("nvn: unresolved ZCull descriptor guest=%llx device=%llx gpu=%llx pool=%llx target=%u width=%u height=%u format=%u",(unsigned long long)key,(unsigned long long)ld<uint64_t>(key+8),(unsigned long long)ld<uint64_t>(key+0x80),(unsigned long long)ld<uint64_t>(key+0x10),ld<uint32_t>(key+0x24),ld<uint32_t>(key+0x28),ld<uint32_t>(key+0x2c),ld<uint32_t>(key+0x38));
-+    throw std::invalid_argument("native ZCull query requires a live texture identity");
++    if(native_guest_span(key,0xb0,1))log("nvn: unresolved texture descriptor guest=%llx device=%llx gpu=%llx pool=%llx target=%u width=%u height=%u format=%u",(unsigned long long)key,(unsigned long long)ld<uint64_t>(key+8),(unsigned long long)ld<uint64_t>(key+0x80),(unsigned long long)ld<uint64_t>(key+0x10),ld<uint32_t>(key+0x24),ld<uint32_t>(key+0x28),ld<uint32_t>(key+0x2c),ld<uint32_t>(key+0x38));
++    throw std::invalid_argument("native texture descriptor requires a live resource identity");
++}
++
+ #define NX_TEXTURE_GETTER(fn, field)          \
+     void fn(CPU& c) {                         \
+-        auto* t = get<Texture>(c.x[0]);       \
+-        c.x[0] = t ? uint64_t(t->field) : 0;  \
++        std::lock_guard guard(objects_lock()); \
++        auto* t = static_cast<Texture*>(objects().at(texture_identity_locked(c.x[0])).get()); \
++        c.x[0] = uint64_t(t->field);          \
+     }
+ NX_TEXTURE_GETTER(TextureGetWidth, width)
+ NX_TEXTURE_GETTER(TextureGetHeight, height)
+@@ -573,6 +638,13 @@
+ NX_TEXTURE_GETTER(TextureGetMemoryPool, pool)
+ NX_TEXTURE_GETTER(TextureGetMemoryOffset, offset)
+ NX_TEXTURE_GETTER(TextureGetStorageSize, storage_size)
++// Vulkan image requirements account for implementation-owned resource memory.
++// This backend exposes no additional client-managed NVN ZCull allocation.
++// https://docs.vulkan.org/refpages/latest/refpages/source/VkMemoryRequirements.html
++void TextureGetZCullStorageSize(CPU& c) {
++    std::lock_guard guard(objects_lock());(void)texture_identity_locked(c.x[0]);c.x[0]=0;
 +}
 +
  NX_TEXTURE_GETTER(TextureGetDepthStencilMode, depth_stencil_mode)
  #undef NX_TEXTURE_GETTER
  
-@@ -652,6 +720,19 @@
+@@ -587,22 +659,32 @@
+     c.x[0] = 1;
+ }
+ 
+-void DescriptorPoolFinalize(CPU& c) { destroy(c.x[0]); }
++void DescriptorPoolFinalize(CPU& c) {
++    std::lock_guard guard(objects_lock());const auto key=c.x[0];auto found=objects().find(key);auto* pool=found==objects().end()?nullptr:dynamic_cast<DescriptorPool*>(found->second.get());
++    if(!pool)throw std::invalid_argument("native descriptor pool finalize identity");
++    std::set<uint64_t> textures;for(const auto& [id,texture]:pool->textures)textures.insert(texture);
++    for(const auto& [id,snapshot]:pool->snapshots)drop_snapshot(snapshot);
++    for(auto texture:textures){auto registered=g_registered.find(texture);if(registered==g_registered.end())continue;auto& slots=registered->second;slots.erase(std::remove_if(slots.begin(),slots.end(),[key](const auto& slot){return slot.first==key;}),slots.end());if(slots.empty())g_registered.erase(registered);}
++    note_replaced(key);defer_object(std::move(found->second));objects().erase(found);
++    for(auto texture:textures)release_kept(texture);
++}
+ 
+ // nvnTexturePoolRegisterTexture / RegisterImage(pool, int id, const NVNtexture*, const NVNtextureView*)
+ void TexturePoolRegister(CPU& c) {
++    uint64_t texture_key=0;{std::lock_guard guard(objects_lock());if(c.x[2])texture_key=texture_identity_locked(c.x[2]);}
++
+     // The view may pick levels or layers (a bloom chain samples one mip of its target) and override the swizzle
+     // (a font atlas in R8 is registered with alpha = R).
+     ViewInfo v = read_view(c, c.x[3]);
+     if (trace_textures()) {
+-        auto* tt = get<Texture>(c.x[2]);
++        auto* tt = get<Texture>(texture_key);
+         log("nvn: pool %llx id %#x = texture %llx (memory %llx %ux%u) view %llx: levels %u+%u layers %u+%u swizzle %08x "
+-            "format %#x", (unsigned long long)c.x[0], uint32_t(c.x[1]), (unsigned long long)c.x[2],
++            "format %#x", (unsigned long long)c.x[0], uint32_t(c.x[1]), (unsigned long long)texture_key,
+             (unsigned long long)(tt ? tt->memory : 0), tt ? tt->width : 0, tt ? tt->height : 0, (unsigned long long)c.x[3],
+             v.base_level, v.levels, v.min_layer, v.layers, v.swizzle, v.format);
+     }
+     if (v.swizzle)
+-        if (auto* t = get<Texture>(c.x[2])) t->pool_swizzle = v.swizzle;
++        if (auto* t = get<Texture>(texture_key)) t->pool_swizzle = v.swizzle;
+     if (auto* d = get<DescriptorPool>(c.x[0])) {
+         std::lock_guard lk(objects_lock());
+         uint32_t id = uint32_t(c.x[1]);
+@@ -612,13 +694,13 @@
+         if (auto it = d->views.find(id); it != d->views.end()) before.has_view = true, before.view = it->second;
+         note_pool_change(c.x[0], id, before);
+         uint64_t old = before.texture;
+-        d->textures[id] = c.x[2];
++        d->textures[id] = texture_key;
+         if (auto s = d->snapshots.find(uint32_t(c.x[1])); s != d->snapshots.end()) drop_snapshot(s->second);
+-        if (uint64_t snap = make_snapshot(c.x[2])) d->snapshots[uint32_t(c.x[1])] = snap;
+-        auto& slots = g_registered[c.x[2]];  // re-registered every frame: keep each slot once
++        if (uint64_t snap = make_snapshot(texture_key)) d->snapshots[uint32_t(c.x[1])] = snap;
++        auto& slots = g_registered[texture_key];  // re-registered every frame: keep each slot once
+         std::pair<uint64_t, uint32_t> slot{c.x[0], uint32_t(c.x[1])};
+         if (std::find(slots.begin(), slots.end(), slot) == slots.end()) slots.push_back(slot);
+-        if (old && old != c.x[2]) release_kept(old);
++        if (old && old != texture_key) release_kept(old);
+         // A view setting only a base level, first layer or format counts too (it was dropped: level 0 sampled).
+         if (v.base_level || v.levels || v.min_layer || v.layers || v.swizzle || v.format)
+             d->views[uint32_t(c.x[1])] = v;
+@@ -652,6 +734,19 @@
  
  NX_HLE("nvnMemoryPoolInitialize", MemoryPoolInitialize);
  NX_HLE("nvnMemoryPoolFinalize", MemoryPoolFinalize);
@@ -5563,7 +5638,7 @@
  NX_HLE("nvnMemoryPoolMap", MemoryPoolMap);
  NX_HLE("nvnMemoryPoolMapVirtual", MemoryPoolMapVirtual);
  NX_HLE("nvnTextureWriteTexels", TextureWriteTexels);
-@@ -663,6 +744,7 @@
+@@ -663,6 +758,7 @@
  NX_HLE("nvnMemoryPoolFlushMappedRange", MemoryPoolFlushMappedRange);
  NX_HLE("nvnMemoryPoolInvalidateMappedRange", MemoryPoolInvalidateMappedRange);
  NX_HLE("nvnBufferInitialize", BufferInitialize);
@@ -5571,7 +5646,7 @@
  NX_HLE("nvnBufferFinalize", BufferFinalize);
  NX_HLE("nvnBufferMap", BufferMap);
  NX_HLE("nvnBufferGetAddress", BufferGetAddress);
-@@ -685,6 +767,7 @@
+@@ -685,6 +781,7 @@
  NX_HLE("nvnTextureGetMemoryPool", TextureGetMemoryPool);
  NX_HLE("nvnTextureGetMemoryOffset", TextureGetMemoryOffset);
  NX_HLE("nvnTextureGetStorageSize", TextureGetStorageSize);
@@ -5579,7 +5654,7 @@
  NX_HLE("nvnTextureGetDepthStencilMode", TextureGetDepthStencilMode);
  NX_HLE("nvnSamplerPoolInitialize", DescriptorPoolInitialize);
  NX_HLE("nvnTexturePoolInitialize", DescriptorPoolInitialize);
-@@ -703,3 +786,5 @@
+@@ -703,3 +800,5 @@
  NX_HLE("nvnDeviceGetImageHandle", DeviceGetImageHandle);
  
  }  // namespace nx::nvn
@@ -5850,16 +5925,18 @@
      }
 --- a/runtime/src/nvn/nvn_sampler_objects.cpp
 +++ b/runtime/src/nvn/nvn_sampler_objects.cpp
-@@ -10,6 +10,8 @@
+@@ -10,6 +10,10 @@
  #include <cstring>
  
  #include "nvn.h"
 +#include "native_guest_span.h"
 +#include "sdk53_sampler_descriptor.h"
++#include "sdk53_sampler_values.h"
++#include "native_device.h"
  
  namespace nx::nvn {
  
-@@ -48,10 +50,23 @@
+@@ -48,10 +52,23 @@
  
  void SamplerInitialize(CPU& c) {  // NVNboolean (NVNsampler*, const NVNsamplerBuilder*)
      uint64_t guest = c.x[0], builder = c.x[1];
@@ -5883,7 +5960,38 @@
  }
  
  void SamplerFinalize(CPU& c) { destroy(c.x[0]); }
-@@ -119,6 +134,7 @@
+@@ -68,8 +85,10 @@
+     }
+ }
+ 
+-void RegisterSampler(CPU& c) {  // (NVNsamplerPool*, int id, const NVNsampler*)
+-    if (auto* s = get<Sampler>(c.x[2])) register_info(c.x[0], uint32_t(c.x[1]), s->info);
++SamplerInfo info_of(uint64_t guest);
++void RegisterSampler(CPU& c) {  // Descriptor values may be copied independently of the original object.
++    const auto* pool=get<DescriptorPool>(c.x[0]);if(!pool||c.x[1]>=pool->count)throw std::invalid_argument("native sampler pool registration range");
++    register_info(c.x[0],uint32_t(c.x[1]),info_of(c.x[2]));
+ }
+ 
+ void RegisterSamplerBuilder(CPU& c) {  // (NVNsamplerPool*, int id, const NVNsamplerBuilder*)
+@@ -77,10 +96,13 @@
+     register_info(c.x[0], uint32_t(c.x[1]), info);
+ }
+ 
+-const SamplerInfo& info_of(uint64_t guest) {
+-    static const SamplerInfo none;
+-    auto* s = get<Sampler>(guest);
+-    return s ? s->info : none;
++SamplerInfo info_of(uint64_t guest) {
++    if(auto* sampler=get<Sampler>(guest))return sampler->info;
++    if(!native_guest_span(guest,0x50,1))throw std::invalid_argument("native sampler descriptor is unreadable");
++    const auto values=sdk53_sampler_values({reinterpret_cast<const uint8_t*>(guest),0x50});
++    if(!native_device_alive(values.device))throw std::invalid_argument("native sampler descriptor device is not live");
++    SamplerInfo info;info.min_filter=values.min;info.mag_filter=values.mag;std::copy(values.wrap.begin(),values.wrap.end(),info.wrap);info.lod_min=values.lod_min;info.lod_max=values.lod_max;info.lod_bias=values.bias;info.compare_mode=values.mode;info.compare_func=values.func;std::copy(values.border.begin(),values.border.end(),info.border);info.max_anisotropy=values.anisotropy;info.reduction=values.reduction;
++    log("nvn: copied SDK53 sampler decoded compare=%u/%u",info.compare_mode,info.compare_func);return info;
+ }
+ 
+ void GetMinMagFilter(CPU& c) {
+@@ -119,6 +141,7 @@
  
  NX_HLE("nvnSamplerInitialize", SamplerInitialize);
  NX_HLE("nvnSamplerFinalize", SamplerFinalize);
@@ -5965,7 +6073,7 @@
 +                else compatible=native_sampled_2d_float_compatible(actual->target,actual->depth,actual->samples,format)||native_sampled_depth_float_compatible(false,actual->target,actual->depth,actual->samples,format,actual->depth_stencil_mode,r.sampler.compare_mode);
 +                if(!b->image.depth&&r.sampler.compare_mode!=0)compatible=false;
 +            }
-+            if(!compatible)fatal("bound texture does not match offline sampled float shader profile shader=%s slot=%d expected_dim=%u expected_array=%u expected_depth=%u target=%u depth=%u format=%u compare=%u/%u",s->hash.c_str(),b->nvn.index,b->image.dim,unsigned(b->image.arrayed),unsigned(b->image.depth),actual?actual->target:0,actual?actual->depth:0,format,r.sampler.compare_mode,r.sampler.compare_func);
++            if(!compatible)fatal("bound texture does not match offline sampled float shader profile shader=%s handle=%llx texture_pool=%llx sampler_pool=%llx slot=%d expected_dim=%u expected_array=%u expected_depth=%u target=%u depth=%u format=%u compare=%u/%u",s->hash.c_str(),(unsigned long long)handle,(unsigned long long)g_state.texture_pool,(unsigned long long)g_state.sampler_pool,b->nvn.index,b->image.dim,unsigned(b->image.arrayed),unsigned(b->image.depth),actual?actual->target:0,actual?actual->depth:0,format,r.sampler.compare_mode,r.sampler.compare_func);
 +        }
          r.texture = texture;
          if (texture ? !sampled_ready(texture) : !dummy_ready(b->image)) out |= kNeedBreak;
@@ -6258,6 +6366,33 @@
 +        if (x != y) return false;
 +    }
 +    return true;
++}
++}
+--- /dev/null
++++ b/runtime/src/nvn/sdk53_sampler_values.h
+@@ -0,0 +1,24 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <array>
++#include <cstdint>
++#include <cstring>
++#include <cmath>
++#include <span>
++#include <stdexcept>
++namespace nx::nvn {
++struct Sdk53SamplerValues {uint64_t device{};uint32_t min{},mag{},mode{},func{},reduction{};std::array<uint32_t,3> wrap{};float lod_min{},lod_max{},bias{},anisotropy{};std::array<float,4> border{};};
++inline Sdk53SamplerValues sdk53_sampler_values(std::span<const uint8_t> bytes){
++ if(bytes.size()<0x50)throw std::invalid_argument("truncated SDK53 sampler values");
++ auto get=[&]<class T>(size_t offset){T value;std::memcpy(&value,bytes.data()+offset,sizeof value);return value;};
++ Sdk53SamplerValues s;s.device=get.template operator()<uint64_t>(8);s.min=get.template operator()<uint32_t>(0x10);s.mag=get.template operator()<uint32_t>(0x14);
++ for(size_t i=0;i<3;++i)s.wrap[i]=get.template operator()<uint32_t>(0x18+i*4);
++ s.lod_min=get.template operator()<float>(0x24);s.lod_max=get.template operator()<float>(0x28);s.bias=get.template operator()<float>(0x2c);s.mode=get.template operator()<uint32_t>(0x30);s.func=get.template operator()<uint32_t>(0x34);
++ for(size_t i=0;i<4;++i)s.border[i]=get.template operator()<float>(0x38+i*4);
++ s.anisotropy=get.template operator()<float>(0x48);s.reduction=get.template operator()<uint32_t>(0x4c);
++ if(!s.device||s.min>5||s.mag>1||s.mode>1||s.func<1||s.func>8||s.reduction>2||!std::isfinite(s.lod_min)||!std::isfinite(s.lod_max)||!std::isfinite(s.bias)||!std::isfinite(s.anisotropy)||s.anisotropy<1)throw std::invalid_argument("invalid SDK53 sampler values");
++ for(auto wrap:s.wrap)if(wrap>7)throw std::invalid_argument("invalid SDK53 sampler wrap");
++ for(auto border:s.border)if(!std::isfinite(border))throw std::invalid_argument("invalid SDK53 sampler border");
++ return s;
 +}
 +}
 --- /dev/null
@@ -7909,7 +8044,7 @@
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,98 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -7988,7 +8123,7 @@
 + commands.x[0]=cb;api("nvnCommandBufferEndRecording");check(commands.x[0]!=0);commands.x[0]=cb;api("nvnCommandBufferGetCommandMemoryUsed");check(commands.x[0]==64);
 + commands.x[0]=cb;api("nvnCommandBufferFinalize");commands.x[0]=pool_key;api("nvnMemoryPoolFinalize");
 + const auto texture_a=nx::kernel_alloc(256,16),texture_b=nx::kernel_alloc(256,16);auto& ta=nx::nvn::make<nx::nvn::Texture>(texture_a);auto& tb=nx::nvn::make<nx::nvn::Texture>(texture_b);ta.pool=tb.pool=0x1234;ta.offset=tb.offset=64;ta.format=tb.format=0x25;ta.width=tb.width=16;ta.height=tb.height=16;ta.depth=tb.depth=1;ta.levels=tb.levels=1;ta.samples=tb.samples=1;
-+ nx::CPU compare{};auto cmp=nx::hle_lookup("nvnTextureCompare");check(cmp!=nullptr);compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==1);tb.width=32;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);tb.width=16;tb.swizzle[3]=0;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);compare.x[0]=texture_a;compare.x[1]=texture_a;cmp(compare);check(compare.x[0]==1);text(text_area+512,"owned texture label");auto label=nx::hle_lookup("nvnTextureSetDebugLabel");check(label!=nullptr);compare.x[0]=texture_a;compare.x[1]=text_area+512;label(compare);check(ta.debug_label=="owned texture label");text(text_area+512,"changed input");check(ta.debug_label=="owned texture label");compare.x[0]=texture_a;compare.x[1]=0;label(compare);check(ta.debug_label.empty());auto zcull=nx::hle_lookup("nvnTextureGetZCullStorageSize");check(zcull!=nullptr);nx::CPU zquery{};zquery.x[0]=texture_a;zquery.x[1]=0x12345678;zcull(zquery);check(zquery.x[0]==0);check(zquery.x[1]==0x12345678);ta.format=0x34;zquery.x[0]=texture_a;zcull(zquery);check(zquery.x[0]==0);const auto copied=nx::kernel_alloc(0xb0,16);nx::vm_set(copied,0xb0,nx::kMemHeap,3);std::memset(reinterpret_cast<void*>(copied),0,0xb0);nx::st<uint64_t>(copied+8,device);nx::st<uint64_t>(copied+0x80,ta.gpu);nx::st<uint64_t>(copied+0x10,ta.pool);nx::st<uint64_t>(copied+0x18,ta.offset);nx::st<uint64_t>(copied+0x60,ta.stride);nx::st<uint32_t>(copied+0x54,nx::nvn::format_aspect(ta.format));const std::array<uint32_t,13> desc={ta.flags,ta.target,ta.width,ta.height,ta.depth,ta.levels,ta.format,ta.samples,ta.swizzle[0],ta.swizzle[1],ta.swizzle[2],ta.swizzle[3],ta.depth_stencil_mode};for(size_t i=0;i<desc.size();++i)nx::st<uint32_t>(copied+0x20+i*4,desc[i]);zquery.x[0]=copied;zcull(zquery);check(zquery.x[0]==0);check(zquery.x[1]==0x12345678);nx::st<uint32_t>(copied+0x28,ta.width+1);zquery.x[0]=copied;bool copy_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){copy_rejected=true;}check(copy_rejected);nx::st<uint32_t>(copied+0x28,ta.width);for(uint64_t invalid:{uint64_t(0),device}){zquery.x[0]=invalid;bool rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}nx::nvn::destroy(texture_a);zquery.x[0]=texture_a;bool retired_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){retired_rejected=true;}check(retired_rejected);zquery.x[0]=copied;bool retired_copy_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){retired_copy_rejected=true;}check(retired_copy_rejected);nx::nvn::destroy(texture_b);
++ nx::CPU compare{};auto cmp=nx::hle_lookup("nvnTextureCompare");check(cmp!=nullptr);compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==1);tb.width=32;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);tb.width=16;tb.swizzle[3]=0;compare.x[0]=texture_a;compare.x[1]=texture_b;cmp(compare);check(compare.x[0]==0);compare.x[0]=texture_a;compare.x[1]=texture_a;cmp(compare);check(compare.x[0]==1);text(text_area+512,"owned texture label");auto label=nx::hle_lookup("nvnTextureSetDebugLabel");check(label!=nullptr);compare.x[0]=texture_a;compare.x[1]=text_area+512;label(compare);check(ta.debug_label=="owned texture label");text(text_area+512,"changed input");check(ta.debug_label=="owned texture label");compare.x[0]=texture_a;compare.x[1]=0;label(compare);check(ta.debug_label.empty());auto zcull=nx::hle_lookup("nvnTextureGetZCullStorageSize");check(zcull!=nullptr);nx::CPU zquery{};zquery.x[0]=texture_a;zquery.x[1]=0x12345678;zcull(zquery);check(zquery.x[0]==0);check(zquery.x[1]==0x12345678);ta.format=0x34;zquery.x[0]=texture_a;zcull(zquery);check(zquery.x[0]==0);const auto copied=nx::kernel_alloc(0xb0,16);nx::vm_set(copied,0xb0,nx::kMemHeap,3);std::memset(reinterpret_cast<void*>(copied),0,0xb0);nx::st<uint64_t>(copied+8,device);nx::st<uint64_t>(copied+0x80,ta.gpu);nx::st<uint64_t>(copied+0x10,ta.pool);nx::st<uint64_t>(copied+0x18,ta.offset);nx::st<uint64_t>(copied+0x60,ta.stride);nx::st<uint32_t>(copied+0x54,nx::nvn::format_aspect(ta.format));const std::array<uint32_t,13> desc={ta.flags,ta.target,ta.width,ta.height,ta.depth,ta.levels,ta.format,ta.samples,ta.swizzle[0],ta.swizzle[1],ta.swizzle[2],ta.swizzle[3],ta.depth_stencil_mode};for(size_t i=0;i<desc.size();++i)nx::st<uint32_t>(copied+0x20+i*4,desc[i]);zquery.x[0]=copied;zcull(zquery);check(zquery.x[0]==0);check(zquery.x[1]==0x12345678);auto copied_width=nx::hle_lookup("nvnTextureGetWidth");check(copied_width!=nullptr);zquery.x[0]=copied;copied_width(zquery);check(zquery.x[0]==ta.width);const auto copied_pool=nx::kernel_alloc(128,16);auto& copied_descriptor_pool=nx::nvn::make<nx::nvn::DescriptorPool>(copied_pool);copied_descriptor_pool.count=4;auto register_texture=nx::hle_lookup("nvnTexturePoolRegisterTexture");check(register_texture!=nullptr);nx::CPU register_cpu{};register_cpu.x[0]=copied_pool;register_cpu.x[1]=1;register_cpu.x[2]=copied;register_texture(register_cpu);check(copied_descriptor_pool.textures.at(1)==texture_a);auto finalize_texture_pool=nx::hle_lookup("nvnTexturePoolFinalize");check(finalize_texture_pool!=nullptr);register_cpu.x[0]=copied_pool;finalize_texture_pool(register_cpu);check(nx::nvn::get<nx::nvn::DescriptorPool>(copied_pool)==nullptr);nx::st<uint32_t>(copied+0x28,ta.width+1);zquery.x[0]=copied;bool copy_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){copy_rejected=true;}check(copy_rejected);nx::st<uint32_t>(copied+0x28,ta.width);for(uint64_t invalid:{uint64_t(0),device}){zquery.x[0]=invalid;bool rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}nx::nvn::destroy(texture_a);zquery.x[0]=texture_a;bool retired_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){retired_rejected=true;}check(retired_rejected);zquery.x[0]=copied;bool retired_copy_rejected=false;try{zcull(zquery);}catch(const std::invalid_argument&){retired_copy_rejected=true;}check(retired_copy_rejected);nx::nvn::destroy(texture_b);
 + const auto volume_key=nx::kernel_alloc(256,16),volume_data=nx::kernel_alloc(256,16),volume_region=nx::kernel_alloc(32,16);nx::vm_set(volume_data,256,nx::kMemHeap,3);nx::vm_set(volume_region,32,nx::kMemHeap,3);
 + auto& volume=nx::nvn::make<nx::nvn::Texture>(volume_key);volume.target=2;volume.width=volume.height=volume.depth=4;volume.levels=1;volume.format=0x25;volume.samples=0;
 + for(unsigned z=0;z<4;++z)for(unsigned y=0;y<4;++y)for(unsigned x=0;x<4;++x){const auto at=volume_data+((z*4+y)*4+x)*4;nx::st<uint8_t>(at,x*17);nx::st<uint8_t>(at+1,y*31);nx::st<uint8_t>(at+2,z*47);nx::st<uint8_t>(at+3,255);}
@@ -8004,6 +8139,7 @@
 + nx::nvn::destroy(depth_key);
 +
 +
++ const auto sampler_key=nx::kernel_alloc(0x60,16),sampler_out=nx::kernel_alloc(8,16),sampler_pool=nx::kernel_alloc(128,16);nx::vm_set(sampler_key,0x60,nx::kMemHeap,3);nx::vm_set(sampler_out,8,nx::kMemHeap,3);std::memset(reinterpret_cast<void*>(sampler_key),0,0x60);nx::st<uint64_t>(sampler_key+8,device);nx::st<uint32_t>(sampler_key+0x10,1);nx::st<uint32_t>(sampler_key+0x14,1);nx::st<float>(sampler_key+0x28,16);nx::st<uint32_t>(sampler_key+0x30,1);nx::st<uint32_t>(sampler_key+0x34,4);nx::st<float>(sampler_key+0x48,1);nx::CPU sampler_cpu{};sampler_cpu.x[0]=sampler_key;sampler_cpu.x[1]=sampler_out;sampler_cpu.x[2]=sampler_out+4;auto sampler_compare=nx::hle_lookup("nvnSamplerGetCompare");check(sampler_compare!=nullptr);sampler_compare(sampler_cpu);check(nx::ld<uint32_t>(sampler_out)==1&&nx::ld<uint32_t>(sampler_out+4)==4);auto& sampler_descriptor_pool=nx::nvn::make<nx::nvn::DescriptorPool>(sampler_pool);sampler_descriptor_pool.count=4;auto register_sampler=nx::hle_lookup("nvnSamplerPoolRegisterSampler");check(register_sampler!=nullptr);sampler_cpu.x[0]=sampler_pool;sampler_cpu.x[1]=1;sampler_cpu.x[2]=sampler_key;register_sampler(sampler_cpu);check(sampler_descriptor_pool.samplers.at(1).compare_mode==1&&sampler_descriptor_pool.samplers.at(1).compare_func==4);sampler_cpu.x[1]=4;bool sampler_range=false;try{register_sampler(sampler_cpu);}catch(const std::invalid_argument&){sampler_range=true;}check(sampler_range);nx::st<uint64_t>(sampler_key+8,0);sampler_cpu.x[0]=sampler_key;sampler_cpu.x[1]=sampler_out;sampler_cpu.x[2]=sampler_out+4;bool sampler_device=false;try{sampler_compare(sampler_cpu);}catch(const std::invalid_argument&){sampler_device=true;}check(sampler_device);nx::nvn::destroy(sampler_pool);
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
@@ -8157,6 +8293,14 @@
 +    check(rejected);
 +    std::cout << "sampler descriptor checks=" << checks << " PASS\n";
 +}
+--- /dev/null
++++ b/tests/sdk53_sampler_values_test.cpp
+@@ -0,0 +1,5 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/sdk53_sampler_values.h"
++#include <iostream>
++#include <limits>
++int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("sampler value assertion");};std::array<uint8_t,0x60> bytes{};auto put=[&](size_t off,auto value){std::memcpy(bytes.data()+off,&value,sizeof value);};put(8,uint64_t(0x12345678));put(0x10,uint32_t(5));put(0x14,uint32_t(1));put(0x18,uint32_t(7));put(0x24,-1000.0f);put(0x28,1000.0f);put(0x2c,0.25f);put(0x30,uint32_t(1));put(0x34,uint32_t(4));put(0x48,8.0f);auto value=nx::nvn::sdk53_sampler_values(bytes);check(value.device==0x12345678&&value.mode==1&&value.func==4);check(value.min==5&&value.mag==1&&value.wrap[0]==7);check(value.lod_min==-1000&&value.lod_max==1000&&value.bias==0.25f&&value.anisotropy==8);for(unsigned mode=0;mode<7;++mode){auto bad=bytes;if(mode==0)bad[0x10]=6;if(mode==1)bad[0x14]=2;if(mode==2)bad[0x18]=8;if(mode==3)bad[0x30]=2;if(mode==4)bad[0x34]=0;if(mode==5){float n=std::numeric_limits<float>::quiet_NaN();std::memcpy(bad.data()+0x24,&n,4);}if(mode==6)std::fill(bad.begin()+8,bad.begin()+16,0);bool rejected=false;try{nx::nvn::sdk53_sampler_values(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}bool truncated=false;try{nx::nvn::sdk53_sampler_values(std::span<const uint8_t>(bytes).first(0x4f));}catch(const std::invalid_argument&){truncated=true;}check(truncated);std::cout<<"sampler values checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/sdk53_texture_builder_test.cpp
 @@ -0,0 +1,10 @@

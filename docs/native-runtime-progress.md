@@ -9,10 +9,10 @@ The isolated Windows target uses MIT-licensed SuperMarioWonderRecomp revision
 main/subsdk0/SDK form three static libraries and a local standalone executable.
 The Vulkan dispatch table is regenerated for the already installed headers.
 
-Thirty-two CPU/component suites pass, including SDK 53 texture/sampler
+Thirty-three CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 151-check GPU fixture creates and drains a real device and queue on
+A separate 163-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,
@@ -108,6 +108,18 @@ floating-point depth reads use the depth aspect with comparison disabled,
 separately from comparison sampling. Native fixtures create the cube-array view
 and verify all 64 bytes of an authored D32 upload/readback. This does not prove
 the title's depth results or image correctness.
+
+Copied sampler descriptors now retain their inspected SDK53 values instead of
+falling through to default state. The decoder validates fields and the native
+device, and pool registration checks its range. The actual comparison-sampler
+binding advances with its original mode/function. Copied texture getters and
+pool registration resolve the complete descriptor against a live native resource;
+pool finalization retires its owned snapshots. Regression checks cover copied
+queries/registration, malformed descriptors, pool bounds and retired identities.
+The latest bounded run loads title-menu artwork and `MovieMenu.mp4`, then reaches
+its 120-second limit without a new fatal error. A longer diagnostic is checking
+the remaining wait and black output. Missing required resources still fail;
+no fallback has been added for the earlier missing material binding.
 
 Missing required shader translations and unknown calls remain visible failures.
 Shader/draw/present coverage, GPU upload/layout correctness, allocator callback

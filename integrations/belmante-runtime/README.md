@@ -6,7 +6,7 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 32 CPU/component suites and a 151-check native
+Windows integration now passes 33 CPU/component suites and a 163-check native
 GPU fixture on an RX 9070 XT. Actual MK8D startup reaches its owned window,
 Vulkan device/queue, three presentation textures, command-buffer setup, native
 save mounts and first texture upload. Copied texture/sampler descriptors now

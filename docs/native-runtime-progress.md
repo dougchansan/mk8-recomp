@@ -4,8 +4,8 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R146, reconstructing 140 generic adapted files.
-All 36 component suites and the 461-check native GPU fixture pass. A production
+The current source recipe is R148, reconstructing 143 generic adapted files.
+All 37 component suites and the 479-check native GPU fixture pass. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
@@ -15,7 +15,7 @@ The native buffer-to-texture operation now validates active recording, real sour
 pools, copied SDK texture descriptors and bounded copy regions. Actual Vulkan
 readbacks check R8/RG8/RGBA transfers, submission-time CPU data, earlier GPU writes
 and partial updates. The original game records both decoded video-plane copies
-and advances to its color-correction shader. The private cache now holds 4,488
+and advances to its color-correction shader. The private cache now holds 4,489
 offline-translated stages. An explicit graphics V10 profile permits checked 3D
 float sampling. The live lookup texture identified by the game is packed RGB11F;
 the new bounded 8x8x8 path reuses existing block-linear conversion and exact float
@@ -27,6 +27,19 @@ before the wait, losing a MultiWait notification. The new regression fails on
 the old code and passes after preserving the pending cancellation. Tests cover
 ready-object and zero-timeout precedence, one-shot/coalesced cancellation, an
 already-blocked host thread, and invalid handles. No game event is forced.
+
+The video color defect has now been isolated and corrected. The original SDK
+returns planar color format 19 while the title requests NV12. Captured first-frame
+luma matches the native decoder exactly, and the chroma matches planar U-then-V
+rather than interleaved UV. The adapter retains the original SDK buffer/status
+and format-query APIs, then converts only the caller-owned buffer for the native
+AVC decoder's requested NV12 output. Both live upload planes now match the
+canonical native-decoded NV12 frame byte-for-byte (466,944 bytes total), and a
+reviewed native preview frame has no previous green/magenta corruption.
+GPU-produced volume images remain authoritative; stale CPU backing is not used
+to overwrite them. The R147 run reached the race-loading screen before another
+missing offline vertex stage, which is translated and staged for the R148 run.
+Actual race rendering and the dark character-lighting defect remain open.
 
 The R146 full-game run directly presents changing movie-preview frames in the
 Single Player menu, then renders native character/kart/glider and Mushroom Cup

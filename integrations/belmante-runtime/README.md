@@ -6,7 +6,7 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 36 CPU/component suites and a 321-check native
+Windows integration now passes 37 CPU/component suites and a 321-check native
 GPU fixture on an RX 9070 XT. Actual MK8D startup reaches its owned window,
 Vulkan device/queue, three presentation textures, command-buffer setup, native
 save mounts and first texture upload. Copied texture/sampler descriptors now
@@ -120,3 +120,13 @@ The R146 original-game run now presents a changing movie preview and native 3D
 character/kart/glider and cup-selection menus. The movie has visible color
 corruption and the 3D character lighting is dark. Those defects and race loading
 remain open; this is not a playable-game or release claim.
+
+R148 corrects the observed native movie layout mismatch: source color format 19
+is planar, while requested movie format 4 needs NV12. The original SDK getters
+provide real geometry and writable caller-buffer bounds. Chroma is interleaved
+without changing luma, decoder parameters, underlying codec metadata or returned
+SDK error status. Authored canary/rejection tests and a complete real captured
+frame conversion pass. The live upload Y and UV planes match canonical NV12
+exactly, and the native preview's prior green/magenta corruption is resolved in
+the reviewed frame. All 37 suites and 479 native GPU checks pass; dark 3D lighting
+and race rendering remain open. No download is published.

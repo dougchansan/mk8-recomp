@@ -12,7 +12,7 @@ The Vulkan dispatch table is regenerated for the already installed headers.
 Thirty-five CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 196-check GPU fixture creates and drains a real device and queue on
+A separate 205-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,
@@ -154,6 +154,15 @@ encodings agree. Intermediate converting colors remain rejected. An authored
 native sRGB upload/linear-view clear verifies all 64 stored bytes become zero.
 
 
+Recorded sync fences now publish ordered native Vulkan fences after their
+enclosing submit completes replay. Queue fences use the same native completion
+objects. Waiting observes replay readiness and GPU completion, including in the
+pipelined fixture; recording alone does not signal a fence. Conditions are
+conservatively completed at the end of the enclosing submit. Regression checks
+cover unissued waits, malformed arguments, submit/wait completion and polling.
+The latest closed title run passes the observed clear and reaches this fence API;
+the new startup probe is checking its continuation.
+
 Missing required shader translations and unknown calls remain visible failures.
 Shader/draw/present coverage, GPU upload/layout correctness, allocator callback
 semantics, synchronization, complete input/audio and save/restart through gameplay
@@ -265,7 +274,7 @@ path still needs actual execution evidence.
 | Evidence | Verified result | Limit |
 |---|---|---|
 | Native NVN builders in the actual-game reference replay | 90,320 native calls; 6,001-frame replay reached EOF; CPU JIT 0, imports 0; observed racing | Still uses reference graphics. This is not standalone native gameplay. |
-| Public v6 feature/format fixture | 148 CPU checks and a separate 16-draw / 549-pixel / 196-check GPU run pass. Covers BC4 partial blocks/filtering, packed sRGB/swizzles, independent depth/provoking state, full uniform blocks, blending and exact untouched/masked bytes | Authored inputs only. Computed colors use UNORM8 tolerances; custom-border creation/metadata does not prove border sampling. Full declared uniform bounds remain required. |
+| Public v6 feature/format fixture | 148 CPU checks and a separate 16-draw / 549-pixel / 205-check GPU run pass. Covers BC4 partial blocks/filtering, packed sRGB/swizzles, independent depth/provoking state, full uniform blocks, blending and exact untouched/masked bytes | Authored inputs only. Computed colors use UNORM8 tolerances; custom-border creation/metadata does not prove border sampling. Full declared uniform bounds remain required. |
 | Native Vulkan triangle fixture | 1,152 red pixels and 2,944 black pixels | Synthetic rendering; no actual-game draw/present. |
 | Textured native fixtures | Five draws, 20,480 pixels checked and ten rejection cases | Synthetic resource/draw coverage only. |
 | Native-owned pool copy | 64-byte copy and 29 error cases | Bounded memory ownership/validation test. |

@@ -12,7 +12,7 @@ The Vulkan dispatch table is regenerated for the already installed headers.
 Thirty-five CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 218-check GPU fixture creates and drains a real device and queue on
+A separate 224-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,
@@ -186,6 +186,18 @@ inspection confirms a native startup image; menu/race playability and pixel
 equivalence are still unverified. The additional
 162 driver-family offline shader stages translate and pass native module creation;
 module acceptance alone does not establish rendering correctness.
+
+Scripted native input now reaches the Select a Mii dialog, whose six built-in
+portraits render in the presented texture. A later run stops at a sampled texture
+in the menu-course model. Its descriptor was re-registered into its own slot,
+which deleted the saved source before attempting to clone it. Saved descriptors
+now retain one reference per registered slot; replacement acquires its reference
+before releasing the previous one. Copies can share the saved native texture
+until the final owning slot is finalized. Regressions cover self-registration,
+secondary-slot replacement, two-pool sharing and last-owner retirement; all 256
+bytes of a rendered texture survive the self-registration test. All 35 component
+suites and 224 GPU checks pass. A fresh title/menu probe is checking continuation;
+main-menu selection and races remain unverified.
 
 Missing required shader translations and unknown calls remain visible failures.
 Shader/draw/present coverage, GPU upload/layout correctness, allocator callback

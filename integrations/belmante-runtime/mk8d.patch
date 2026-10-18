@@ -5757,7 +5757,25 @@
  void TextureFinalize(CPU& c) {
      auto guard = reinit_guard();
      uint64_t guest = c.x[0];
-@@ -455,6 +496,7 @@
+@@ -445,6 +486,8 @@
+ // copy when the slot's texture is gone or no longer has the registered target and format.
+ constexpr uint64_t kSnapshot = 0xE000000000000000ull;
+ uint64_t g_next_snapshot = 0;
++// Each registered slot owns one reference, including aliases of a copied snapshot.
++std::unordered_map<uint64_t, uint64_t> g_snapshot_owners;
+ std::unordered_map<uint64_t, std::vector<uint64_t>> g_snapshots_of;  // guest texture -> its snapshots
+ std::deque<std::pair<uint64_t, uint64_t>> g_snapshot_images;         // (snapshot, since ns) that own an image
+ 
+@@ -452,9 +495,16 @@
+     auto o = objects().find(guest);
+     auto* t = o == objects().end() ? nullptr : dynamic_cast<Texture*>(o->second.get());
+     if (!t) return 0;
++    if ((guest & 0xF000000000000000ull) == kSnapshot) {
++        auto owner = g_snapshot_owners.find(guest);
++        if (owner == g_snapshot_owners.end() || owner->second == UINT64_MAX) return 0;
++        ++owner->second;
++        return guest;
++    }
      auto copy = std::make_unique<Texture>();
      copy->target = t->target, copy->format = t->format, copy->flags = t->flags, copy->levels = t->levels;
      copy->samples = t->samples, copy->depth_stencil_mode = t->depth_stencil_mode;
@@ -5765,7 +5783,27 @@
      copy->width = t->width, copy->height = t->height, copy->depth = t->depth, copy->stride = t->stride;
      copy->pool = t->pool, copy->offset = t->offset, copy->storage_size = t->storage_size;
      copy->memory = t->memory, copy->gpu = t->gpu, copy->block_height_gobs = t->block_height_gobs;
-@@ -505,7 +547,9 @@
+@@ -462,6 +512,7 @@
+     copy->pool_swizzle = t->pool_swizzle.load();
+     uint64_t key = kSnapshot | ++g_next_snapshot;
+     objects()[key] = std::move(copy);
++    g_snapshot_owners.emplace(key, 1);
+     auto& keys = g_snapshots_of[guest];
+     if (keys.size() >= 16)  // re-registered every frame: forget the copies already dropped
+         keys.erase(std::remove_if(keys.begin(), keys.end(), [](uint64_t k) { return !objects().count(k); }), keys.end());
+@@ -470,6 +521,11 @@
+ }
+ 
+ void drop_snapshot(uint64_t key) {  // under objects_lock
++    auto owner = g_snapshot_owners.find(key);
++    if (owner == g_snapshot_owners.end()) return;
++    if (--owner->second) return;
++    g_snapshot_owners.erase(owner);
++    g_registered.erase(key);
+     auto o = objects().find(key);
+     if (o == objects().end()) return;
+     note_replaced(key);  // a replay in flight may resolve the slot to this copy (pool_entry_at, DEBUG.md #63)
+@@ -505,7 +561,9 @@
  
  // A kept texture no slot names any more is destroyed (under objects_lock).
  void release_kept(uint64_t key) {
@@ -5776,7 +5814,7 @@
      auto reg = g_registered.find(key);
      if (reg != g_registered.end())
          for (auto [pool, id] : reg->second) {
-@@ -548,6 +592,7 @@
+@@ -548,6 +606,7 @@
      if (n == 1 || n == 100 || n == 1000)
          log("nvn: WriteTexels #%llu into %llx (%ux%u fmt %#x): %ux%ux%u at %u,%u,%u level %u", (unsigned long long)n,
              (unsigned long long)c.x[0], t->width, t->height, t->format, w.w, w.h, w.d, w.x, w.y, w.z, w.level);
@@ -5784,7 +5822,7 @@
      t->writes.push_back(std::move(w));
      t->has_writes.store(true, std::memory_order_release);
  }
-@@ -556,10 +601,38 @@
+@@ -556,10 +615,38 @@
  void TextureWriteTexelsStrided(CPU& c) { write_texels(c, c.x[4], c.x[5]); }
  void TextureFlushTexels(CPU&) {}  // coherent: the writes above are what matters
  
@@ -5825,7 +5863,7 @@
      }
  NX_TEXTURE_GETTER(TextureGetWidth, width)
  NX_TEXTURE_GETTER(TextureGetHeight, height)
-@@ -573,6 +646,13 @@
+@@ -573,6 +660,13 @@
  NX_TEXTURE_GETTER(TextureGetMemoryPool, pool)
  NX_TEXTURE_GETTER(TextureGetMemoryOffset, offset)
  NX_TEXTURE_GETTER(TextureGetStorageSize, storage_size)
@@ -5839,7 +5877,7 @@
  NX_TEXTURE_GETTER(TextureGetDepthStencilMode, depth_stencil_mode)
  #undef NX_TEXTURE_GETTER
  
-@@ -587,22 +667,32 @@
+@@ -587,22 +681,32 @@
      c.x[0] = 1;
  }
  
@@ -5876,8 +5914,13 @@
      if (auto* d = get<DescriptorPool>(c.x[0])) {
          std::lock_guard lk(objects_lock());
          uint32_t id = uint32_t(c.x[1]);
-@@ -612,13 +702,13 @@
+@@ -610,15 +714,19 @@
+         if (auto it = d->textures.find(id); it != d->textures.end()) before.has = true, before.texture = it->second;
+         if (auto it = d->snapshots.find(id); it != d->snapshots.end()) before.snapshot = it->second;
          if (auto it = d->views.find(id); it != d->views.end()) before.has_view = true, before.view = it->second;
++        // Acquire before releasing: the descriptor can resolve to this slot's own snapshot.
++        const uint64_t snapshot = texture_key ? make_snapshot(texture_key) : 0;
++        if (texture_key && !snapshot) throw std::invalid_argument("native texture registration lost resource identity");
          note_pool_change(c.x[0], id, before);
          uint64_t old = before.texture;
 -        d->textures[id] = c.x[2];
@@ -5885,7 +5928,8 @@
          if (auto s = d->snapshots.find(uint32_t(c.x[1])); s != d->snapshots.end()) drop_snapshot(s->second);
 -        if (uint64_t snap = make_snapshot(c.x[2])) d->snapshots[uint32_t(c.x[1])] = snap;
 -        auto& slots = g_registered[c.x[2]];  // re-registered every frame: keep each slot once
-+        if (uint64_t snap = make_snapshot(texture_key)) d->snapshots[uint32_t(c.x[1])] = snap;
++        d->snapshots.erase(id);
++        if (snapshot) d->snapshots[id] = snapshot;
 +        auto& slots = g_registered[texture_key];  // re-registered every frame: keep each slot once
          std::pair<uint64_t, uint32_t> slot{c.x[0], uint32_t(c.x[1])};
          if (std::find(slots.begin(), slots.end(), slot) == slots.end()) slots.push_back(slot);
@@ -5894,7 +5938,7 @@
          // A view setting only a base level, first layer or format counts too (it was dropped: level 0 sampled).
          if (v.base_level || v.levels || v.min_layer || v.layers || v.swizzle || v.format)
              d->views[uint32_t(c.x[1])] = v;
-@@ -652,6 +742,19 @@
+@@ -652,6 +760,19 @@
  
  NX_HLE("nvnMemoryPoolInitialize", MemoryPoolInitialize);
  NX_HLE("nvnMemoryPoolFinalize", MemoryPoolFinalize);
@@ -5914,7 +5958,7 @@
  NX_HLE("nvnMemoryPoolMap", MemoryPoolMap);
  NX_HLE("nvnMemoryPoolMapVirtual", MemoryPoolMapVirtual);
  NX_HLE("nvnTextureWriteTexels", TextureWriteTexels);
-@@ -663,6 +766,7 @@
+@@ -663,6 +784,7 @@
  NX_HLE("nvnMemoryPoolFlushMappedRange", MemoryPoolFlushMappedRange);
  NX_HLE("nvnMemoryPoolInvalidateMappedRange", MemoryPoolInvalidateMappedRange);
  NX_HLE("nvnBufferInitialize", BufferInitialize);
@@ -5922,7 +5966,7 @@
  NX_HLE("nvnBufferFinalize", BufferFinalize);
  NX_HLE("nvnBufferMap", BufferMap);
  NX_HLE("nvnBufferGetAddress", BufferGetAddress);
-@@ -685,6 +789,7 @@
+@@ -685,6 +807,7 @@
  NX_HLE("nvnTextureGetMemoryPool", TextureGetMemoryPool);
  NX_HLE("nvnTextureGetMemoryOffset", TextureGetMemoryOffset);
  NX_HLE("nvnTextureGetStorageSize", TextureGetStorageSize);
@@ -5930,7 +5974,7 @@
  NX_HLE("nvnTextureGetDepthStencilMode", TextureGetDepthStencilMode);
  NX_HLE("nvnSamplerPoolInitialize", DescriptorPoolInitialize);
  NX_HLE("nvnTexturePoolInitialize", DescriptorPoolInitialize);
-@@ -702,4 +807,9 @@
+@@ -702,4 +825,9 @@
  NX_HLE("nvnDeviceGetTexelFetchHandle", DeviceGetTexelFetchHandle);
  NX_HLE("nvnDeviceGetImageHandle", DeviceGetImageHandle);
  
@@ -8455,7 +8499,7 @@
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,165 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -8548,14 +8592,27 @@
 + auto& original=nx::nvn::make<nx::nvn::Texture>(owner);original.target=1;original.width=original.height=8;original.depth=original.levels=1;original.format=0x25;original.pool=0x9876;original.gpu=0x123400000ull;
 + nx::nvn::Sdk53TextureWire wire;wire.device=device;wire.gpu=original.gpu;wire.pool=original.pool;wire.aspect=nx::nvn::format_aspect(original.format);wire.fields={original.flags,original.target,original.width,original.height,original.depth,original.levels,original.format,original.samples,original.swizzle[0],original.swizzle[1],original.swizzle[2],original.swizzle[3],original.depth_stencil_mode};const auto bytes=nx::nvn::sdk53_texture_wire(wire);std::memcpy(reinterpret_cast<void*>(descriptor),bytes.data(),bytes.size());
 + auto& pool=nx::nvn::make<nx::nvn::DescriptorPool>(pool_id);pool.count=4;
-+ nx::CPU args{};args.x[0]=pool_id;args.x[1]=1;args.x[2]=descriptor;register_texture(args);const auto snapshot=pool.snapshots.at(1);check(nx::nvn::get<nx::nvn::Texture>(snapshot)!=nullptr);
++ nx::CPU args{};args.x[0]=pool_id;args.x[1]=1;args.x[2]=descriptor;register_texture(args);auto snapshot=pool.snapshots.at(1);check(nx::nvn::get<nx::nvn::Texture>(snapshot)!=nullptr);
 + auto finalize=nx::hle_lookup("nvnTextureFinalize");check(finalize!=nullptr);args.x[0]=owner;finalize(args);check(nx::nvn::get<nx::nvn::Texture>(owner)==nullptr);
++ {
++ std::lock_guard lock(nx::nvn::gpu_lock());auto command=nx::nvn::frame_begin(false);nx::nvn::TextureClearInfo info;info.region={0,0,0,8,8,1};nx::nvn::Cmd clear{nx::nvn::Cmd::ClearTexture};clear.a[0]=snapshot;clear.mask=15;clear.f[0]=clear.f[3]=1;nx::nvn::CmdList list;list.blobs.emplace_back(sizeof info);std::memcpy(list.blobs.back().data(),&info,sizeof info);list.cmds.push_back(clear);nx::nvn::Targets targets{};nx::nvn::replay_list(command,targets,list,0);nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++ }
++ args.x[0]=pool_id;args.x[1]=1;args.x[2]=descriptor;args.x[3]=0;register_texture(args);
++ check(nx::nvn::get<nx::nvn::Texture>(pool.snapshots.at(1))!=nullptr);
++ snapshot=pool.snapshots.at(1);
++ nx::nvn::drain_objects();
++ {
++ std::lock_guard lock(nx::nvn::gpu_lock());auto command=nx::nvn::frame_begin(false);auto* image=nx::nvn::ensure_contents(command,snapshot);check(image&&image->rendered);auto readback=nx::nvn::upload_alloc(256,16);nx::nvn::transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);VkBufferImageCopy region{};region.bufferOffset=readback.offset;region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};region.imageExtent={8,8,1};nx::vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&region);VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=readback.buffer;barrier.offset=readback.offset;barrier.size=256;nx::vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);bool red=true;for(unsigned i=0;i<64;++i){uint32_t pixel;std::memcpy(&pixel,readback.ptr+i*4,4);red&=pixel==0xff0000ffu;}check(red);
++ }
 + args.x[0]=pool_id;args.x[1]=2;args.x[2]=descriptor;args.x[3]=0;register_texture(args);check(pool.textures.at(2)==snapshot);
 + const auto replacement=nx::kernel_alloc(256,16);auto& other=nx::nvn::make<nx::nvn::Texture>(replacement);other.target=1;other.width=other.height=4;other.depth=other.levels=1;other.format=0x25;
 + args.x[0]=pool_id;args.x[1]=2;args.x[2]=replacement;register_texture(args);
 + check(nx::nvn::get<nx::nvn::Texture>(snapshot)!=nullptr);
 + check(pool.snapshots.at(1)==snapshot);check(nx::nvn::get<nx::nvn::Texture>(snapshot)->width==8);
-+ args.x[0]=pool_id;finalize_texture_pool(args);check(nx::nvn::get<nx::nvn::Texture>(snapshot)==nullptr);nx::nvn::destroy(replacement);
++ const auto second_pool_id=nx::kernel_alloc(128,16);auto& second_pool=nx::nvn::make<nx::nvn::DescriptorPool>(second_pool_id);second_pool.count=4;
++ args.x[0]=second_pool_id;args.x[1]=1;args.x[2]=descriptor;args.x[3]=0;register_texture(args);check(second_pool.snapshots.at(1)==snapshot);
++ args.x[0]=pool_id;finalize_texture_pool(args);check(nx::nvn::get<nx::nvn::Texture>(snapshot)!=nullptr);check(nx::nvn::get<nx::nvn::Texture>(snapshot)->image&&nx::nvn::get<nx::nvn::Texture>(snapshot)->image->rendered);
++ args.x[0]=second_pool_id;finalize_texture_pool(args);check(nx::nvn::get<nx::nvn::Texture>(snapshot)==nullptr);nx::nvn::destroy(replacement);
 + }
 + const auto volume_key=nx::kernel_alloc(256,16),volume_data=nx::kernel_alloc(256,16),volume_region=nx::kernel_alloc(32,16);nx::vm_set(volume_data,256,nx::kMemHeap,3);nx::vm_set(volume_region,32,nx::kMemHeap,3);
 + auto& volume=nx::nvn::make<nx::nvn::Texture>(volume_key);volume.target=2;volume.width=volume.height=volume.depth=4;volume.levels=1;volume.format=0x25;volume.samples=0;

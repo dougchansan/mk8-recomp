@@ -1,0 +1,33 @@
+{
+  "repository": "https://github.com/BelmanteGu/SuperMarioWonderRecomp",
+  "commit": "010ed7a596a621c15d3a8dfa5795ca8c3668b066",
+  "license": "MIT",
+  "license_sha256": "7f728cfaa94ff27c2a40c906dac12564a216077ceb017fb2d01cc29ba6697720",
+  "local_changes_license": "GPL-3.0-or-later",
+  "patch_sha256": "790fb9f45b6a3fa9dc793153ae0571688d75bbb4b48c3601951be764783bf159",
+  "changed_files": [
+    "CMakeLists.txt",
+    "games/mk8d/game.cpp",
+    "recomp/lz4_checked.py",
+    "recomp/nso.py",
+    "runtime/src/hle_fs.cpp",
+    "runtime/src/ipc.cpp",
+    "runtime/src/ipc.h",
+    "runtime/src/kernel.cpp",
+    "runtime/src/loader.cpp",
+    "runtime/src/main.cpp",
+    "runtime/src/memory.cpp",
+    "runtime/src/mk8_window_controller.cpp",
+    "runtime/src/mk8_window_controller.h",
+    "runtime/src/nvn/nvn_trace.cpp",
+    "runtime/src/romfs_image.h",
+    "runtime/src/svc_am.cpp",
+    "tests/ipc_domain_test.cpp",
+    "tests/loader_symbol_test.cpp",
+    "tests/romfs_image_probe.cpp",
+    "tests/romfs_image_test.cpp",
+    "tests/window_controller_test.cpp"
+  ],
+  "purpose": "Experimental MK8D adaptation. No gameplay or full-native verification claim.",
+  "vulkan_dispatch": "Regenerate with supplied installed-header registry; generated dispatch changes are not embedded in this patch."
+}

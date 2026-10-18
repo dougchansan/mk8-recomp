@@ -2,6 +2,38 @@
 
 Updated 2026-10-17. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
 
+## Belmante runtime adoption
+
+The isolated Windows experiment adapts SuperMarioWonderRecomp revision
+`010ed7a596a621c15d3a8dfa5795ca8c3668b066` (MIT), retaining its attribution.
+MK8D's main, subsdk0 and SDK now compile into three static libraries and a local
+standalone executable using that runtime. Existing Vulkan headers are retained;
+the dispatch table is regenerated against their matching registry.
+
+The integration adds direct read-only RomFS image access, correct undefined-weak
+ELF symbol resolution, bounded domain payload sizing and a native owned-window
+controller with response validation and commit callbacks. Eight component suites
+pass: domain IPC, window ownership, loader symbols, image-backed RomFS, GPU
+selection, tiling, ASTC and memory guard. The real RomFS has 1,122 directories and
+6,597 files; eight native sample reads and the inventory match an independent
+parser. These reads are adapter verification, not observed guest content reads.
+
+The latest real startup loads all three modules, links them, enters
+`nn::init::Start`, connects logging/power/applet services and commits native
+window rights. It then stops at unsupported `ISelfController` command 13. No
+native game frame or playable-game result is credited. Unknown imports, service
+commands, SVCs and NVN tracing stubs stop execution; other inherited handlers,
+Wonder-specific capabilities, shader completeness and SDK differences still need
+review. This experiment uses a different memory/dispatch model and does not
+inherit the earlier runtime's guarded ownership evidence. Prior builds and the
+partially implemented storage-read successor remain retained.
+
+See the [integration recipe](../integrations/belmante-runtime/README.md) for pinned
+source preparation. All title code, generated modules, data and binaries remain
+local. No tag or download is published.
+
+## Existing runtime campaign
+
 The campaign is in component integration, before the first end-to-end native game
 frame. Static CPU execution, native rendering/presentation fixtures and one
 captured game-derived background draw and its native presentation work. The

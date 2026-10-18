@@ -1,0 +1,835 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -36,6 +36,22 @@
+ option(NX_TESTS "Build the standalone unit tests" OFF)
+ if(NX_TESTS AND NOT ANDROID)
+     enable_testing()
++    add_executable(ipc_domain_test tests/ipc_domain_test.cpp runtime/src/ipc.cpp)
++    target_include_directories(ipc_domain_test PRIVATE runtime/include runtime/src)
++    add_test(NAME ipc_domain COMMAND ipc_domain_test)
++    add_executable(window_controller_test tests/window_controller_test.cpp runtime/src/mk8_window_controller.cpp)
++    target_include_directories(window_controller_test PRIVATE runtime/include runtime/src)
++    add_test(NAME window_controller COMMAND window_controller_test)
++    add_executable(loader_symbol_test tests/loader_symbol_test.cpp runtime/src/loader.cpp)
++    target_include_directories(loader_symbol_test PRIVATE runtime/include runtime/src)
++    target_compile_definitions(loader_symbol_test PRIVATE _CRT_SECURE_NO_WARNINGS)
++    add_test(NAME loader_symbols COMMAND loader_symbol_test)
++    add_executable(romfs_image_probe tests/romfs_image_probe.cpp)
++    target_include_directories(romfs_image_probe PRIVATE runtime/src)
++    add_executable(romfs_image_test tests/romfs_image_test.cpp)
++    target_include_directories(romfs_image_test PRIVATE runtime/src)
++    set(NX_ROMFS_FIXTURES "${CMAKE_SOURCE_DIR}/tests/romfs-fixtures" CACHE PATH "Authored RomFS test inputs")
++    add_test(NAME romfs_image COMMAND romfs_image_test "${NX_ROMFS_FIXTURES}")
+     add_executable(gpu_pick_test tests/gpu_pick_test.cpp runtime/src/nvn/nvn_gpu_pick.cpp)
+     target_compile_definitions(gpu_pick_test PRIVATE NX_GPU_PICK_STANDALONE)
+     target_include_directories(gpu_pick_test PRIVATE runtime/src/nvn)
+@@ -67,7 +83,14 @@
+     return()
+ endif()
+ 
+-foreach(mod main sdk)
++set(NX_PREBUILT_MODULE_DIR "" CACHE PATH "Previously verified static modules with matching generated code and cpu.h")
++if(NX_PREBUILT_MODULE_DIR)
++    foreach(mod main sdk subsdk0)
++        add_library(game_${mod} STATIC IMPORTED)
++        set_target_properties(game_${mod} PROPERTIES IMPORTED_LOCATION "${NX_PREBUILT_MODULE_DIR}/game_${mod}.lib")
++    endforeach()
++else()
++foreach(mod main sdk subsdk0)
+     file(GLOB src CONFIGURE_DEPENDS "${NX_GEN_DIR}/${mod}/*.cpp")
+     add_library(game_${mod} STATIC ${src})
+     target_include_directories(game_${mod} PRIVATE runtime/include "${NX_GEN_DIR}/${mod}")
+@@ -84,6 +107,7 @@
+         target_compile_options(game_${mod} PRIVATE -O2 -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
+     endif()
+ endforeach()
++endif()
+ 
+ set(NX_RUNTIME_SOURCES
+     runtime/src/main.cpp
+@@ -93,6 +117,7 @@
+     runtime/src/kernel.cpp
+     runtime/src/kernel_watch.cpp
+     runtime/src/ipc.cpp
++    runtime/src/mk8_window_controller.cpp
+     runtime/src/svc_am.cpp
+     runtime/src/svc_set.cpp
+     runtime/src/svc_misc.cpp
+@@ -185,7 +210,7 @@
+     # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
+     set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
+         COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
+-    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk android log aaudio)
++    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk game_subsdk0 android log aaudio)
+     target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
+     # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
+     target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
+@@ -196,7 +221,7 @@
+     find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
+     add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
+     target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
+-    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk SDL3::SDL3)
++    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk game_subsdk0 SDL3::SDL3)
+     target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
+     # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
+     # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
+@@ -208,14 +233,14 @@
+     find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
+     add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
+     target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
+-    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk SDL3::SDL3 Threads::Threads ${CMAKE_DL_LIBS})
++    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk game_subsdk0 SDL3::SDL3 Threads::Threads ${CMAKE_DL_LIBS})
+     target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
+     # The executable (PIE) loads near 0x55_5555_0000_0000, far above the guest ranges (0x40_0000_0000 and up). The
+     # game runs on its own thread with a 64 MiB stack (platform_linux.cpp).
+ else()
+     add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_win.cpp runtime/src/memguard_win.cpp)
+     target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_SDK}/Include")
+-    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk xinput xaudio2 ole32 psapi)
++    target_link_libraries(${NX_GAME} PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi)
+     # The runtime uses the portable C library (getenv, fopen, ...) on every host: no "_s" variants.
+     target_compile_definitions(${NX_GAME} PRIVATE _CRT_SECURE_NO_WARNINGS _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING)
+     if(MSVC)
+--- /dev/null
++++ b/games/mk8d/game.cpp
+@@ -0,0 +1,9 @@
++// MK8D glue for the MIT-licensed BelmanteGu runtime. Game data remains private.
++#include <nx/game.h>
++#include <nx/runtime.h>
++namespace nx {
++const game::Info game::kInfo={"mk8d","Mario Kart 8 Deluxe",0x0100152000022000ull,"local.mk8d.recomp","private/mk8d",0};
++void game::after_init(){}
++void game::renderer_start(){}
++void game::first_frame(){}
++}
+--- /dev/null
++++ b/recomp/lz4_checked.py
+@@ -0,0 +1,32 @@
++# SPDX-License-Identifier: GPL-3.0-or-later
++# Local checked reader; not part of the upstream MIT code.
++import struct
++def require(ok, message):
++    if not ok: raise ValueError(message)
++def checked(data, offset, count):
++    require(0<=offset<=len(data) and 0<=count<=len(data)-offset, f'input bounds {offset:x}+{count:x}')
++    return data[offset:offset+count]
++
++def decompress(src, size):
++    """Checked independent LZ4-block reader for preparation, no external import."""
++    out=bytearray(); pos=0
++    def length(initial):
++        nonlocal pos
++        n=initial
++        if n==15:
++            while True:
++                b=checked(src,pos,1)[0]; pos+=1; n+=b
++                require(n<=size,'LZ4 length overflow')
++                if b!=255: break
++        return n
++    while pos<len(src):
++        token=src[pos]; pos+=1
++        n=length(token>>4); require(n<=size-len(out),'LZ4 literal overflow')
++        out.extend(checked(src,pos,n)); pos+=n
++        if pos==len(src): break
++        offset=struct.unpack('<H',checked(src,pos,2))[0]; pos+=2
++        require(0<offset<=len(out),'LZ4 invalid backreference')
++        n=length(token&15)+4; require(n<=size-len(out),'LZ4 match overflow')
++        for _ in range(n): out.append(out[-offset])
++    require(pos==len(src) and len(out)==size,'LZ4 exact size')
++    return bytes(out)
+--- a/recomp/nso.py
++++ b/recomp/nso.py
+@@ -5,7 +5,7 @@
+ import struct
+ from dataclasses import dataclass, field
+ 
+-import lz4.block
++from . import lz4_checked
+ 
+ DT_NULL, DT_NEEDED, DT_PLTRELSZ, DT_PLTGOT, DT_HASH, DT_STRTAB, DT_SYMTAB = 0, 1, 2, 3, 4, 5, 6
+ DT_RELA, DT_RELASZ, DT_RELAENT, DT_STRSZ, DT_SYMENT = 7, 8, 9, 10, 11
+@@ -87,7 +87,7 @@
+         comp = struct.unpack_from("<I", raw, 0x60 + i * 4)[0]
+         blob = raw[file_off:file_off + comp]
+         if flags & (1 << i):
+-            blob = lz4.block.decompress(blob, uncompressed_size=size)
++            blob = lz4_checked.decompress(blob, size)
+         segs.append((mem_off, blob))
+     bss_size = struct.unpack_from("<I", raw, 0x3C)[0]
+     data_end = segs[2][0] + len(segs[2][1])
+--- a/runtime/src/hle_fs.cpp
++++ b/runtime/src/hle_fs.cpp
+@@ -21,6 +21,8 @@
+ #include <nx/runtime.h>
+ 
+ #include "platform.h"
++#include "romfs_image.h"
++#include <optional>
+ 
+ namespace fs = std::filesystem;
+ 
+@@ -66,10 +68,13 @@
+ struct File {
+     FILE* f;
+     std::string path;
++    std::shared_ptr<RomfsImage> image;
++    RomfsImage::Entry image_entry{};
++    File(std::shared_ptr<RomfsImage> backing,RomfsImage::Entry entry,std::string p):f(nullptr),path(std::move(p)),image(std::move(backing)),image_entry(entry){}
+     File(FILE* file, std::string p) : f(file), path(std::move(p)) {}
+     File(const File&) = delete;  // owns the FILE: one instance only
+     File& operator=(const File&) = delete;
+-    ~File() { std::fclose(f); }
++    ~File() { if(f)std::fclose(f); }
+ };
+ std::map<uint64_t, std::shared_ptr<File>> g_files;
+ 
+@@ -94,7 +99,8 @@
+     return nullptr;
+ }
+ struct Dir {
+-    std::vector<fs::directory_entry> entries;
++    struct Entry {fs::path path_;bool directory;uint64_t bytes;const fs::path& path()const{return path_;}bool is_directory()const{return directory;}uint64_t file_size()const{return bytes;}};
++    std::vector<Entry> entries;
+     size_t pos = 0;
+ };
+ std::map<uint64_t, Dir> g_dirs;
+@@ -120,8 +126,20 @@
+     return it->second / fs::u8path(rest);
+ }
+ 
++std::shared_ptr<RomfsImage> romfs_image() {
++ static const auto image=[]()->std::shared_ptr<RomfsImage>{const char* path=std::getenv("NX_ROMFS_IMAGE");return path?std::make_shared<RomfsImage>(fs::u8path(path)):nullptr;}();
++ return image;
++}
++std::optional<std::string> romfs_relative(const fs::path& p) {
++ if(!romfs_image() || p.empty())return {};
++ auto rel=p.lexically_relative(data_root()/"extract"/"romfs");
++ if(rel.empty()||rel.is_absolute())return {};
++ for(const auto& part:rel)if(part=="..")return {};
++ auto generic=rel.generic_u8string();
++ return rel=="."?std::string{}:std::string(generic.begin(),generic.end());
++}
+ void mount(const std::string& name, const fs::path& p) {
+-    fs::create_directories(p);
++    if(!romfs_relative(p))fs::create_directories(p);
+     g_mounts[name] = p;
+     log("fs: mounted %s: -> %s", name.c_str(), p.string().c_str());
+ }
+@@ -208,6 +226,11 @@
+ void GetEntryType(CPU& c) {  // (DirectoryEntryType* out, path)
+     std::lock_guard lk(g_fs);
+     fs::path p = resolve(cstr(c.x[1]));
++    if(auto rel=romfs_relative(p)) {
++        const auto* entry=romfs_image()->find(*rel);
++        if(!entry){c.x[0]=kPathNotFound;return;}
++        st<uint32_t>(c.x[0],entry->directory?0:1);c.x[0]=kOk;return;
++    }
+     if (find_virtual(p)) {
+         st<uint32_t>(c.x[0], 1);
+         c.x[0] = kOk;
+@@ -227,6 +250,14 @@
+     std::string guest = cstr(c.x[1]);
+     fs::path p = resolve(guest);
+     int mode = int(c.x[2]);
++    if(auto rel=romfs_relative(p)) {
++        const auto* entry=romfs_image()->find(*rel);
++        if(!entry||entry->directory){note_open("OpenFile",guest,"RomFS not found");c.x[0]=kPathNotFound;return;}
++        if(mode!=1){c.x[0]=0x292202;return;}
++        auto file=std::make_shared<File>(romfs_image(),*entry,guest);
++        auto h=g_next++;g_files.emplace(h,std::move(file));st<uint64_t>(c.x[0],h);
++        note_open("OpenFile",guest,"RomFS image");c.x[0]=kOk;return;
++    }
+     if (const std::string* v = find_virtual(p)) {  // served from memory, through a temporary file
+         FILE* f = std::tmpfile();
+         if (!f) {
+@@ -282,6 +313,7 @@
+         c.x[0] = kTargetNotFound;
+         return;
+     }
++    if(file->image){st<uint64_t>(c.x[0],file->image_entry.size);c.x[0]=kOk;return;}
+     std::lock_guard lk(g_fs);  // the FILE position is shared with writers
+     FILE* f = file->f;
+     int64_t cur = plat::ftell64(f);
+@@ -294,7 +326,8 @@
+ 
+ uint64_t read_at(const File& file, int64_t off, uint64_t buf, uint64_t size) {
+     uint64_t t0 = plat::monotonic_ns();
+-    uint64_t n = plat::read_at(file.f, off, reinterpret_cast<void*>(buf), size);
++    if(off<0)throw std::runtime_error("negative native file offset");
++    uint64_t n = file.image?file.image->read(file.image_entry,uint64_t(off),{reinterpret_cast<uint8_t*>(buf),size_t(size)}):plat::read_at(file.f, off, reinterpret_cast<void*>(buf), size);
+     uint64_t ms = (plat::monotonic_ns() - t0) / 1'000'000;
+     if (g_trace) log("fs: read %s at %lld size %llu -> %llu", file.path.c_str(), (long long)off, (unsigned long long)size,
+                      (unsigned long long)n);
+@@ -337,6 +370,7 @@
+         c.x[0] = kTargetNotFound;
+         return;
+     }
++    if(file->image){c.x[0]=0x292202;return;}
+     std::lock_guard lk(g_fs);
+     plat::fseek64(file->f, int64_t(c.x[1]), SEEK_SET);
+     fwrite(reinterpret_cast<const void*>(c.x[2]), 1, c.x[3], file->f);
+@@ -347,7 +381,7 @@
+ void FlushFile(CPU& c) {
+     if (auto file = open_file(c.x[0])) {
+         std::lock_guard lk(g_fs);
+-        fflush(file->f);
++        if(file->f)fflush(file->f);
+     }
+     c.x[0] = kOk;
+ }
+@@ -359,7 +393,9 @@
+     fs::path p = resolve(cstr(c.x[1]));
+     int mode = int(c.x[2]);
+     std::error_code ec;
+-    bool found = !p.empty() && fs::is_directory(p, ec);
++    const auto rel=romfs_relative(p);
++    const auto* image_entry=rel?romfs_image()->find(*rel):nullptr;
++    bool found = rel?(image_entry&&image_entry->directory):(!p.empty() && fs::is_directory(p, ec));
+     note_open("OpenDirectory", cstr(c.x[1]), found ? "ok" : "not found");
+     if (trace_fs()) log("fs: OpenDirectory(%s, %d)%s", cstr(c.x[1]).c_str(), mode, found ? "" : " not found");
+     if (!found) {
+@@ -367,9 +403,15 @@
+         return;
+     }
+     Dir d;
+-    for (auto& e : fs::directory_iterator(p, ec)) {
+-        bool dir = e.is_directory();
+-        if ((dir && (mode & 1)) || (!dir && (mode & 2))) d.entries.push_back(e);
++    if(rel) {
++        const auto prefix=rel->empty()?std::string{}:*rel+"/";
++        for(const auto& [key,entry]:romfs_image()->entries()) {
++            if(!key.starts_with(prefix))continue;
++            const auto suffix=key.substr(prefix.size());if(suffix.empty()||suffix.find('/')!=std::string::npos)continue;
++            if((entry.directory&&(mode&1))||(!entry.directory&&(mode&2)))d.entries.push_back({fs::u8path(suffix),entry.directory,entry.size});
++        }
++    }else for(auto& e:fs::directory_iterator(p,ec)) {
++        const bool dir=e.is_directory();if((dir&&(mode&1))||(!dir&&(mode&2)))d.entries.push_back({e.path(),dir,dir?0:e.file_size()});
+     }
+     uint64_t h = g_next++;
+     g_dirs[h] = std::move(d);
+@@ -519,6 +561,11 @@
+ }
+ 
+ std::string read_game_file(const std::string& relative_to_romfs) {
++    if(auto image=romfs_image()) {
++        const auto* entry=image->find(relative_to_romfs);if(!entry||entry->directory)return {};
++        if(entry->size>(256ull<<20))throw std::runtime_error("native whole-file read bound");
++        std::string s(size_t(entry->size),'\0');image->read(*entry,0,{reinterpret_cast<uint8_t*>(s.data()),s.size()});return s;
++    }
+     FILE* f = plat::fopen_utf8(utf8(data_root() / "extract" / "romfs" / fs::u8path(relative_to_romfs)), "rb");
+     if (!f) return {};
+     std::string s;
+--- a/runtime/src/ipc.cpp
++++ b/runtime/src/ipc.cpp
+@@ -36,15 +36,13 @@
+ std::shared_ptr<Service> make_service(const std::string& name) {
+     auto it = factories().find(name);
+     if (it != factories().end()) return it->second();
+-    log("ipc: no implementation for service '%s', using a stub", name.c_str());
+-    return std::make_shared<Service>(name);
++    fatal("unsupported native service: %s",name.c_str());
+ }
+ 
+ uint32_t Service::handle(IpcCtx& ctx) {
+     auto it = cmds.find(ctx.cmd);
+     if (it != cmds.end()) return it->second(ctx);
+-    log("ipc: %s cmd %u not implemented (stub ok)", name.c_str(), ctx.cmd);
+-    return 0;
++    fatal("unsupported native IPC: %s command %u",name.c_str(),ctx.cmd);
+ }
+ 
+ // ---- sm: ------------------------------------------------------------------------------------------------------
+@@ -83,7 +81,8 @@
+     return handle_add(s);
+ }
+ 
+-uint32_t ipc_request(CPU& c, uint32_t handle, uint64_t buf, uint64_t) {
++uint32_t ipc_request(CPU& c, uint32_t handle, uint64_t buf, uint64_t buffer_size) {
++    if(buffer_size<0x100)return 0xE401;
+     std::lock_guard lk(g_ipc);
+     auto sess = std::dynamic_pointer_cast<KSession>(handle_get(handle));
+     if (!sess) {
+@@ -150,6 +149,7 @@
+         ctx.in_size = ndata * 4;
+         if (g_trace) log("ipc: tipc %s cmd %u", sess->svc->name.c_str(), ctx.cmd);
+         uint32_t rc = sess->svc->handle(ctx);
++        if(ctx.validate_reply&&!ctx.validate_reply())fatal("native IPC lease lost before reply");
+         for (auto& o : ctx.out_objects) ctx.out_move.push_back(new_session_handle(o));
+         std::memset(w, 0, 0x100);
+         bool has_special = !ctx.out_copy.empty() || !ctx.out_move.empty();
+@@ -163,6 +163,7 @@
+         std::memcpy(&w[q + 1], ctx.out.data(), ctx.out.size());
+         w[0] = ctx.type;
+         w[1] = uint32_t(1 + (ctx.out.size() + 3) / 4) | (has_special ? 0x80000000u : 0);
++        if(!rc&&ctx.commit_reply)ctx.commit_reply();
+         return 0;
+     }
+     // Raw data: aligned to 16 bytes from the message start.
+@@ -171,11 +172,15 @@
+         log("ipc: request type %u on %s (handle %x, domain %d, raw word %08x)", ctx.type, sess->svc->name.c_str(),
+             handle, int(sess->domain), ld<uint32_t>(raw));
+     std::shared_ptr<Service> target = sess->svc;
+-    uint32_t domain_cmd = 0, domain_obj = 0;
++    uint32_t domain_cmd = 0, domain_obj = 0, domain_data_size = 0;
+     if (sess->domain && (ctx.type == 4 || ctx.type == 6)) {
+         domain_cmd = ld<uint8_t>(raw);
+         uint32_t nobj = ld<uint8_t>(raw + 1);
+         uint32_t dsize = ld<uint16_t>(raw + 2);
++        const auto end=buf+data_start*4+uint64_t(ndata)*4;
++        if(end<buf || end-buf>buffer_size || raw+16>end || dsize>end-raw-16 || uint64_t(nobj)*4>end-raw-16-dsize)
++            fatal("domain CMIF extent exceeds IPC message");
++        domain_data_size=dsize;
+         domain_obj = ld<uint32_t>(raw + 4);
+         for (uint32_t i = 0; i < nobj; i++) ctx.in_objects.push_back(ld<uint32_t>(raw + 16 + dsize + 4 * i));
+         raw += 16;
+@@ -194,7 +199,10 @@
+         uint32_t magic = ld<uint32_t>(raw);
+         ctx.cmd = ld<uint32_t>(raw + 8);
+         ctx.in = reinterpret_cast<const uint8_t*>(raw + 16);
+-        ctx.in_size = ndata * 4 > 32 ? ndata * 4 - 32 : 0;
++        if(sess->domain && (ctx.type==4||ctx.type==6)) {
++            if(domain_data_size<16)fatal("domain CMIF header truncated");
++            ctx.in_size=domain_data_size-16;
++        }else ctx.in_size = ndata * 4 > 32 ? ndata * 4 - 32 : 0;
+         if (magic != kSFCI) {
+             log("ipc: %s bad magic %08x (data_start %zu, ndata %u)", target->name.c_str(), magic, data_start, ndata);
+             for (int k = 0; k < 16; k++) log("   w[%d] = %08x", k, w[k]);
+@@ -232,6 +240,7 @@
+         rc = target->handle(ctx);
+     }
+ 
++    if(ctx.validate_reply&&!ctx.validate_reply())fatal("native IPC lease lost before reply");
+     {
+         // Interfaces returned: domain objects, or new sessions moved to the client.
+         std::vector<uint32_t> out_obj_ids;
+@@ -273,6 +282,7 @@
+         uint32_t words = uint32_t((end - (buf + dstart * 4)) / 4) + 4;
+         w[0] = 0;
+         w[1] = words | (has_special ? 0x80000000u : 0);
++        if(!rc&&ctx.commit_reply)ctx.commit_reply();
+         return 0;
+     }
+ 
+--- a/runtime/src/ipc.h
++++ b/runtime/src/ipc.h
+@@ -29,6 +29,8 @@
+     std::vector<Buffer> a, b, x, c;  // send, receive, pointer (X), receive list (C)
+     std::vector<uint32_t> in_objects;  // domain objects passed in
+ 
++    std::function<bool()> validate_reply;
++    std::function<void()> commit_reply;
+     std::vector<uint8_t> out;
+     std::vector<uint32_t> out_copy, out_move;
+     std::vector<std::shared_ptr<Service>> out_objects;
+@@ -55,7 +57,7 @@
+     std::string name;
+     explicit Service(std::string n) : name(std::move(n)) {}
+     virtual ~Service() = default;
+-    // Returns the result code. Unknown commands log and succeed with no output.
++    // Returns the result code. Unknown commands stop this native integration build.
+     virtual uint32_t handle(IpcCtx& ctx);
+     std::map<uint32_t, std::function<uint32_t(IpcCtx&)>> cmds;
+ };
+--- a/runtime/src/kernel.cpp
++++ b/runtime/src/kernel.cpp
+@@ -678,7 +678,7 @@
+             rc = unmap_transfer_memory(uint32_t(c.x[0]), c.x[1], c.x[2]);
+             break;
+         default:
+-            log("unhandled svc %#x from %s (x0 %llx x1 %llx x2 %llx)", imm, describe(pc).c_str(),
++            fatal("unhandled svc %#x from %s (x0 %llx x1 %llx x2 %llx)", imm, describe(pc).c_str(),
+                 (unsigned long long)c.x[0], (unsigned long long)c.x[1], (unsigned long long)c.x[2]);
+             rc = 0;
+     }
+--- a/runtime/src/loader.cpp
++++ b/runtime/src/loader.cpp
+@@ -91,8 +91,8 @@
+ 
+ static void missing_stub(CPU& c) {
+     // Name comes from the thunk that dispatched here.
+-    log("missing import called: %s (lr %s) -> 0", t_missing_name, describe(c.x[30]).c_str());
+-    c.x[0] = 0;
++    log("unsupported import called: %s (lr %s)", t_missing_name, describe(c.x[30]).c_str());
++    fatal("unsupported import: %s", t_missing_name);
+ }
+ 
+ uint64_t hle_address_or(const char* name, HleFn fallback) {
+@@ -270,8 +270,8 @@
+             }
+             if (!target && !s.imported) target = lm.base + s.value;
+             if (!target) {
+-                // Unresolved: functions get a logging stub; data stays null.
+-                if (s.type == 2 || s.type == 0) target = hle_address(s.name);
++                // Undefined ELF weak symbols resolve to zero. Strong functions retain a fatal diagnostic thunk.
++                if (s.bind != 2 && (s.type == 2 || s.type == 0)) target = hle_address(s.name);
+                 missing++;
+             }
+             *slot = target + uint64_t(r.addend);
+--- a/runtime/src/main.cpp
++++ b/runtime/src/main.cpp
+@@ -14,6 +14,7 @@
+ 
+ extern const nx::ModuleInfo nx_module_main;
+ extern const nx::ModuleInfo nx_module_sdk;
++extern const nx::ModuleInfo nx_module_subsdk0;
+ 
+ namespace nx {
+ 
+@@ -109,6 +110,7 @@
+ // set up by now, so they run here, right before the real nnMain.
+ static void nn_main(CPU& c) {
+     init_module(c, nx_module_sdk);
++    init_module(c, nx_module_subsdk0);
+     init_module(c, nx_module_main);
+     game::after_init();
+     log("entering nnMain");
+@@ -142,8 +144,8 @@
+     if (plat::setting("trace") == "1") g_trace = true;
+     memory_init();
+     kernel_init();
+-    const ModuleInfo* mods[] = {&nx_module_main, &nx_module_sdk};
+-    load_modules(mods, 2, plat::data_root() + "/analysis");
++    const ModuleInfo* mods[] = {&nx_module_main, &nx_module_subsdk0, &nx_module_sdk};
++    load_modules(mods, 3, plat::data_root() + "/analysis");
+ 
+     uint64_t tdata = 0, tdata_end = 0;
+     if (tdata_range(nx_module_main, tdata, tdata_end) && tdata_end > tdata) {
+--- a/runtime/src/memory.cpp
++++ b/runtime/src/memory.cpp
+@@ -24,7 +24,7 @@
+ }  // namespace
+ 
+ void memory_init() {
+-    reserve(kModuleBase, 0x20000000, "modules");
++    reserve(kModuleBase, 0x30000000, "modules"); // main, sdk, subsdk0 at 256 MiB intervals
+     reserve(kHeapBase, kHeapMax, "heap");
+     reserve(kAliasBase, kAliasSize, "alias");
+     reserve(kStackBase, kStackSize, "stack");
+--- /dev/null
++++ b/runtime/src/mk8_window_controller.cpp
+@@ -0,0 +1,31 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "mk8_window_controller.h"
++#include "platform.h"
++#define WIN32_LEAN_AND_MEAN
++#define NOMINMAX
++#include <windows.h>
++#include <algorithm>
++namespace nx {
++namespace {
++struct WindowController final:Service {
++ WindowController():Service("IWindowController"){}
++ HWND window{};DWORD process=GetCurrentProcessId();uint64_t generation{};bool acquired=false;
++ bool valid()const {DWORD owner=0;return window&&IsWindow(window)&&GetWindowThreadProcessId(window,&owner)&&owner==process&&process==GetCurrentProcessId()&&generation==plat::window_generation();}
++ uint32_t handle(IpcCtx& c)override {
++  if(c.cmd!=1&&c.cmd!=10)return Service::handle(c);
++  log("am: native window request command=%u body=%llu descriptors=%llu/%llu/%llu/%llu pid=%llu",c.cmd,(unsigned long long)c.in_size,(unsigned long long)c.a.size(),(unsigned long long)c.b.size(),(unsigned long long)c.x.size(),(unsigned long long)c.c.size(),(unsigned long long)c.pid);
++  if(c.in_size>8||!c.a.empty()||!c.b.empty()||!c.x.empty()||!c.c.empty()||!c.in_copy.empty()||!c.in_move.empty()||!c.in_objects.empty()||c.pid)
++   return 0xE401;
++  if(c.in_size&&(!c.in||std::any_of(c.in,c.in+c.in_size,[](uint8_t b){return b!=0;})))return 0xE401;
++  if(c.cmd==1){c.push<uint64_t>(process);return 0;}
++  if(!window){window=static_cast<HWND>(plat::create_window());generation=plat::window_generation();}
++  if(!valid())return 0xE401;
++  auto self=std::static_pointer_cast<WindowController>(shared_from_this());
++  c.validate_reply=[self]{return self->valid();};
++  c.commit_reply=[self]{if(!self->valid())fatal("native window lease lost after response write");self->acquired=true;log("am: native window rights committed process=%lu generation=%llu",self->process,(unsigned long long)self->generation);};
++  return 0;
++ }
++};
++}
++std::shared_ptr<Service> mk8_window_controller(){return std::make_shared<WindowController>();}
++}
+--- /dev/null
++++ b/runtime/src/mk8_window_controller.h
+@@ -0,0 +1,4 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "ipc.h"
++namespace nx { std::shared_ptr<Service> mk8_window_controller(); }
+--- a/runtime/src/nvn/nvn_trace.cpp
++++ b/runtime/src/nvn/nvn_trace.cpp
+@@ -73,7 +73,7 @@
+     }
+     if (n == 1) log("nvn: first call of %s (lr %s)", name, describe(c.x[30]).c_str());
+     // Initialize functions return NVNboolean: false would make the engine give up at the first object.
+-    c.x[0] = std::strstr(name, "Initialize") ? 1 : 0;
++    fatal("unsupported native NVN operation: %s", name);
+ }
+ 
+ // Builders, state objects and texture views only store and return fields: the driver's own code serves them.
+--- /dev/null
++++ b/runtime/src/romfs_image.h
+@@ -0,0 +1,101 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Local adapter: bounded read-only RomFS image; no extraction or title bytes in source.
++#pragma once
++#include <algorithm>
++#include <array>
++#include <cstdio>
++#include <filesystem>
++#include <map>
++#include <mutex>
++#include <set>
++#include <span>
++#include <stdexcept>
++#include <string>
++#include <vector>
++#ifdef _WIN32
++#include <share.h>
++#endif
++namespace nx {
++class RomfsImage {
++public:
++ struct Entry { bool directory; uint64_t offset,size; };
++ explicit RomfsImage(const std::filesystem::path& path) {
++#ifdef _WIN32
++  file_=_wfsopen(path.c_str(),L"rb",_SH_DENYWR);
++#else
++  file_=std::fopen(path.c_str(),"rb");
++#endif
++  if(!file_)throw std::runtime_error("cannot open read-only RomFS image");
++  try {
++   seek(0,SEEK_END);size_=tell();seek(0,SEEK_SET);
++   std::array<uint8_t,80> h{};read_exact(0,h);
++   if(u64(h,0)!=80)throw std::runtime_error("invalid RomFS header");
++   for(size_t i=8;i<72;i+=16)range(u64(h,i),u64(h,i+8),size_);
++   data_=u64(h,72);range(data_,0,size_);
++   const auto ds=u64(h,32),fs=u64(h,64);
++   if(ds<24 || ds>(64ull<<20) || fs>(256ull<<20))throw std::runtime_error("RomFS metadata bound");
++   dirs_.resize(size_t(ds));files_.resize(size_t(fs));
++   read_exact(u64(h,24),dirs_);read_exact(u64(h,56),files_);
++   visit_dir(0,"",0,0);
++  }catch(...){std::fclose(file_);file_=nullptr;throw;}
++ }
++ ~RomfsImage(){if(file_)std::fclose(file_);}
++ RomfsImage(const RomfsImage&)=delete;
++ RomfsImage& operator=(const RomfsImage&)=delete;
++ const Entry* find(const std::string& path) const {
++  const auto it=entries_.find(path);return it==entries_.end()?nullptr:&it->second;
++ }
++ const std::map<std::string,Entry>& entries()const{return entries_;}
++ uint64_t read(const Entry& entry,uint64_t off,std::span<uint8_t> dst) {
++  if(entry.directory || off>entry.size)throw std::runtime_error("RomFS file read offset");
++  const auto count=std::min<uint64_t>(dst.size(),entry.size-off);
++  std::lock_guard lk(lock_);read_exact(entry.offset+off,dst.first(size_t(count)));return count;
++ }
++private:
++ FILE* file_{};uint64_t size_{},data_{};std::mutex lock_;
++ std::vector<uint8_t> dirs_,files_;std::set<uint32_t> seen_dirs_,seen_files_;
++ std::map<std::string,Entry> entries_;
++ static void range(uint64_t p,uint64_t n,uint64_t size){if(p>size || n>size-p)throw std::runtime_error("RomFS extent outside backing");}
++ static uint32_t u32(std::span<const uint8_t> b,size_t p){range(p,4,b.size());uint32_t v=0;for(unsigned i=0;i<4;++i)v|=uint32_t(b[p+i])<<(8*i);return v;}
++ static uint64_t u64(std::span<const uint8_t> b,size_t p){range(p,8,b.size());return uint64_t(u32(b,p))|(uint64_t(u32(b,p+4))<<32);}
++ void seek(int64_t off,int origin){
++#ifdef _WIN32
++  if(_fseeki64(file_,off,origin))throw std::runtime_error("RomFS seek failed");
++#else
++  if(fseeko(file_,off,origin))throw std::runtime_error("RomFS seek failed");
++#endif
++ }
++ uint64_t tell(){
++#ifdef _WIN32
++  auto p=_ftelli64(file_);
++#else
++  auto p=ftello(file_);
++#endif
++  if(p<0)throw std::runtime_error("RomFS size failed");return uint64_t(p);
++ }
++ void read_exact(uint64_t off,std::span<uint8_t> dst){range(off,dst.size(),size_);if(off>INT64_MAX)throw std::runtime_error("RomFS signed seek");seek(int64_t(off),SEEK_SET);if(!dst.empty()&&std::fread(dst.data(),1,dst.size(),file_)!=dst.size())throw std::runtime_error("short RomFS read");}
++ static std::string name(std::span<const uint8_t> b,size_t off,size_t fixed,size_t lenoff,bool root=false){
++  range(off,fixed,b.size());auto n=u32(b,off+lenoff);range(off+fixed,n,b.size());
++  if(n>0x300 || (!root&&!n))throw std::runtime_error("RomFS name length");
++  std::string s(reinterpret_cast<const char*>(b.data()+off+fixed),n);
++  if(s=="."||s==".."||s.find_first_of("/\\")!=std::string::npos||s.find('\0')!=std::string::npos)throw std::runtime_error("RomFS unsafe name");return s;
++ }
++ void visit_dir(uint32_t off,const std::string& parent,uint32_t expected_parent,unsigned depth){
++  if(depth>128 || (off&3) || !seen_dirs_.insert(off).second)throw std::runtime_error("RomFS directory cycle/depth");
++  auto n=name(dirs_,off,24,20,off==0);if(off && u32(dirs_,off)!=expected_parent)throw std::runtime_error("RomFS directory parent");
++  const auto path=parent.empty()?n:parent+"/"+n;
++  if(!entries_.emplace(path,Entry{true,0,0}).second)throw std::runtime_error("RomFS duplicate path");
++  auto file=u32(dirs_,off+12);
++  while(file!=UINT32_MAX){
++   if((file&3)||!seen_files_.insert(file).second)throw std::runtime_error("RomFS file cycle");
++   auto fn=name(files_,file,32,28);if(u32(files_,file)!=off)throw std::runtime_error("RomFS file parent");
++   auto relative=u64(files_,file+8),bytes=u64(files_,file+16);range(relative,bytes,size_-data_);
++   auto full=path.empty()?fn:path+"/"+fn;
++   if(!entries_.emplace(full,Entry{false,data_+relative,bytes}).second)throw std::runtime_error("RomFS duplicate file");
++   file=u32(files_,file+4);
++  }
++  auto child=u32(dirs_,off+8);
++  while(child!=UINT32_MAX){visit_dir(child,path,off,depth+1);child=u32(dirs_,child+4);}
++ }
++};
++}
+--- a/runtime/src/svc_am.cpp
++++ b/runtime/src/svc_am.cpp
+@@ -3,6 +3,7 @@
+ #include <deque>
+ 
+ #include "ipc.h"
++#include "mk8_window_controller.h"
+ #include "language.h"
+ 
+ namespace nx {
+@@ -95,11 +96,7 @@
+     });
+ }
+ 
+-std::shared_ptr<Service> window_controller() {
+-    return svc("IWindowController", [](Service& s) {
+-        s.cmds[1] = [](IpcCtx& c) { c.push<uint64_t>(0x51); return 0u; };  // GetAppletResourceUserId
+-    });
+-}
++std::shared_ptr<Service> window_controller() {return mk8_window_controller();}
+ 
+ std::shared_ptr<Service> application_functions() {
+     return svc("IApplicationFunctions", [](Service& s) {
+--- /dev/null
++++ b/tests/ipc_domain_test.cpp
+@@ -0,0 +1,34 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "ipc.h"
++#include <array>
++#include <iostream>
++#include <stdexcept>
++namespace {std::map<uint32_t,std::shared_ptr<nx::KObject>> handles;uint32_t next=1;}
++namespace nx {
++bool g_trace=false;void log(const char*,...){}[[noreturn]]void fatal(const char*,...){throw std::runtime_error("fatal");}
++uint32_t handle_add(std::shared_ptr<KObject> h){auto id=next++;handles.emplace(id,std::move(h));return id;}
++std::shared_ptr<KObject> handle_get(uint32_t id){auto it=handles.find(id);return it==handles.end()?nullptr:it->second;}
++void handle_close(uint32_t id){handles.erase(id);}
++uint64_t kernel_alloc(uint64_t,uint64_t){throw std::runtime_error("unused allocation");}
++bool commit(uint64_t,uint64_t){return false;}void vm_set(uint64_t,uint64_t,uint32_t,uint32_t){}
++}
++int main(){try{
++ unsigned checks=0;auto check=[&](bool b){++checks;if(!b)throw std::runtime_error("IPC domain assertion");};
++ alignas(16) std::array<uint32_t,64> words{};nx::CPU cpu{};unsigned commits=0;bool reply_seen=false;
++ auto service=std::make_shared<nx::Service>("authored");
++ service->cmds[10]=[&](nx::IpcCtx& c){check(c.in_size==0);c.validate_reply=[]{return true;};c.commit_reply=[&]{++commits;reply_seen=words[8]==0x4f434653&&words[10]==0;};return 0u;};
++ service->cmds[11]=[&](nx::IpcCtx& c){c.validate_reply=[]{return false;};c.commit_reply=[&]{++commits;};return 0u;};
++ service->cmds[12]=[&](nx::IpcCtx& c){c.commit_reply=[&]{++commits;};return 0xe401u;};
++ service->cmds[13]=[&](nx::IpcCtx& c){check(c.in_size==8);check(c.arg<uint64_t>(0)==0x123456789abcdef0ull);return 0u;};
++ nx::register_service("authored",[&]{return service;});uint64_t handle=0;check(nx::ipc_connect("authored",&handle)==0);
++ auto request=[&]{return nx::ipc_request(cpu,handle,reinterpret_cast<uint64_t>(words.data()),sizeof(words));};
++ words[0]=5;words[1]=8;words[4]=0x49434653;check(request()==0);auto object=words[8];check(object==1);
++ auto domain=[&](unsigned cmd,unsigned size=16){words.fill(0xa5a5a5a5);words[0]=4;words[1]=14;words[2]=words[3]=0;words[4]=1|(size<<16);words[5]=object;words[6]=words[7]=0;words[8]=0x49434653;words[9]=0;words[10]=cmd;words[11]=0;};
++ domain(10);check(request()==0);check(commits==1&&reply_seen);
++ domain(11);auto before=words;bool rejected=false;try{request();}catch(const std::exception&){rejected=true;}check(rejected&&words==before&&commits==1);
++ domain(12);check(request()==0);check(words[10]==0xe401&&commits==1);
++ domain(13,24);words[12]=0x9abcdef0;words[13]=0x12345678;check(request()==0);
++ domain(10,15);before=words;rejected=false;try{request();}catch(const std::exception&){rejected=true;}check(rejected&&words==before);
++ domain(10,200);before=words;rejected=false;try{request();}catch(const std::exception&){rejected=true;}check(rejected&&words==before);
++ std::cout<<"ipc_domain checks="<<checks<<" PASS\n";return 0;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/loader_symbol_test.cpp
+@@ -0,0 +1,42 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Exercise real module relocation and indirect dispatch with an authored module image.
++#include <nx/runtime.h>
++#include "platform.h"
++#include <array>
++#include <filesystem>
++#include <fstream>
++#include <iostream>
++#include <stdexcept>
++namespace {alignas(4096) std::array<uint8_t,4096> memory{};struct FatalExit{};}
++namespace nx {
++bool commit(uint64_t a,uint64_t n){return a==reinterpret_cast<uint64_t>(memory.data())&&n<=memory.size();}
++void vm_set(uint64_t,uint64_t,uint32_t,uint32_t){}
++void backtrace(CPU&){}
++}
++namespace nx::plat {
++std::string data_root(){return ".";}
++void log_line(const char* s){std::cerr<<s<<'\n';}
++[[noreturn]]void exit_process(int){throw FatalExit{};}
++}
++namespace {void actual_export(nx::CPU& c){c.x[0]=99;}void native_hle(nx::CPU& c){c.x[0]=77;}}
++int main(){try{
++ unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("loader symbol assertion");};
++ const auto path=std::filesystem::current_path()/"authored-loader-input";std::filesystem::create_directory(path);
++ {std::ofstream f(path/"fixture.bin",std::ios::binary);std::array<char,512> bytes{};f.write(bytes.data(),bytes.size());}
++ const nx::Symbol symbols[]={
++ {"optional_function",0,0,2,2,1},{"optional_notype",0,0,0,2,1},{"optional_data",0,0,1,2,1},
++ {"required_function",0,0,2,1,1},{"native_hle",0,0,2,2,1},{"actual_export",0,0,2,2,1},
++ {"actual_export",4,4,2,1,0}};
++ const nx::Reloc relocs[]={{128,1026,0,0},{136,1025,1,0},{144,257,2,0},{152,1026,3,0},
++ {160,1026,4,0},{168,1026,5,0},{176,257,0,8}};
++ const nx::FuncEntry funcs[]={{4,actual_export}};
++ const nx::ModuleInfo module={"fixture",reinterpret_cast<uint64_t>(memory.data()),0,64,64,64,128,384,512,32,
++ funcs,1,relocs,7,symbols,7,nullptr,0,nullptr,0};
++ nx::HleRegistrar hle("native_hle",native_hle);const nx::ModuleInfo* mods[]={&module};nx::load_modules(mods,1,path.string());
++ auto slot=[&](size_t off){uint64_t v;std::memcpy(&v,memory.data()+off,8);return v;};
++ check(slot(128)==0);check(slot(136)==0);check(slot(144)==0);check(slot(176)==8);
++ check(slot(152)!=0);check(slot(160)!=0);check(slot(168)==module.base+4);
++ nx::CPU c{};nx::call(c,slot(160));check(c.x[0]==77);nx::call(c,slot(168));check(c.x[0]==99);
++ bool rejected=false;try{nx::call(c,slot(152));}catch(const FatalExit&){rejected=true;}check(rejected);
++ std::cout<<"loader_symbols checks="<<checks<<" PASS\n";return 0;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/romfs_image_probe.cpp
+@@ -0,0 +1,12 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "romfs_image.h"
++#include <iostream>
++int main(int argc,char** argv){try{
++ if(argc!=2)throw std::runtime_error("read-only image path required");
++ nx::RomfsImage image(std::filesystem::u8path(argv[1]));uint64_t dirs=0,files=0,bytes=0,reads=0,hash=14695981039346656037ull;
++ for(const auto& [name,e]:image.entries()){
++  if(e.directory){++dirs;continue;}++files;bytes+=e.size;
++  if(reads<8&&e.size){std::array<uint8_t,64> b{};auto n=image.read(e,0,b);for(size_t i=0;i<n;++i){hash^=b[i];hash*=1099511628211ull;}++reads;}
++ }
++ std::cout<<"{\"directories\":"<<dirs<<",\"files\":"<<files<<",\"file_bytes\":"<<bytes<<",\"native_file_reads\":"<<reads<<",\"sample_fnv1a64\":"<<hash<<"}\n";return 0;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/romfs_image_test.cpp
+@@ -0,0 +1,23 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "romfs_image.h"
++#include <iostream>
++#include <thread>
++#include <atomic>
++#include <cstring>
++int main(int argc,char** argv){try{
++ if(argc!=2)throw std::runtime_error("fixture directory required");
++ const auto root=std::filesystem::path(argv[1]);unsigned checks=0;
++ auto check=[&](bool b){++checks;if(!b)throw std::runtime_error("RomFS assertion");};
++ nx::RomfsImage image(root/"valid.bin");check(image.entries().size()==4);
++ const auto* file=image.find("dir/data.bin");check(file&&!file->directory&&file->size==6);
++ std::array<uint8_t,9> data{};check(image.read(*file,0,data)==6);check(!std::memcmp(data.data(),"hello!",6));
++ check(image.read(*file,6,data)==0);bool rejected=false;try{image.read(*file,7,data);}catch(const std::exception&){rejected=true;}check(rejected);
++ check(image.find("missing")==nullptr);check(image.find("dir")->directory);
++ std::atomic<bool> good=true;auto read=[&]{for(int i=0;i<100;++i){std::array<uint8_t,3> b{};if(image.read(*file,1,b)!=3||std::memcmp(b.data(),"ell",3))good=false;}};
++ std::thread a(read),b(read);a.join();b.join();check(good);
++ for(const auto* name:{"cycle.bin","range.bin","name.bin","short.bin"}){rejected=false;try{nx::RomfsImage bad(root/name);}catch(const std::exception&){rejected=true;}check(rejected);}
++#ifdef _WIN32
++ auto writer=_wfsopen((root/"valid.bin").c_str(),L"r+b",_SH_DENYNO);check(writer==nullptr);if(writer)std::fclose(writer);
++#endif
++ std::cout<<"romfs_image checks="<<checks<<" PASS\n";return 0;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/window_controller_test.cpp
+@@ -0,0 +1,23 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "mk8_window_controller.h"
++#include "platform.h"
++#define WIN32_LEAN_AND_MEAN
++#define NOMINMAX
++#include <windows.h>
++#include <iostream>
++#include <stdexcept>
++namespace {HWND current{};uint64_t generation=1;}
++namespace nx::plat {void* create_window(){return current;}uint64_t window_generation(){return generation;}}
++namespace nx {void log(const char*,...){}[[noreturn]]void fatal(const char*,...){throw std::runtime_error("fatal");}uint32_t Service::handle(IpcCtx&){throw std::runtime_error("unsupported");}}
++int main(){try{
++ unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("window assertion");};
++ WNDCLASSW cls{};cls.lpfnWndProc=DefWindowProcW;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"Mk8NativeRightsTest";RegisterClassW(&cls);
++ current=CreateWindowW(cls.lpszClassName,L"owned hidden fixture",WS_OVERLAPPEDWINDOW,0,0,16,16,nullptr,nullptr,cls.hInstance,nullptr);check(current!=nullptr);check(!IsWindowVisible(current));
++ auto service=nx::mk8_window_controller();nx::IpcCtx id;id.cmd=1;check(service->handle(id)==0&&id.out.size()==8);uint64_t value=0;std::memcpy(&value,id.out.data(),8);check(value==GetCurrentProcessId());
++ nx::IpcCtx acquire;acquire.cmd=10;check(service->handle(acquire)==0);check(bool(acquire.validate_reply)&&bool(acquire.commit_reply));check(acquire.validate_reply());acquire.commit_reply();
++ nx::IpcCtx malformed;malformed.cmd=10;malformed.b.push_back({0x1000,16});check(service->handle(malformed)!=0);check(!malformed.commit_reply);
++ ++generation;check(!acquire.validate_reply());bool rejected=false;try{acquire.commit_reply();}catch(const std::exception&){rejected=true;}check(rejected);--generation;
++ DestroyWindow(current);check(!acquire.validate_reply());check(service->handle(acquire)!=0);
++ current=GetDesktopWindow();auto foreign=nx::mk8_window_controller();nx::IpcCtx request;request.cmd=10;check(foreign->handle(request)!=0);
++ std::cout<<"window_controller checks="<<n<<" PASS\n";return 0;
++}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

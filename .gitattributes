@@ -6,3 +6,6 @@ src/patches/native-runtime.patch -text -eol -whitespace
 # Release manifests have byte identities shared with the corresponding archive.
 native-checkpoint/source.json -text -eol whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 native-checkpoint/verification.json -text -eol whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+# The integration recipe checks these exact bytes, including on Windows.
+integrations/belmante-runtime/*.patch text eol=lf -whitespace
+integrations/belmante-runtime/LICENSE.upstream -text -eol whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

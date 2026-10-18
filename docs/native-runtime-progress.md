@@ -12,7 +12,7 @@ The Vulkan dispatch table is regenerated for the already installed headers.
 Thirty-five CPU/component suites pass, including SDK 53 texture/sampler
 comparison, focus and exit policies, HID/touch configuration, save-file I/O,
 parental-control adaptation, loader, IPC, RomFS and native device admission.
-A separate 205-check GPU fixture creates and drains a real device and queue on
+A separate 213-check GPU fixture creates and drains a real device and queue on
 an RX 9070 XT, exercises command-memory callbacks and rejects unsupported
 configuration without loading guest modules. Font-bundle and application-control
 parsers cover valid and malformed inputs. The real image's 1,122 directories,
@@ -160,8 +160,19 @@ objects. Waiting observes replay readiness and GPU completion, including in the
 pipelined fixture; recording alone does not signal a fence. Conditions are
 conservatively completed at the end of the enclosing submit. Regression checks
 cover unissued waits, malformed arguments, submit/wait completion and polling.
-The latest closed title run passes the observed clear and reaches this fence API;
-the new startup probe is checking its continuation.
+The latest closed title run passes the observed clear and fence API, then stops
+at an unresolved nonzero HDR-composition sampled-texture handle.
+
+A new regression reproduces premature deletion of a saved texture descriptor:
+a copied descriptor can resolve through a pool-owned snapshot, but replacing a
+secondary slot incorrectly classified that snapshot as a retired texture. Cleanup
+now requires the exact retired-texture key prefix. The original pool retains its
+snapshot until pool finalization; the regression fails before this fix and passes
+after it. All 35 component suites and 213 native GPU fixture checks pass.
+The fresh title run passes the previous HDR binding failure and continues through
+Luigi/kart loading into Peach resources, then stops at another missing offline
+shader after 258.5 seconds. All 15 complete presented readbacks remain black;
+there is still no verified game image.
 
 Missing required shader translations and unknown calls remain visible failures.
 Shader/draw/present coverage, GPU upload/layout correctness, allocator callback
@@ -274,7 +285,7 @@ path still needs actual execution evidence.
 | Evidence | Verified result | Limit |
 |---|---|---|
 | Native NVN builders in the actual-game reference replay | 90,320 native calls; 6,001-frame replay reached EOF; CPU JIT 0, imports 0; observed racing | Still uses reference graphics. This is not standalone native gameplay. |
-| Public v6 feature/format fixture | 148 CPU checks and a separate 16-draw / 549-pixel / 205-check GPU run pass. Covers BC4 partial blocks/filtering, packed sRGB/swizzles, independent depth/provoking state, full uniform blocks, blending and exact untouched/masked bytes | Authored inputs only. Computed colors use UNORM8 tolerances; custom-border creation/metadata does not prove border sampling. Full declared uniform bounds remain required. |
+| Public v6 feature/format fixture | 148 CPU checks and a separate 16-draw / 549-pixel / 213-check GPU run pass. Covers BC4 partial blocks/filtering, packed sRGB/swizzles, independent depth/provoking state, full uniform blocks, blending and exact untouched/masked bytes | Authored inputs only. Computed colors use UNORM8 tolerances; custom-border creation/metadata does not prove border sampling. Full declared uniform bounds remain required. |
 | Native Vulkan triangle fixture | 1,152 red pixels and 2,944 black pixels | Synthetic rendering; no actual-game draw/present. |
 | Textured native fixtures | Five draws, 20,480 pixels checked and ten rejection cases | Synthetic resource/draw coverage only. |
 | Native-owned pool copy | 64-byte copy and 29 error cases | Bounded memory ownership/validation test. |

@@ -15,7 +15,7 @@ The native buffer-to-texture operation now validates active recording, real sour
 pools, copied SDK texture descriptors and bounded copy regions. Actual Vulkan
 readbacks check R8/RG8/RGBA transfers, submission-time CPU data, earlier GPU writes
 and partial updates. The original game records both decoded video-plane copies
-and advances to its color-correction shader. The private cache now holds 4,489
+and advances to its color-correction shader. The private cache now holds 4,618
 offline-translated stages. An explicit graphics V10 profile permits checked 3D
 float sampling. The live lookup texture identified by the game is packed RGB11F;
 the new bounded 8x8x8 path reuses existing block-linear conversion and exact float
@@ -38,8 +38,13 @@ canonical native-decoded NV12 frame byte-for-byte (466,944 bytes total), and a
 reviewed native preview frame has no previous green/magenta corruption.
 GPU-produced volume images remain authoritative; stale CPU backing is not used
 to overwrite them. The R147 run reached the race-loading screen before another
-missing offline vertex stage, which is translated and staged for the R148 run.
-Actual race rendering and the dark character-lighting defect remain open.
+missing offline vertex stage. R148 passed that stage and reached a missing
+fragment stage from Mario Kart Stadium. The course archive contains 160 unique
+stages; all 129 still missing from the previous cache translated successfully,
+and the AMD driver accepted every resulting module. Module creation does not
+verify pipelines or rendering. The unchanged R148 executable is being tested
+with this expanded cache. Actual race rendering and the dark character-lighting
+defect remain open.
 
 The R146 full-game run directly presents changing movie-preview frames in the
 Single Player menu, then renders native character/kart/glider and Mushroom Cup
@@ -60,8 +65,8 @@ A separate full-movie test decodes all 13,200 pictures with unique input ownersh
 pixel hashes match between the default and interactive decoder modes. Interactive
 mode prevents the default buffering from exhausting the SDK-facing pending-input
 bound. Transport timestamps start at zero and map back to real SDK picture IDs.
-No movie data or decoder-success status is fabricated. Runtime video presentation
-and races remain unverified.
+No movie data or decoder-success status is fabricated. Subsequent R148 evidence
+above verifies native video presentation; races remain unverified.
 
 The SDK's real component registry already contains the software decoder, but its
 separate MIME matching table still chooses NVIDIA even with software preference.

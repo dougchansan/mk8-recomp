@@ -14,9 +14,9 @@ commit and exact game-produced-save reload to mode selection are verified.
 Audible audio, physical controls, broader gameplay and full-speed performance
 remain open; no release/tag/download is available.
 
-Windows integration now passes 40 CPU/component suites and a 1,950-check native
+Windows integration now passes 40 CPU/component suites and a 1,964-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R202 reconstructs 192 generic adapted files. Native sample counts
+entry point. R205 reconstructs 192 generic adapted files. Native sample counts
 and GPU-clock reports replace host placeholders. GPU comparisons replace the
 inherited forced-on conditional renderer, including explicit gated clears and
 original counter-to-predicate chains; regressions verify accumulation,
@@ -39,6 +39,12 @@ completion callbacks. Default mute/headless behavior is preserved. The generated
 10-second stereo capture is private; full-race device coverage passes with 129,992 observed completions and first-place
 results. Subjective listening and physical controls remain separate gates. Optional pipeline-2/chunk-150 mode hits the memory guard
 and is not promoted; the verified race configuration is async 2 / pipeline 0.
+R205 also avoids retaining empty descriptor-handle lookups across a replay:
+a late registration can now resolve its retained texture snapshot. The unchanged
+runtime fails the focused regression; the correction passes native sampled-view,
+GPU pixel and replay-visibility checks. A repeat first-race failure shows that
+the earlier successful races do not establish full gameplay stability. Actual
+repeat/next-course validation of R205 remains in progress.
 R201 keeps the first positive post-mark texture incarnation stable through one
 replay, including after finalization/cache eviction; misses and later replays
 retain their current-state behavior. Authored native-view/red-pixel regressions
@@ -63,7 +69,7 @@ Vulkan device/queue, three presentation textures, command-buffer setup, native
 save mounts and first texture upload. Copied texture/sampler descriptors now
 compare using the inspected SDK 53 layout. The inspected 2D packaged texture layout and shared debug-label storage are
 integrated. With the offline graphics/compute cache and verified local Mii system data,
-startup starts the SDK53 software audio thread, loads sound banks, native system fonts, UI and RaceCommon assets, and serves the pinned application display-version metadata before continuing into further RaceCommon resources. Native temporary Mii generation is integrated with the original algorithm/table attribution and no emulator runtime dependency. Native presented-texture readback now shows the MK8 Deluxe startup logo after resolving copied render-target descriptors. Scripted native input selects a built-in Mii and reaches the main menu. Races and full rendering correctness remain unverified.
+startup starts the SDK53 software audio thread, loads sound banks, native system fonts, UI and RaceCommon assets, and serves the pinned application display-version metadata before continuing into further RaceCommon resources. Native temporary Mii generation is integrated with the original algorithm/table attribution and no emulator runtime dependency. Native presented-texture readback now shows the MK8 Deluxe startup logo after resolving copied render-target descriptors. Scripted native input selects a built-in Mii and reaches the main menu. Full rendering correctness and broader race/cup coverage remain unverified.
 
 The adaptation adds an MK8D target, loads and initializes main/subsdk0/sdk,
 uses an existing checked LZ4 implementation without installing a package, and

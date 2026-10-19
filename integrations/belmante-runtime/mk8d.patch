@@ -9346,7 +9346,17 @@
                        t ? t->height : 0, t ? t->format : 0, (unsigned long long)(t ? t->memory : 0));
          return std::string(b);
      };
-@@ -403,6 +429,7 @@
+@@ -183,6 +209,9 @@
+         s.generation = g_handle_generation, s.handle = handle, s.texture_pool = tp, s.sampler_pool = sp;
+         lookup_handle(handle, s.texture, s.sampler, &s.view, &s.has_sampler);
+         s.object = s.texture ? get<Texture>(s.texture) : nullptr;
++        // An empty-at-mark slot may be registered before a later draw in this
++        // replay. Retain positive choices, but let a missing descriptor retry.
++        if (!s.object) s.generation = 0;
+         g_handle_used++, g_handle_misses++;
+         return &s;
+     }
+@@ -403,6 +432,7 @@
  // passes when textures or images need them. A set is allocated when its first binding is written: the sets no stage
  // declares anything in (usually two of the four) are neither allocated nor bound.
  void build_sets(VkCommandBuffer cb, const std::vector<const ShaderInfo*>& shaders, const ProgramLayout& layout) {
@@ -9354,7 +9364,7 @@
      Descriptors& d = g_sets;
      if (draw_slow(kSlowScratch))
          d = Descriptors{};
-@@ -451,6 +478,33 @@
+@@ -451,6 +481,33 @@
          return s->stage == ShaderStage::Compute &&
                 (all_write_backs() || (b.binding < 64 && written_storage_bindings(s) >> b.binding & 1));
      };
@@ -9388,7 +9398,7 @@
      // The written ranges first (nvn_written.cpp): two bindings of one dispatch that meet get one copy, and bindings
      // that read what the dispatch writes see it, as on the GPU.
      for (const ShaderInfo* s : shaders)
-@@ -522,6 +576,33 @@
+@@ -522,6 +579,33 @@
                  }
                  default: info = buffer_of(cb, nullptr, 0x1000, 16, false, false); break;
              }
@@ -9422,7 +9432,7 @@
              VkDescriptorType type = VkDescriptorType(b.type);
              if (b.set == 0 && b.binding < 64 && layout.dynamic >> b.binding & 1) {  // the offset goes with the bind
                  d.dynamic |= 1ull << b.binding, d.dynamic_offset[b.binding] = uint32_t(info.offset);
-@@ -543,8 +624,19 @@
+@@ -543,8 +627,19 @@
          const ResolvedTexture r = k < t.resolved.size() ? t.resolved[k] : ResolvedTexture{};
          VkDescriptorImageInfo ii{};
          ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -9444,7 +9454,7 @@
          ii.sampler = r.vk_sampler ? r.vk_sampler : sampler_for(r.sampler, b->image.depth);
          images.push_back(ii);
          VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-@@ -614,6 +706,7 @@
+@@ -614,6 +709,7 @@
  // Texture bindings of a program's stages and their handles, into g_textures. kNeedBreak: one needs a transfer or a
  // layout change (so no render pass may be open while the sets are built); kSampledPending: one has a pending clear.
  uint32_t gather_textures(const std::vector<const ShaderInfo*>& shaders) {
@@ -9452,7 +9462,7 @@
      DrawTextures& t = g_textures;
      if (draw_slow(kSlowScratch))
          t = DrawTextures{};
-@@ -642,6 +735,7 @@
+@@ -642,6 +738,7 @@
          t.handles[k] = handle;
          ResolvedTexture& r = t.resolved[k];
          uint64_t texture = 0;
@@ -9460,7 +9470,7 @@
          // A pool entry naming a texture that no longer exists samples the dummy, like no texture: it ended the
          // render pass at every draw (~1.4M times in a run, docs/nvn/DEBUG.md #34).
          if (HandleSlot* slot = handle_slot(handle)) {
-@@ -657,7 +751,40 @@
+@@ -657,7 +754,48 @@
              else
                  texture = 0;
          }
@@ -9489,6 +9499,14 @@
 +            }
 +            if(!compatible){
 +                log("nvn: required texture resolution %s",explain_texture_slot(handle).c_str());
++                log("native failed handle selected=%llx replay=%llu/%llu handle-cache-mark=%llu generation=%llu used=%u",
++                    (unsigned long long)texture,(unsigned long long)t_replay_mark,(unsigned long long)t_replay_serial,
++                    (unsigned long long)g_handle_mark,(unsigned long long)g_handle_generation,g_handle_used);
++                for(const auto& cached:g_handle_slots)
++                    if(cached.generation==g_handle_generation&&cached.handle==(handle&0xffffffffull)&&
++                       cached.texture_pool==g_state.texture_pool&&cached.sampler_pool==g_state.sampler_pool)
++                        log("native failed cached handle texture=%llx object=%p",(unsigned long long)cached.texture,(void*)cached.object);
++
 +                const auto& draw=current_draw_invocation;
 +                log("native failed draw active=%u indexed=%u count=%d instances=%d base=%d",unsigned(draw.active),unsigned(draw.indexed),draw.count,draw.instances,draw.base);
 +                log("native sampled view levels=%u/%u layers=%u/%u format=%u swizzle=%x",r.view.base_level,r.view.levels,r.view.min_layer,r.view.layers,r.view.format,r.view.swizzle);
@@ -13026,7 +13044,7 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,487 @@
+@@ -0,0 +1,545 @@
 +#if defined(_WIN32)
 +#include <windows.h>
 +#include "native_failure.h"
@@ -13392,6 +13410,64 @@
 + for(auto descriptor:{descriptor_a,descriptor_b}) {
 +     bool retired=false;try{(void)width(descriptor);}catch(const std::invalid_argument&){retired=true;}check(retired);
 + }
++ }
++ // An empty descriptor can be registered after its first lookup in this replay.
++ {
++     const auto owner=nx::kernel_alloc(256,16),pool_key=nx::kernel_alloc(128,16);
++     auto& texture=nx::nvn::make<nx::nvn::Texture>(owner);
++     texture.target=1;texture.format=0x25;texture.width=texture.height=4;
++     texture.depth=texture.levels=texture.samples=1;
++     auto& pool=nx::nvn::make<nx::nvn::DescriptorPool>(pool_key);pool.count=4;
++     auto pending=nx::nvn::NativeTextureRegistration::capture(owner);
++     const auto snapshot=pending.snapshot_key();check(snapshot!=0);
++     nx::CPU finalize{};finalize.x[0]=owner;nx::hle_lookup("nvnTextureFinalize")(finalize);
++     const auto replacement_owner=nx::kernel_alloc(256,16);
++     auto& replacement_texture=nx::nvn::make<nx::nvn::Texture>(replacement_owner);
++     replacement_texture.target=1;replacement_texture.format=0x25;replacement_texture.width=replacement_texture.height=2;
++     replacement_texture.depth=replacement_texture.levels=replacement_texture.samples=1;
++     auto replacement=nx::nvn::NativeTextureRegistration::capture(replacement_owner);
++     const auto replacement_snapshot=replacement.snapshot_key();check(replacement_snapshot!=snapshot);
++     finalize.x[0]=replacement_owner;nx::hle_lookup("nvnTextureFinalize")(finalize);
++
++     const auto previous_texture_pool=nx::nvn::replay::g_state.texture_pool;
++     const auto previous_sampler_pool=nx::nvn::replay::g_state.sampler_pool;
++     {
++         std::lock_guard gpu_lock(nx::nvn::gpu_lock());nx::nvn::ReplayScope replay(nx::nvn::current_epoch());
++         nx::nvn::replay::g_state.texture_pool=pool_key;nx::nvn::replay::g_state.sampler_pool=0;
++         uint64_t selected=0;nx::nvn::SamplerInfo sampler;
++         nx::nvn::replay::texture_for(1,selected,sampler);check(selected==0);
++         std::thread publisher([&]{pending.register_slot(pool_key,1,{});});publisher.join();
++         check(nx::nvn::get<nx::nvn::Texture>(owner)==nullptr);
++         nx::nvn::replay::texture_for(1,selected,sampler);
++         std::cout<<"native late descriptor selected="<<std::hex<<selected<<" expected="<<snapshot<<std::dec<<std::endl;
++         check(selected==snapshot);
++         auto* resolved=nx::nvn::get<nx::nvn::Texture>(selected);check(resolved&&resolved->width==4&&resolved->format==0x25);
++         auto command=nx::nvn::frame_begin(false);auto* image=nx::nvn::image_of(selected);check(image!=nullptr);
++         nx::nvn::transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
++         VkClearColorValue red{{1,0,0,1}};VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
++         nx::vk::p_vkCmdClearColorImage(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&red,1,&range);image->rendered=true;
++         nx::nvn::ImageShape shape{};shape.dim=1;shape.component=nx::nvn::ScalarType::Float;
++         VkImageLayout layout{};check(nx::nvn::sampled_view(command,selected,shape,nullptr,&layout,true)!=VK_NULL_HANDLE);
++         auto readback=nx::nvn::upload_alloc(64,16);nx::nvn::transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
++         VkBufferImageCopy region{};region.bufferOffset=readback.offset;region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};region.imageExtent={4,4,1};
++         nx::vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&region);
++         VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
++         barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=readback.buffer;barrier.offset=readback.offset;barrier.size=64;
++         nx::vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);
++         nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++         bool red_pixels=true;for(unsigned i=0;i<16;++i){uint32_t pixel;std::memcpy(&pixel,readback.ptr+4*i,4);red_pixels&=pixel==0xff0000ffu;}check(red_pixels);
++         std::thread replace_slot([&]{replacement.register_slot(pool_key,1,{});});replace_slot.join();
++         nx::nvn::replay::texture_for(1,selected,sampler);check(selected==snapshot);
++         check(nx::nvn::get<nx::nvn::Texture>(snapshot)==resolved);
++     }
++     {
++         std::lock_guard gpu_lock(nx::nvn::gpu_lock());nx::nvn::ReplayScope replay(nx::nvn::current_epoch());
++         uint64_t selected=0;nx::nvn::SamplerInfo sampler;nx::nvn::replay::texture_for(1,selected,sampler);
++         check(selected==replacement_snapshot);auto* resolved=nx::nvn::get<nx::nvn::Texture>(selected);check(resolved&&resolved->width==2);
++     }
++     nx::nvn::replay::g_state.texture_pool=previous_texture_pool;nx::nvn::replay::g_state.sampler_pool=previous_sampler_pool;
++     nx::CPU retire{};retire.x[0]=pool_key;finalize_texture_pool(retire);
++     check(nx::nvn::get<nx::nvn::Texture>(snapshot)==nullptr);
 + }
 + // A positive fallback for an object born after the mark must survive its
 + // finalization and eviction from the small per-replay lookup cache.

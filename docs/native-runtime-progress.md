@@ -37,8 +37,24 @@ not establish a controlled audio or version speedup. The original SDK mix and
 real device consumption are verified together with the race. Subjective
 listening, physical controls, sustained full speed and wider gameplay remain open.
 
-The current source recipe is R202, reconstructing 192 generic adapted files.
-All 40 component suites and the 1,950-check native GPU fixture pass, plus a
+R205 fixes a second replay-cache edge case found during a repeat flight.
+That R202 run stops during the first race at frame 4,081, before course advance:
+a required array binding is missing while a retained registered snapshot exists.
+An authored regression on unchanged production reproduces a stale empty handle
+after a real pending descriptor registration commits in the same replay. The
+handle cache now retains successful selections and retries missing ones, matching
+the existing empty-at-mark lookup rule. It does not substitute missing resources
+or relax shader/type checks. Tests verify the retained snapshot's metadata,
+sampled view, exact red GPU pixels, positive selection after slot replacement,
+and the replacement in the next replay. All 40 suites, 1,964 native GPU checks
+and 300-check sync/cutoff controls pass; the full GPU fixture passes with the
+object resolver's fast cache disabled too. Static analysis retains one pre-existing
+nullable set-cache-slot warning outside this change. Actual repeat-race and
+next-course validation are running; the regression does not prove universal
+gameplay stability or fully establish the real failure's timing mechanism.
+
+The current source recipe is R205, reconstructing 192 generic adapted files.
+All 40 component suites and the 1,964-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full

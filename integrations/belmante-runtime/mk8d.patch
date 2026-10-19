@@ -1,6 +1,6 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -36,6 +36,107 @@
+@@ -36,6 +36,110 @@
  option(NX_TESTS "Build the standalone unit tests" OFF)
  if(NX_TESTS AND NOT ANDROID)
      enable_testing()
@@ -37,6 +37,9 @@
 +    add_executable(native_texture_layers_test tests/native_texture_layers_test.cpp)
 +    target_include_directories(native_texture_layers_test PRIVATE runtime/src)
 +    add_test(NAME native_texture_layers COMMAND native_texture_layers_test)
++    add_executable(native_perf_test tests/native_perf_test.cpp)
++    target_include_directories(native_perf_test PRIVATE runtime/src)
++    add_test(NAME native_perf COMMAND native_perf_test)
 +    add_executable(native_point_size_patch_test tests/native_point_size_patch_test.cpp)
 +    target_include_directories(native_point_size_patch_test PRIVATE runtime/src)
 +    add_test(NAME native_point_size_patch COMMAND native_point_size_patch_test)
@@ -108,7 +111,7 @@
      add_executable(gpu_pick_test tests/gpu_pick_test.cpp runtime/src/nvn/nvn_gpu_pick.cpp)
      target_compile_definitions(gpu_pick_test PRIVATE NX_GPU_PICK_STANDALONE)
      target_include_directories(gpu_pick_test PRIVATE runtime/src/nvn)
-@@ -67,7 +168,14 @@
+@@ -67,7 +171,14 @@
      return()
  endif()
  
@@ -124,7 +127,7 @@
      file(GLOB src CONFIGURE_DEPENDS "${NX_GEN_DIR}/${mod}/*.cpp")
      add_library(game_${mod} STATIC ${src})
      target_include_directories(game_${mod} PRIVATE runtime/include "${NX_GEN_DIR}/${mod}")
-@@ -84,8 +192,10 @@
+@@ -84,8 +195,10 @@
          target_compile_options(game_${mod} PRIVATE -O2 -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
      endif()
  endforeach()
@@ -135,7 +138,7 @@
      runtime/src/main.cpp
      runtime/src/sampler.cpp
      runtime/src/loader.cpp
-@@ -93,6 +203,12 @@
+@@ -93,6 +206,12 @@
      runtime/src/kernel.cpp
      runtime/src/kernel_watch.cpp
      runtime/src/ipc.cpp
@@ -148,7 +151,7 @@
      runtime/src/svc_am.cpp
      runtime/src/svc_set.cpp
      runtime/src/svc_misc.cpp
-@@ -101,6 +217,7 @@
+@@ -101,6 +220,7 @@
      runtime/src/hle_fs.cpp
      runtime/src/svc_account.cpp
      runtime/src/hle_ro.cpp
@@ -156,7 +159,7 @@
      runtime/src/hle_vi.cpp
      runtime/src/hle_hid.cpp
      runtime/src/hle_net.cpp
-@@ -114,6 +231,7 @@
+@@ -114,6 +234,7 @@
      runtime/src/nvn/nvn_caps.cpp
      runtime/src/nvn/nvn_renderpass.cpp
      runtime/src/nvn/nvn_gpu_busy.cpp
@@ -164,7 +167,7 @@
      runtime/src/nvn/nvn_janitor.cpp
      runtime/src/nvn/nvn_trace.cpp
      runtime/src/nvn/nvn_device.cpp
-@@ -185,7 +303,7 @@
+@@ -185,7 +306,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -173,7 +176,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +314,7 @@
+@@ -196,7 +317,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -182,7 +185,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,19 +326,59 @@
+@@ -208,19 +329,59 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -1355,9 +1358,31 @@
  };
  
  struct KEvent : KObject {
+--- a/runtime/src/kernel_watch.cpp
++++ b/runtime/src/kernel_watch.cpp
+@@ -153,6 +153,10 @@
+ }
+ 
+ static void stall_sampler(void*) {
++    // The watchdog remains active. Disable expensive per-frame stall diagnostics
++    // separately when measuring the renderer rather than investigating a hang.
++    const auto* stall_log = std::getenv("NX_STALL_LOG");
++    if (stall_log && stall_log[0]=='0') return;
+     static const char* dump_env = std::getenv("NX_THREAD_DUMP_AT");
+     uint64_t dump_at = dump_env ? plat::monotonic_ns() + uint64_t(std::atof(dump_env) * 1e9) : 0;
+     uint64_t last_frame = 0, since = plat::monotonic_ns();
 --- a/runtime/src/loader.cpp
 +++ b/runtime/src/loader.cpp
-@@ -11,6 +11,7 @@
+@@ -1,6 +1,8 @@
++#include "native_perf.h"
+ // Module loader and dynamic linker (what rtld does on Horizon), indirect-call dispatch and HLE thunks.
+ #include <algorithm>
+ #include <cstdarg>
++#include <cstring>
+ #include <cstdio>
+ #include <fstream>
+ #include <mutex>
+@@ -11,6 +13,7 @@
  #include <nx/runtime.h>
  
  #include "platform.h"
@@ -1365,7 +1390,39 @@
  
  namespace nx {
  
-@@ -91,8 +92,8 @@
+@@ -44,6 +47,7 @@
+ // ---- logging --------------------------------------------------------------------------------------------------
+ 
+ void log(const char* fmt, ...) {
++    perf::Scope perf_scope(perf::Region::Logging);
+     char buf[2048];
+     va_list ap;
+     va_start(ap, fmt);
+@@ -62,11 +66,20 @@
+         std::remove((file + ".prev").c_str());
+         std::rename(file.c_str(), (file + ".prev").c_str());
+         g_log_file = std::fopen(file.c_str(), "w");
+-    }
+-    plat::log_line(buf);
++        if (g_log_file) std::setvbuf(g_log_file, nullptr, _IOFBF, 65536);
++    }
++    static const bool stderr_enabled = [] { const auto* e = std::getenv("NX_LOG_STDERR"); return !e || e[0]!='0'; }();
++    const bool fatal_message = std::strncmp(buf, "FATAL:", 6)==0;
++    if (stderr_enabled || fatal_message) plat::log_line(buf);
+     if (g_log_file) {
+         std::fprintf(g_log_file, "%s\n", buf);
+-        std::fflush(g_log_file);
++        static const bool buffered = [] { const auto* e = std::getenv("NX_BUFFERED_LOG"); return e && e[0]=='1'; }();
++        static uint64_t last_flush = 0;
++        const auto now = buffered ? perf::now() : 0;
++        if (!buffered || fatal_message || now-last_flush>=250000000ull) {
++            std::fflush(g_log_file);
++            last_flush = now;
++        }
+     }
+ }
+ 
+@@ -91,8 +104,8 @@
  
  static void missing_stub(CPU& c) {
      // Name comes from the thunk that dispatched here.
@@ -1376,7 +1433,7 @@
  }
  
  uint64_t hle_address_or(const char* name, HleFn fallback) {
-@@ -160,7 +161,13 @@
+@@ -160,7 +173,13 @@
  FastModule g_fast[4];
  size_t g_fast_count = 0;
  
@@ -1390,7 +1447,7 @@
      for (size_t k = 0; k < g_fast_count; k++) {
          const FastModule& m = g_fast[k];
          uint64_t off = t - m.base;
-@@ -174,7 +181,25 @@
+@@ -174,7 +193,25 @@
                  backtrace(c);
                  fatal("call into the middle of a function: %s (lr %s)", describe(t).c_str(), describe(c.x[30]).c_str());
              }
@@ -1416,7 +1473,7 @@
              return;
          }
      }
-@@ -270,8 +295,8 @@
+@@ -270,8 +307,8 @@
              }
              if (!target && !s.imported) target = lm.base + s.value;
              if (!target) {
@@ -1514,7 +1571,8 @@
      reserve(kStackBase, kStackSize, "stack");
 --- /dev/null
 +++ b/runtime/src/mk8_focus_policy.cpp
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,59 @@
++#include "native_perf.h"
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "mk8_focus_policy.h"
 +#include "platform.h"
@@ -1557,13 +1615,20 @@
 +}
 +uint8_t mk8_logical_focus(){mk8_observe_display();std::lock_guard guard(lock);return logical_focus;}
 +void mk8_focus_gate(){
++    // This gate can execute millions of times per frame. Sample one in 1024
++    // calls so profiling atomics do not become a new contention bottleneck.
++    static thread_local uint32_t samples = 0;
++    const bool sampled = perf::enabled() && (++samples & 1023u) == 0;
++    perf::Scope perf_scope(perf::Region::Focus, sampled, 1024);
 + if(!enabled.load(std::memory_order_acquire))return;
-+ for(;;){mk8_observe_display();bool park;{
++ for(;;){std::function<void()> signal;bool park;{
 +  std::lock_guard guard(lock);if(!live())fatal("owned native display closed");
-+  // SingleApplication display selection is independent of raw Windows foreground.
-+  // A visible owned display runs without activating it. Hidden/minimized state is observable.
++  const uint8_t next=IsWindowVisible(display)&&!IsIconic(display)?1:2;
++  if(next!=logical_focus){logical_focus=next;if(notify)signal=notification;}
++  // A visible owned display runs without activating it. Check ownership once
++  // under the same lock that observes visibility and evaluates the policy.
 +  park=!background&&logical_focus!=1&&(suspend||out_of_focus);
-+ }if(!park)return;Sleep(5);}
++ }if(signal){signal();continue;}if(!park)return;Sleep(5);}
 +}
 +}
 --- /dev/null
@@ -5349,6 +5414,69 @@
 +
 +} // namespace Service::Mii
 --- /dev/null
++++ b/runtime/src/native_perf.h
+@@ -0,0 +1,60 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <array>
++#include <atomic>
++#include <chrono>
++#include <cstddef>
++#include <cstdint>
++#include <cstdlib>
++
++namespace nx::perf {
++enum class Region { Replay, Draw, Compute, Textures, Sets, Pipeline, SampledView, Upload,
++                    Dedup, Present, Timestamp, Focus, Logging, State, Clear, Copy, ListLookup, Count };
++inline constexpr std::array names = {"replay", "draw", "compute", "textures", "sets", "pipeline",
++    "sampled-view", "upload", "dedup", "present", "timestamp", "focus-sampled-1024", "logging",
++    "state", "clear", "copy", "list-lookup"};
++struct Sample { uint64_t calls{}, inclusive_ns{}, exclusive_ns{}; };
++struct Counter { std::atomic<uint64_t> calls{}, inclusive_ns{}, exclusive_ns{}; };
++inline std::array<Counter, size_t(Region::Count)> counters;
++inline bool enabled() {
++    static const bool value = [] { const auto* e = std::getenv("NX_NATIVE_PERF"); return e && e[0] == '1'; }();
++    return value;
++}
++inline uint64_t now() {
++    return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
++        std::chrono::steady_clock::now().time_since_epoch()).count());
++}
++// Exclusive time subtracts instrumented children on the same thread. Regions on
++// different threads can overlap. A scope is assigned to the window when it ends.
++class Scope {
++    inline static thread_local Scope* current{};
++    Scope* parent{};
++    Region region;
++    uint64_t start{}, children{};
++    uint32_t weight;
++    bool active;
++public:
++    explicit Scope(Region value, bool on = enabled(), uint32_t sample_weight = 1)
++        : region(value), weight(sample_weight), active(on) {
++        if (active) { parent = current; current = this; start = now(); }
++    }
++    Scope(const Scope&) = delete;
++    Scope& operator=(const Scope&) = delete;
++    ~Scope() {
++        if (!active) return;
++        const auto elapsed = now() - start;
++        current = parent;
++        if (parent) parent->children += elapsed;
++        auto& c = counters[size_t(region)];
++        c.inclusive_ns.fetch_add(elapsed * weight, std::memory_order_relaxed);
++        c.exclusive_ns.fetch_add((elapsed > children ? elapsed - children : 0) * weight, std::memory_order_relaxed);
++        c.calls.fetch_add(weight, std::memory_order_relaxed);
++    }
++};
++inline Sample take(Region value) {
++    auto& c = counters[size_t(value)];
++    return {c.calls.exchange(0, std::memory_order_relaxed),
++            c.inclusive_ns.exchange(0, std::memory_order_relaxed),
++            c.exclusive_ns.exchange(0, std::memory_order_relaxed)};
++}
++}
+--- /dev/null
 +++ b/runtime/src/native_readonly_storage.h
 @@ -0,0 +1,28 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -5625,7 +5753,8 @@
 +}
 --- /dev/null
 +++ b/runtime/src/nvn/native_counters.cpp
-@@ -0,0 +1,300 @@
+@@ -0,0 +1,313 @@
++#include "native_perf.h"
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "native_counters.h"
 +#include "native_conditional.h"
@@ -5847,7 +5976,19 @@
 +    static uint64_t types=0;if(!(types&(1ull<<type))){types|=1ull<<type;log("native GPU counter report type=%u",type);}
 +}
 +uint64_t native_counter_current_ns() {
++    perf::Scope perf_scope(perf::Region::Timestamp);
 +    std::lock_guard lock(gpu_lock());initialize();
++    extern bool vk_calibrated_timestamp(uint64_t&, uint64_t&);
++    uint64_t calibrated_ticks = 0, deviation = 0;
++    if (vk_calibrated_timestamp(calibrated_ticks, deviation)) {
++        static bool reported = false;
++        if (!reported) {
++            reported = true;
++            log("native GPU clock: calibrated DEVICE domain, deviation=%llu ns, no queue submission",
++                (unsigned long long)deviation);
++        }
++        return native_counter_timestamp_ns(native_gpu_counter_ticks(calibrated_ticks,counters.ratio));
++    }
 +    if(!counters.current_pool){
 +        VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};pool_info.flags=VK_COMMAND_POOL_CREATE_TRANSIENT_BIT|VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;pool_info.queueFamilyIndex=vk_queue_family();
 +        require(p_vkCreateCommandPool(vk_device(),&pool_info,nullptr,&counters.current_pool),"current clock command pool");
@@ -6352,7 +6493,15 @@
  // BindImage(cmd, stage, index, NVNimageHandle), BindImages[Deferred](cmd, stage, first, count, const NVNimageHandle*)
 --- a/runtime/src/nvn/nvn_clears.cpp
 +++ b/runtime/src/nvn/nvn_clears.cpp
-@@ -16,6 +16,8 @@
+@@ -9,6 +9,7 @@
+ // with some channels masked off, is never a loadOp; it runs in the pass, with vkCmdClearAttachments on the scissor
+ // rectangle, or, masked, a fullscreen draw with that write mask (nvn_mask_clear.cpp). NX_CLEARS_SCISSOR=1 (off: it broke the course) and
+ // NX_CLEARS_NO_MASK=1: whole-target and all-channel clears, the old way (bisecting).
++#include "native_perf.h"
+ #include <algorithm>
+ #include <cstdlib>
+ #include <cstdio>
+@@ -16,6 +17,8 @@
  #include <string>
  
  #include "nvn_draw_state.h"
@@ -6361,15 +6510,16 @@
  #include "nvn_ultrawide.h"
  
  namespace nx::nvn {
-@@ -199,6 +201,7 @@
+@@ -199,6 +202,8 @@
  // targets: most of the ~25 ms per frame of GPU time "outside passes" (docs/nvn/DEBUG.md #31). Depth and stencil
  // clears honour the call's masks.
  void draw_clear(VkCommandBuffer cb, const Targets& t, const Cmd& c) {
++    perf::Scope perf_scope(perf::Region::Clear);
 +    if (!replay::g_state.render_enable) return;
      bool color = c.op == Cmd::ClearColor;
      uint64_t guest = color ? (c.n < 8 ? t.colors[c.n] : 0) : t.depth;
      GpuImage* img = guest ? image_of(guest) : nullptr;
-@@ -241,6 +244,38 @@
+@@ -241,6 +246,38 @@
          rect.offset.x || rect.offset.y || rect.extent.width < full.width || rect.extent.height < full.height;
      bool masked = color && !no_mask && (c.mask & 0xF) != 0xF;
      g_scissored += scissored, g_masked += masked;
@@ -6650,7 +6800,14 @@
 +NX_HLE("nvnCommandBufferSetShaderScratchMemory",nx::nvn::SetShaderScratchMemory);
 --- a/runtime/src/nvn/nvn_copy.cpp
 +++ b/runtime/src/nvn/nvn_copy.cpp
-@@ -13,10 +13,18 @@
+@@ -7,16 +7,25 @@
+ // Copies within one image (another level or layer, or another rectangle of the same one: blur chains, mips, atlases;
+ // textures over one storage share an image since #36) are replayed with the image in GENERAL, as Vulkan allows when
+ // the regions do not overlap; overlapping ones are dropped (G10). NX_COPY_NO_SAME_IMAGE=1: all dropped, the old way.
++#include "native_perf.h"
+ #include <algorithm>
+ #include <cstdlib>
+ #include <cstring>
  
  #include "nvn_pipeline.h"
  #include "nvn_vk.h"
@@ -6669,12 +6826,10 @@
  
  namespace {
  
-@@ -38,6 +46,19 @@
-     Cmd cmd{Cmd::CopyTextureToTexture};
-     cmd.a[0] = c.x[1], cmd.a[1] = c.x[4];
+@@ -40,6 +49,19 @@
      record(c.x[0], cmd, &info, sizeof info);
-+}
-+
+ }
+ 
 +void CopyBufferToTexture(CPU& c){
 + const auto command_buffer=c.x[0],source=c.x[1],destination=c.x[2],view=c.x[3],region=c.x[4];const auto flags=uint32_t(c.x[5]);
 + if(!command_buffer_recording_thread(command_buffer)||!native_guest_span(region,24,1))throw std::invalid_argument("native buffer-to-texture recording/input storage");
@@ -6686,14 +6841,15 @@
 +  static std::atomic<unsigned> count{0};if(++count<=12)log("nvn: buffer-to-texture record format=%u size=%dx%d offset=%d,%d bytes=%llu",texture->format,info.region[3],info.region[4],info.region[0],info.region[1],(unsigned long long)bytes);
 + }
 + record(command_buffer,command,&info,sizeof info);
- }
- 
++}
++
  bool compressed(VkFormat f) {
-@@ -64,6 +85,30 @@
- uint64_t g_same_image = 0, g_same_overlap = 0;
+     return (f >= VK_FORMAT_BC1_RGB_UNORM_BLOCK && f <= VK_FORMAT_ASTC_12x12_SRGB_BLOCK);
+ }
+@@ -65,7 +87,33 @@
  
  }  // namespace
-+
+ 
 +void replay_clear_texture(VkCommandBuffer cb,const Cmd& c,const CmdList& list){
 + if(c.blob>=list.blobs.size()||list.blobs[c.blob].size()!=sizeof(TextureClearInfo))throw std::invalid_argument("native texture clear payload");
 + TextureClearInfo info;std::memcpy(&info,list.blobs[c.blob].data(),sizeof info);auto* image=ensure_contents(cb,c.a[0]);
@@ -6703,6 +6859,7 @@
 +}
 +
 +void replay_buffer_texture_copy(VkCommandBuffer cb,const Cmd& c,const CmdList& list){
++    perf::Scope perf_scope(perf::Region::Copy);
 + if(c.blob>=list.blobs.size()||list.blobs[c.blob].size()!=sizeof(BufferTextureCopyInfo))throw std::invalid_argument("native buffer-to-texture payload");BufferTextureCopyInfo info;std::memcpy(&info,list.blobs[c.blob].data(),sizeof info);
 + auto* image=ensure_contents(cb,c.a[1]);if(!image||image->aspect!=VK_IMAGE_ASPECT_COLOR_BIT||image->view_type!=VK_IMAGE_VIEW_TYPE_2D||image->layers!=1)throw std::invalid_argument("native buffer-to-texture image profile");
 + const auto bytes=native_buffer_texture_bytes(image->width,image->height,image->levels,image->nvn_format,1,info.view,info.region,c.mask);const auto block=native_texture_block(image->nvn_format);if(vk_block_bytes(image->format)!=block.bytes)throw std::invalid_argument("native buffer-to-texture host storage conversion is not admitted");
@@ -6717,10 +6874,13 @@
 + transition(cb,*image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);VkMemoryBarrier memory{VK_STRUCTURE_TYPE_MEMORY_BARRIER};memory.srcAccessMask=VK_ACCESS_MEMORY_WRITE_BIT;memory.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT;vk::p_vkCmdPipelineBarrier(cb,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&memory,0,nullptr,0,nullptr);
 + VkBufferImageCopy copy{};copy.bufferOffset=data.offset;copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,info.view.base_level,0,1};copy.imageOffset={info.region[0],info.region[1],0};copy.imageExtent={uint32_t(info.region[3]),uint32_t(info.region[4]),1};vk::p_vkCmdCopyBufferToImage(cb,data.buffer,image->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);image->rendered=true;image->uploaded=true;
 +}
- 
++
  void replay_copy(VkCommandBuffer cb, const Cmd& c, const CmdList& list) {
++    perf::Scope perf_scope(perf::Region::Copy);
      static const bool off = std::getenv("NX_NO_COPY") != nullptr;  // debug: skip texture copies
-@@ -149,5 +194,6 @@
+     if (off) return;
+     if (c.blob >= list.blobs.size() || list.blobs[c.blob].size() != sizeof(CopyInfo)) return;
+@@ -149,5 +197,6 @@
  }
  
  NX_HLE("nvnCommandBufferCopyTextureToTexture", CopyTextureToTexture);
@@ -6904,6 +7064,21 @@
      g_zero_stats.clear();
  }
  
+--- a/runtime/src/nvn/nvn_dedup.cpp
++++ b/runtime/src/nvn/nvn_dedup.cpp
+@@ -1,3 +1,4 @@
++#include "native_perf.h"
+ // Per-submit upload reuse (docs/nvn/DEBUG.md #30). A draw's buffers are copied from guest memory into the upload
+ // ring when it is replayed; the same camera block, scene constants and vertex buffers were copied again for every
+ // draw that bound them (~130 KB per draw, 50-70 MB per frame). Within one submit guest memory only changes through
+@@ -39,6 +40,7 @@
+ }  // namespace
+ 
+ Upload dedup_upload(const uint8_t* p, uint64_t size, uint64_t padded, uint64_t align) {
++    perf::Scope perf_scope(perf::Region::Dedup);
+     if (!p || !size) {
+         Upload u = upload_alloc(padded, align);
+         std::memset(u.ptr, 0, padded);
 --- a/runtime/src/nvn/nvn_device.cpp
 +++ b/runtime/src/nvn/nvn_device.cpp
 @@ -1,129 +1,81 @@
@@ -7118,7 +7293,12 @@
 +NX_HLE("nvnDeviceGetWindowOriginMode",nx::nvn::DeviceGetOrigin);
 --- a/runtime/src/nvn/nvn_draw.cpp
 +++ b/runtime/src/nvn/nvn_draw.cpp
-@@ -11,11 +11,18 @@
+@@ -1,3 +1,4 @@
++#include "native_perf.h"
+ // Draws (docs/NVN.md, N6): replays the bind, state and draw commands of nvn_state.cpp into Vulkan. Everything a draw
+ // reads from guest memory (vertices, indices, uniform and storage buffers, textures) is copied at replay time into
+ // the submit's upload buffer: the replay runs right when the game submits and is waited for, so the memory holds
+@@ -11,11 +12,18 @@
  #include <cstring>
  #include <set>
  
@@ -7137,7 +7317,7 @@
  
  using namespace nx::vk;
  
-@@ -150,8 +157,18 @@
+@@ -150,8 +158,18 @@
          colors[k].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
          colors[k].loadOp = fresh >> k & 1 ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
          colors[k].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -7158,7 +7338,15 @@
      }
      GpuImage* dimg = t.depth ? image_of(t.depth) : nullptr;
      g_pass_images[8] = dimg;
-@@ -207,20 +224,27 @@
+@@ -200,6 +218,7 @@
+ // DispatchCompute: the bound program's compute stage over (x, y, z) groups, outside render passes, then a barrier
+ // so what it wrote is visible to what follows.
+ void dispatch(VkCommandBuffer cb, const Cmd& c) {
++    perf::Scope perf_scope(perf::Region::Compute);
+     static const bool off = std::getenv("NX_NO_COMPUTE") != nullptr;  // debug: skip compute dispatches
+     if (off) return;
+     const auto* shaders = program_shaders(g_state.program);
+@@ -207,20 +226,27 @@
      if (shaders)
          for (const ShaderInfo* s : *shaders)
              if (s->stage == ShaderStage::Compute) cs = s;
@@ -7189,15 +7377,16 @@
      draw_end_rendering(cb, 2);
      gather_textures(stages);
      build_sets(cb, stages, layout);
-@@ -256,6 +280,7 @@
+@@ -256,6 +282,8 @@
  }
  
  bool draw(VkCommandBuffer cb, const Targets& t, uint32_t mode, bool indexed, const Cmd& c) {
++    perf::Scope perf_scope(perf::Region::Draw);
 +    if(native_window_origin()!=1)fatal("native draw requires configured upper-left origin");
      g_stats.total++;
      if (g_state.rasterizer_discard || !g_state.render_enable) return false;  // nothing reaches the targets
      const auto* shaders = program_shaders(g_state.program);
-@@ -311,12 +336,17 @@
+@@ -311,12 +339,17 @@
                      (unsigned long long)r.texture, (void*)img, img ? img->width : 0, img ? img->height : 0,
                      img ? int(img->format) : 0, img ? img->levels : 0, img ? img->layers : 0, img ? int(img->uploaded) : 0,
                      img ? int(img->rendered) : 0);
@@ -7221,7 +7410,7 @@
              }
          }
      }
-@@ -365,6 +395,30 @@
+@@ -365,6 +398,30 @@
          return false;
      }
      check_vertex_ranges(vs, fs, indexed, c, in);  // NX_CHECK_VERTS (nvn_written.cpp)
@@ -7252,7 +7441,7 @@
      if (!g_rendering) {
          if (gpu_profile_on()) {
              GpuImage* img = t.color_count && t.colors[0] ? image_of(t.colors[0]) : nullptr;
-@@ -381,6 +435,7 @@
+@@ -381,6 +438,7 @@
      std::memset(&key, 0, sizeof key);  // the key is compared byte for byte
      key.vs = vs, key.fs = fs;
      key.topology = mode;
@@ -7260,7 +7449,7 @@
      key.attrib_count = uint32_t(std::min<size_t>(g_state.attribs.size(), 16));
      std::copy_n(g_state.attribs.begin(), key.attrib_count, key.attribs);
      key.stream_count = uint32_t(std::min<size_t>(g_state.streams.size(), 16));
-@@ -502,13 +557,27 @@
+@@ -502,13 +560,27 @@
              p_vkCmdBindIndexBuffer(cb, in.index.buffer, in.index.offset, in.index_type);
              g_bound.has_index = true, g_bound.index = in.index, g_bound.index_type = in.index_type, g_state_set++;
          }
@@ -7292,15 +7481,23 @@
      g_pass_written |= ((1u << t.color_count) - 1) | (g_state.depth.depth_write || g_state.depth.stencil_test ? 1u << 8 : 0);
 --- a/runtime/src/nvn/nvn_draw_state.cpp
 +++ b/runtime/src/nvn/nvn_draw_state.cpp
-@@ -6,6 +6,7 @@
+@@ -6,12 +6,15 @@
  
  #include "nvn_draw_state.h"
  #include "platform.h"
 +#include "native_counters.h"
++#include "native_perf.h"
  
  namespace nx::nvn {
  
-@@ -25,7 +26,15 @@
+ using namespace replay;
+ 
+ void draw_command(VkCommandBuffer cb, const Cmd& c, const CmdList& list, const Targets& targets) {
++    perf::Scope perf_scope(perf::Region::State);
+     State& s = g_state;
+     auto blob = [&](size_t size) -> const uint8_t* {
+         return c.blob < list.blobs.size() && list.blobs[c.blob].size() >= size ? list.blobs[c.blob].data() : nullptr;
+@@ -25,7 +28,15 @@
              if (c.i[0] >= 0 && c.i[0] < kStages && c.i[1] >= 0 && c.i[1] < 16) s.images[c.i[0]][c.i[1]] = c.a[0];
              break;
          case Cmd::DispatchCompute: dispatch_call(cb, c); break;
@@ -7317,7 +7514,7 @@
          case Cmd::SetScissor:
              std::memcpy(s.scissor, c.i, sizeof s.scissor), s.has_scissor = true;
              break;
-@@ -118,20 +127,8 @@
+@@ -118,20 +129,8 @@
                  }
              break;
          }
@@ -7874,7 +8071,12 @@
 +NX_HLE("nvnTextureCompare",nx::nvn::TextureCompare);
 --- a/runtime/src/nvn/nvn_pipeline.cpp
 +++ b/runtime/src/nvn/nvn_pipeline.cpp
-@@ -15,9 +15,13 @@
+@@ -1,3 +1,4 @@
++#include "native_perf.h"
+ // Pipelines and sampled resources (nvn_pipeline.h). Everything is cached for the life of the process: layouts by
+ // their bindings, pipelines by their full state, samplers by their state, views by (image, type).
+ #include <algorithm>
+@@ -15,9 +16,13 @@
  #include <tuple>
  #include <unordered_map>
  
@@ -7888,7 +8090,7 @@
  
  namespace nx::nvn {
  
-@@ -27,6 +31,11 @@
+@@ -27,6 +32,11 @@
  // blends in linear) and samples them the same way. Ignoring it lost one conversion per draw: far too much contrast
  // and saturation (docs/nvn/DEBUG.md #29).
  VkFormat view_format(const GpuImage& img, uint32_t nvn) {
@@ -7900,7 +8102,7 @@
      if (VkFormat f; bc_view_format(img, nvn, f)) return f;  // decoded BC (nvn_bc.cpp)
      if (!nvn || nvn == img.nvn_format || img.alpha_from_r || img.aspect != VK_IMAGE_ASPECT_COLOR_BIT) return img.format;
      VkFormat f = vk_format(nvn);
-@@ -79,14 +88,15 @@
+@@ -79,14 +89,15 @@
  
  // `kinds`: per vertex input location, 0 float or the integer kind of its attribute format (vertex_int_kind).
  // `unwritten`: fragment input locations the vertex stage does not write (default_unwritten_inputs).
@@ -7919,7 +8121,7 @@
      if (!m) {
          bool is_patched = false;
          const uint8_t* int_kinds = k != std::string(16, '\0') ? reinterpret_cast<const uint8_t*>(k.data()) : nullptr;
-@@ -97,6 +107,12 @@
+@@ -97,6 +108,12 @@
              else log("nvn/vk: shader %s: ultrawide x scale not patched", s->hash.c_str());
          }
          if (s->stage == ShaderStage::Vertex) clip_z_module(s, code);  // NX_CLIP_Z_PATCH (nvn_spirv_clip.cpp)
@@ -7932,7 +8134,7 @@
          if (const char* opt = std::getenv("NX_SPIRV_OPT"); opt || std::getenv("NX_SPIRV_TOOL")) {  // diagnostic: each module through `spirv-opt <flags>` (NX_SPIRV_OPT) or `<tool> in out` (NX_SPIRV_TOOL) first
              static int n = 0;
              std::string in = "/tmp/nx_spv_" + std::to_string(process_id()) + "_" + std::to_string(n++) + ".spv", out = in + ".out";
-@@ -169,7 +185,7 @@
+@@ -169,7 +186,7 @@
      bool img1d = img.view_type == VK_IMAGE_VIEW_TYPE_1D || img.view_type == VK_IMAGE_VIEW_TYPE_1D_ARRAY;
      switch (type) {
          case VK_IMAGE_VIEW_TYPE_CUBE:
@@ -7941,7 +8143,7 @@
          case VK_IMAGE_VIEW_TYPE_3D: return img3d;
          case VK_IMAGE_VIEW_TYPE_1D:
          case VK_IMAGE_VIEW_TYPE_1D_ARRAY: return img1d;
-@@ -213,11 +229,18 @@
+@@ -213,11 +230,18 @@
          if (type == VK_IMAGE_VIEW_TYPE_CUBE) layers = 6;
          if (type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) layers -= layers % 6;
          if (!view_compatible(img, type, layers)) return VK_NULL_HANDLE;
@@ -7961,10 +8163,11 @@
      }
      if (v) hit = {key, v};  // never a null one: those are tried again
      return v;
-@@ -289,6 +312,20 @@
+@@ -289,6 +313,21 @@
  // ---- graphics pipelines ---------------------------------------------------------------------------------------------
  
  VkPipeline graphics_pipeline(const PipelineKey& key, const ProgramLayout& layout) {
++    perf::Scope perf_scope(perf::Region::Pipeline);
 +    if (key.topology == 0) {
 +        VkPhysicalDeviceProperties properties{};
 +        p_vkGetPhysicalDeviceProperties(vk_physical(), &properties);
@@ -7982,7 +8185,7 @@
      // By the key's bytes, as before, but hashed (nvn_pipeline.h) instead of a ~700-byte std::string built and
      // compared down a tree per draw; and the last entry first: consecutive draws mostly share their state.
      using Key = ByteKey<sizeof(PipelineKey)>;
-@@ -326,7 +363,7 @@
+@@ -326,7 +365,7 @@
          auto& st = stages[nstages++];
          st.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
          st.stage = VkShaderStageFlagBits(stage_bit(s->stage));
@@ -7991,7 +8194,7 @@
          st.pName = "main";
          if (s == key.vs && key.uw_x > 0) {  // NX_ULTRAWIDE: constant 0 of the patched vertex module
              static VkSpecializationMapEntry entry{0, 0, sizeof(float)};
-@@ -410,9 +447,10 @@
+@@ -410,9 +449,10 @@
      // depth; two translated shaders compiled separately by Metal do not, and Wonder's whole course colour pass was
      // discarded (only the sky showed). LESS_OR_EQUAL keeps what EQUAL keeps for opaque geometry after a pre-pass.
      if (key.depth.depth_func == 3 && !key.depth.depth_write) {
@@ -8004,7 +8207,7 @@
      }
      ds.stencilTestEnable = has_depth && key.depth.stencil_test && !std::getenv("NX_NO_STENCIL");
      VkStencilOpState* faces[2] = {&ds.front, &ds.back};
-@@ -554,6 +592,8 @@
+@@ -554,6 +594,8 @@
  
  VkImageView attachment_view(GpuImage& img, uint32_t level, uint32_t layer, VkFormat format) {
      if (format == VK_FORMAT_UNDEFINED) format = img.format;
@@ -8013,7 +8216,7 @@
      level = std::min(level, img.levels - 1);
      // A 3D image's slice is a layer of its 2D-array-compatible views, counted at this level.
      layer = std::min(layer, img.view_type == VK_IMAGE_VIEW_TYPE_3D ? std::max(1u, img.depth >> level) - 1 : img.layers - 1);
-@@ -568,15 +608,36 @@
+@@ -568,15 +610,36 @@
          ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
          ci.format = format;
          ci.subresourceRange = {img.aspect, level, 1, layer, 1};
@@ -8051,7 +8254,7 @@
      bool dirty = t->dirty.exchange(false);
      uint64_t dirty_lo = t->dirty_lo.exchange(UINT64_MAX), dirty_hi = t->dirty_hi.exchange(0);
      if (dirty_hi <= dirty_lo) dirty_lo = 0, dirty_hi = UINT64_MAX;  // marked without a range: all of it
-@@ -595,8 +656,14 @@
+@@ -595,8 +658,14 @@
          }
      }
      // A texture already on the GPU that the CPU wrote part of: only those bytes go again (the glyph cache).
@@ -8066,12 +8269,13 @@
      if (img->layout == VK_IMAGE_LAYOUT_UNDEFINED) {  // never written: black, not garbage
          transition(cb, *img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
          VkImageSubresourceRange r{img->aspect, 0, img->levels, 0, img->layers};
-@@ -609,11 +676,12 @@
+@@ -609,11 +678,13 @@
  }
  
  VkImageView sampled_view(VkCommandBuffer cb, uint64_t texture, const ImageShape& shape, const ViewInfo* view,
 -                         VkImageLayout* layout) {
 +                         VkImageLayout* layout, bool required) {
++    perf::Scope perf_scope(perf::Region::SampledView);
      *layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
      GpuImage* img = ensure_contents(cb, texture);
      static uint64_t no_image = 0, incompatible = 0;
@@ -8080,7 +8284,7 @@
          if (++no_image % 100000 == 1) log("nvn/vk: dummy sampled: %llu with no image, %llu with an incompatible view",
                                            (unsigned long long)no_image, (unsigned long long)incompatible);
          return dummy_view(cb, shape);
-@@ -643,6 +711,7 @@
+@@ -643,6 +714,7 @@
      }
      VkImageView v = view_of(*img, view_type(shape), vi);
      if (!v) {
@@ -8088,6 +8292,14 @@
          *layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
          if (++incompatible % 1000 == 1)
              log("nvn/vk: texture %llx (%ux%u x%u, view type %d) sampled as view type %d: dummy", (unsigned long long)texture,
+@@ -653,6 +725,7 @@
+ }
+ 
+ VkPipeline compute_pipeline(const ShaderInfo* cs, const ProgramLayout& layout) {
++    perf::Scope perf_scope(perf::Region::Pipeline);
+     static std::map<std::pair<const ShaderInfo*, VkPipelineLayout>, VkPipeline> cache;
+     auto& p = cache[{cs, layout.layout}];
+     if (!p) {
 --- a/runtime/src/nvn/nvn_pipeline.h
 +++ b/runtime/src/nvn/nvn_pipeline.h
 @@ -61,6 +61,7 @@
@@ -8385,7 +8597,28 @@
      }
 --- a/runtime/src/nvn/nvn_replay.cpp
 +++ b/runtime/src/nvn/nvn_replay.cpp
-@@ -75,6 +75,11 @@
+@@ -1,3 +1,4 @@
++#include "native_perf.h"
+ // The replay of recorded NVN command lists into a Vulkan command buffer (split from nvn_vk.cpp): render targets,
+ // clears, calls into other lists, copies; draws and state go to nvn_draw.cpp.
+ #include <cstdio>
+@@ -23,6 +24,7 @@
+ void submit_lists_reset() { g_called.clear(); }
+ 
+ std::shared_ptr<CmdList> submit_command_list(uint64_t handle) {
++    perf::Scope perf_scope(perf::Region::ListLookup);
+     static const bool off = [] {
+         const char* e = std::getenv("NX_CALL_TABLE");
+         return e && e[0] == '0';
+@@ -36,6 +38,7 @@
+ }
+ 
+ void replay_list(VkCommandBuffer cb, Targets& st, const CmdList& list, int depth) {
++    perf::Scope perf_scope(perf::Region::Replay);
+     if (skin_lists_on()) skin_list_replayed(list, depth);
+     for (const Cmd& c : list.cmds) {
+         cb = frame_chunk(cb, replay::g_stats.done, pass_open());  // part of the submit queued early (PLAN.md R1)
+@@ -75,6 +78,11 @@
                      }
                  }
                  break;
@@ -8480,7 +8713,12 @@
  NX_HLE("nvnSamplerGetMinMagFilter", GetMinMagFilter);
 --- a/runtime/src/nvn/nvn_sets.cpp
 +++ b/runtime/src/nvn/nvn_sets.cpp
-@@ -7,8 +7,15 @@
+@@ -1,3 +1,4 @@
++#include "native_perf.h"
+ // The descriptor sets of a draw or dispatch (split from nvn_draw.cpp): the textures its bindings name, resolved once
+ // per draw (gather_textures), the sets built from the bound state (build_sets) and bound (bind_sets), and the draw's
+ // shared inputs. The replay's CPU shortcuts of docs/nvn/PERF-PLAN.md live here and in nvn_draw.cpp; NX_DRAW_SLOW
+@@ -7,8 +8,15 @@
  #include <cstring>
  #include <memory>
  #include <string>
@@ -8496,7 +8734,15 @@
  #include "nvn_ultrawide.h"
  
  namespace nx::nvn::replay {
-@@ -451,6 +458,33 @@
+@@ -403,6 +411,7 @@
+ // passes when textures or images need them. A set is allocated when its first binding is written: the sets no stage
+ // declares anything in (usually two of the four) are neither allocated nor bound.
+ void build_sets(VkCommandBuffer cb, const std::vector<const ShaderInfo*>& shaders, const ProgramLayout& layout) {
++    perf::Scope perf_scope(perf::Region::Sets);
+     Descriptors& d = g_sets;
+     if (draw_slow(kSlowScratch))
+         d = Descriptors{};
+@@ -451,6 +460,33 @@
          return s->stage == ShaderStage::Compute &&
                 (all_write_backs() || (b.binding < 64 && written_storage_bindings(s) >> b.binding & 1));
      };
@@ -8530,7 +8776,7 @@
      // The written ranges first (nvn_written.cpp): two bindings of one dispatch that meet get one copy, and bindings
      // that read what the dispatch writes see it, as on the GPU.
      for (const ShaderInfo* s : shaders)
-@@ -522,6 +556,33 @@
+@@ -522,6 +558,33 @@
                  }
                  default: info = buffer_of(cb, nullptr, 0x1000, 16, false, false); break;
              }
@@ -8564,7 +8810,7 @@
              VkDescriptorType type = VkDescriptorType(b.type);
              if (b.set == 0 && b.binding < 64 && layout.dynamic >> b.binding & 1) {  // the offset goes with the bind
                  d.dynamic |= 1ull << b.binding, d.dynamic_offset[b.binding] = uint32_t(info.offset);
-@@ -543,7 +604,7 @@
+@@ -543,7 +606,7 @@
          const ResolvedTexture r = k < t.resolved.size() ? t.resolved[k] : ResolvedTexture{};
          VkDescriptorImageInfo ii{};
          ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -8573,7 +8819,15 @@
                                   : dummy_view(cb, b->image);
          ii.sampler = r.vk_sampler ? r.vk_sampler : sampler_for(r.sampler, b->image.depth);
          images.push_back(ii);
-@@ -657,6 +718,22 @@
+@@ -614,6 +677,7 @@
+ // Texture bindings of a program's stages and their handles, into g_textures. kNeedBreak: one needs a transfer or a
+ // layout change (so no render pass may be open while the sets are built); kSampledPending: one has a pending clear.
+ uint32_t gather_textures(const std::vector<const ShaderInfo*>& shaders) {
++    perf::Scope perf_scope(perf::Region::Textures);
+     DrawTextures& t = g_textures;
+     if (draw_slow(kSlowScratch))
+         t = DrawTextures{};
+@@ -657,6 +721,22 @@
              else
                  texture = 0;
          }
@@ -8865,7 +9119,12 @@
      c.x[0] = proc_address(c, name);
 --- a/runtime/src/nvn/nvn_upload.cpp
 +++ b/runtime/src/nvn/nvn_upload.cpp
-@@ -9,6 +9,8 @@
+@@ -1,3 +1,4 @@
++#include "native_perf.h"
+ // Texture uploads (nvn_pipeline.h): guest pool memory into the host image, untiled, widened where the host stores a
+ // format wider than NVN does, and checked against what the copies read (docs/nvn/DEBUG.md #50).
+ #include <algorithm>
+@@ -9,6 +10,8 @@
  #include "nvn_astc.h"
  #include "nvn_pipeline.h"
  #include "nvn_tiling.h"
@@ -8874,12 +9133,10 @@
  #include "platform.h"
  
  namespace nx::nvn {
-@@ -127,6 +129,16 @@
-         VkClearDepthStencilValue v{1.0f, 0};  // far: the course passes test LESS
-         p_vkCmdClearDepthStencilImage(cb, img.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &v, 1, &r);
+@@ -129,7 +132,18 @@
      }
-+}
-+
+ }
+ 
 +void upload_small_r11_volume(VkCommandBuffer cb,const Texture& t,GpuImage& img){
 + if(!native_small_r11_volume({t.width,t.height,t.depth,t.levels,t.format,t.samples},t.flags,t.stride,t.block_height_gobs,t.storage_size)||!native_guest_span(t.memory,4096,1)||img.view_type!=VK_IMAGE_VIEW_TYPE_3D)throw std::invalid_argument("native packed LUT volume storage");
 + std::vector<uint8_t> linear(8*8*8*4);deswizzle_block_linear(reinterpret_cast<const uint8_t*>(t.memory),linear.data(),8,8,8,4,1,1);
@@ -8888,12 +9145,21 @@
 + transition(cb,img,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);VkMemoryBarrier memory{VK_STRUCTURE_TYPE_MEMORY_BARRIER};memory.srcAccessMask=VK_ACCESS_MEMORY_WRITE_BIT;memory.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT; p_vkCmdPipelineBarrier(cb,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&memory,0,nullptr,0,nullptr);
 + VkBufferImageCopy copy{};copy.bufferOffset=data.offset;copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent={8,8,8};p_vkCmdCopyBufferToImage(cb,data.buffer,img.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);img.uploaded=true;
 + static std::atomic<unsigned> count{0};if(++count<=4)log("nvn: native packed RGB11F volume uploaded8x8x8 bytes=%u",8*8*8*(widen?8:4));
- }
- 
++}
++
  void upload_texture(VkCommandBuffer cb, const Texture& t, GpuImage& img, uint64_t lo, uint64_t hi) {
++    perf::Scope perf_scope(perf::Region::Upload);
+     const bool was_uploaded = img.uploaded;
+     img.uploaded = true;
+     if (gpu_profile_on()) gpu_profile_mark(cb, "texture uploads");
 --- a/runtime/src/nvn/nvn_vk.cpp
 +++ b/runtime/src/nvn/nvn_vk.cpp
-@@ -20,7 +20,9 @@
+@@ -1,3 +1,4 @@
++#include "native_perf.h"
+ // NVN's GPU side on Vulkan (docs/NVN.md, N3): the host device, a VkImage per NVN texture the GPU touches, the
+ // replay of recorded command lists, and presenting a window texture on the host swapchain.
+ //
+@@ -20,7 +21,9 @@
  #include <vector>
  
  #include "nvn_vk.h"
@@ -8903,15 +9169,41 @@
  
  #include <nx/game.h>
  
-@@ -52,6 +54,7 @@
+@@ -52,6 +55,8 @@
  VkFormat g_sc_format = VK_FORMAT_B8G8R8A8_UNORM;
  VkSemaphore g_acquired = VK_NULL_HANDLE, g_rendered = VK_NULL_HANDLE;
  VkBool32 g_depth_clip_control = VK_FALSE;
 +VkBool32 g_conditional_rendering = VK_FALSE;
++int g_calibrated_clock = 0; // 1 KHR, 2 EXT; device-domain ticks, never a CPU-clock estimate.
  bool g_integrated = false;
  bool g_require_sg32 = false;  // compute pipelines are made with a required subgroup size of 32 (Maxwell's warp)  // the chosen GPU is an integrated one (unified memory, the GPU is the long side)
  VkPhysicalDeviceFeatures g_features{};  // the core features enabled (vk_features())
-@@ -183,6 +186,7 @@
+@@ -176,6 +181,24 @@
+     std::vector<VkExtensionProperties> dext(n);
+     p_vkEnumerateDeviceExtensionProperties(g_physical, nullptr, &n, dext.data());
+     std::vector<const char*> dexts = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
++    const auto* clock_mode = std::getenv("NX_GPU_CLOCK");
++    if (!clock_mode || std::strcmp(clock_mode, "submitted") != 0) {
++        const bool khr = has_extension(dext, "VK_KHR_calibrated_timestamps");
++        const bool ext = has_extension(dext, "VK_EXT_calibrated_timestamps");
++        auto domains = khr ? p_vkGetPhysicalDeviceCalibrateableTimeDomainsKHR
++                           : p_vkGetPhysicalDeviceCalibrateableTimeDomainsEXT;
++        if ((khr || ext) && domains) {
++            uint32_t count = 0;
++            if (domains(g_physical, &count, nullptr) == VK_SUCCESS && count) {
++                std::vector<VkTimeDomainKHR> available(count);
++                if (domains(g_physical, &count, available.data()) == VK_SUCCESS &&
++                    std::find(available.begin(), available.end(), VK_TIME_DOMAIN_DEVICE_KHR) != available.end()) {
++                    dexts.push_back(khr ? "VK_KHR_calibrated_timestamps" : "VK_EXT_calibrated_timestamps");
++                    g_calibrated_clock = khr ? 1 : 2;
++                }
++            }
++        }
++    }
+     // Features: everything core the GPU has, dynamic rendering (1.3), 8-bit indices (NVN has them), clip-space
+     // depth -1..1 (NVN's default depth mode, what Wonder uses), and on MoltenVK the portability subset's own
+     // features, which must be enabled to be used.
+@@ -183,6 +206,7 @@
      VkPhysicalDeviceVulkan13Features f13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
      VkPhysicalDeviceIndexTypeUint8FeaturesEXT fu8{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT};
      VkPhysicalDeviceDepthClipControlFeaturesEXT fclip{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT};
@@ -8919,7 +9211,7 @@
      struct {  // VkPhysicalDevicePortabilitySubsetFeaturesKHR, without its header (beta extensions)
          VkStructureType sType = VkStructureType(1000163000);
          void* pNext = nullptr;
-@@ -197,6 +201,10 @@
+@@ -197,6 +221,10 @@
      if (has_extension(dext, "VK_EXT_depth_clip_control")) {
          dexts.push_back("VK_EXT_depth_clip_control");
          *tail = &fclip, tail = &fclip.pNext;
@@ -8930,7 +9222,7 @@
      }
      if (has_extension(dext, "VK_KHR_portability_subset")) {
          dexts.push_back("VK_KHR_portability_subset");
-@@ -217,6 +225,8 @@
+@@ -217,6 +245,8 @@
              g_require_sg32 ? "pinned to 32" : "left to the driver");
      }
      g_depth_clip_control = fclip.depthClipControl;
@@ -8939,7 +9231,7 @@
      g_features = features.features;
      // NX_ASTC_DECODE=1|linear|srgb: the CPU decoder even where the GPU has ASTC (to compare the two on one GPU).
      set_astc_native(g_features.textureCompressionASTC_LDR);
-@@ -396,11 +406,13 @@
+@@ -396,11 +426,22 @@
  }  // namespace
  
  std::recursive_mutex& gpu_lock() { return g_gpu; }
@@ -8950,10 +9242,19 @@
  uint32_t vk_queue_family() { return g_family; }
  bool vk_depth_clip_control() { return g_depth_clip_control; }
 +bool vk_conditional_rendering() { return g_conditional_rendering && vk::p_vkCmdBeginConditionalRenderingEXT && vk::p_vkCmdEndConditionalRenderingEXT; }
++bool vk_calibrated_timestamp(uint64_t& ticks, uint64_t& deviation) {
++    auto query = g_calibrated_clock == 1 ? p_vkGetCalibratedTimestampsKHR
++               : g_calibrated_clock == 2 ? p_vkGetCalibratedTimestampsEXT : nullptr;
++    if (!query) return false;
++    VkCalibratedTimestampInfoKHR info{VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR};
++    info.timeDomain = VK_TIME_DOMAIN_DEVICE_KHR;
++    // A poor calibration retains the exact submitted-query implementation.
++    return query(g_device, 1, &info, &ticks, &deviation) == VK_SUCCESS && deviation <= 1000000;
++}
  const VkPhysicalDeviceFeatures& vk_features() { return g_features; }
  bool gpu_is_integrated() { return g_integrated; }
  bool gpu_require_subgroup32() { return g_require_sg32; }
-@@ -479,7 +491,9 @@
+@@ -479,7 +520,9 @@
      p_vkResetCommandBuffer(g_cb, 0);
      VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
      bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -8964,7 +9265,7 @@
  }
  
  // Where the submitting thread's time goes, logged with the draw stats, per presented frame: the replay (recording
-@@ -491,6 +505,7 @@
+@@ -491,6 +534,7 @@
  
  void end_and_wait(VkSemaphore wait, VkSemaphore signal) {
      uint64_t t0 = plat::monotonic_ns();
@@ -8972,10 +9273,26 @@
      p_vkEndCommandBuffer(g_cb);
      VkPipelineStageFlags stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
      VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-@@ -638,6 +653,7 @@
+@@ -533,6 +577,14 @@
+     frame_log(frames);
+     creation_log(frames);  // pipelines and ASTC decodes of the window; saves the pipeline cache now and then
+     g_timing = {};
++    if (perf::enabled()) {
++        for (size_t k = 0; k < perf::names.size(); ++k) {
++            const auto sample = perf::take(perf::Region(k));
++            if (sample.calls) log("native perf over %llu: %s calls=%llu inclusive=%.3f ms/frame exclusive=%.3f ms/frame",
++                (unsigned long long)frames, perf::names[k], (unsigned long long)sample.calls,
++                double(sample.inclusive_ns)/1e6/double(frames), double(sample.exclusive_ns)/1e6/double(frames));
++        }
++    }
+ }
+ 
+ // gpu_present's time, whatever way it returns.
+@@ -638,6 +690,8 @@
  }
  
  void gpu_present(uint64_t texture, const int32_t* crop) {
++    perf::Scope perf_scope(perf::Region::Present);
 +    if(native_vi::scaling_mode()!=2)fatal("native presentation lacks the required VI scaling policy");
      plat::perf_hint_thread();  // the thread that presents takes part in the frame (perf_hint.cpp)
      std::lock_guard lk(g_gpu);
@@ -10705,7 +11022,7 @@
 +}
 --- /dev/null
 +++ b/tests/focus_policy_test.cpp
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,59 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "mk8_focus_policy.h"
 +#include "platform.h"
@@ -10716,9 +11033,12 @@
 +#include <thread>
 +#include <iostream>
 +#include <stdexcept>
++#include <chrono>
++#include <string_view>
++#include <vector>
 +namespace nx::plat {uint64_t window_generation(){return 1;}}
 +namespace nx {void log(const char*,...){}[[noreturn]]void fatal(const char*,...){throw std::runtime_error("fatal");}}
-+int main(){try{
++int main(int argc,char** argv){try{
 + unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("focus policy assertion");};
 + WNDCLASSW cls{};cls.lpfnWndProc=DefWindowProcW;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"Mk8NativeFocusTest";RegisterClassW(&cls);
 + auto window=CreateWindowExW(WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,cls.lpszClassName,L"owned focus fixture",WS_POPUP,0,0,16,16,nullptr,nullptr,cls.hInstance,nullptr);check(window!=nullptr);
@@ -10732,6 +11052,32 @@
 + nx::IpcCtx restore;restore.cmd=16;restore.in=no;restore.in_size=4;check(nx::mk8_prepare_focus(restore)==0);restore.commit_reply();ShowWindow(window,SW_SHOWNOACTIVATE);waiter.join();check(unfocused_park&&resumed);check(!nx::mk8_focus_snapshot().out_of_focus);
 + nx::IpcCtx malformed;malformed.cmd=16;malformed.in=no;malformed.in_size=4;malformed.b.push_back({1,8});check(nx::mk8_prepare_focus(malformed)!=0);check(!malformed.commit_reply);
 + std::atomic<unsigned> notifications=0;nx::mk8_focus_notification([&]{++notifications;});uint8_t notify_flags[4]={1,0,1,0};nx::IpcCtx notify_request;notify_request.cmd=13;notify_request.in=notify_flags;notify_request.in_size=4;check(nx::mk8_prepare_focus(notify_request)==0);notify_request.commit_reply();check(nx::mk8_focus_snapshot().notify&&notifications>0);ShowWindow(window,SW_HIDE);nx::mk8_observe_display();check(nx::mk8_logical_focus()==2&&notifications>1);ShowWindow(window,SW_SHOWNOACTIVATE);nx::mk8_observe_display();check(nx::mk8_logical_focus()==1);
++ if(argc==2&&std::string_view(argv[1])=="--bench-parallel"){
++  const auto foreground=GetForegroundWindow();constexpr unsigned threads=16,calls=200000;
++  std::atomic<unsigned> ready=0;std::atomic<bool> go=false;std::vector<std::thread> workers;
++  for(unsigned index=0;index<threads;++index)workers.emplace_back([&]{++ready;while(!go.load(std::memory_order_acquire))std::this_thread::yield();for(unsigned count=0;count<calls/threads;++count)nx::mk8_focus_gate();});
++  while(ready.load()!=threads)std::this_thread::yield();const auto start=std::chrono::steady_clock::now();go.store(true,std::memory_order_release);
++  for(auto& worker:workers)worker.join();const auto ns=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count();
++  const auto after=GetForegroundWindow();check(after!=window);std::cout<<"focus_gate_parallel threads="<<threads<<" calls="<<calls<<" elapsed_ns="<<ns<<" ns_per_call="<<double(ns)/calls<<" foreground_preserved="<<(after==foreground)<<"\n";
++ }
++ if(argc==2&&std::string_view(argv[1])=="--bench"){
++  const auto foreground=GetForegroundWindow();constexpr unsigned calls=200000;
++  const auto start=std::chrono::steady_clock::now();
++  for(unsigned count=0;count<calls;++count)nx::mk8_focus_gate();
++  const auto ns=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count();
++  const auto foreground_after=GetForegroundWindow();check(foreground_after!=window);
++  std::cout<<"focus_gate calls="<<calls<<" elapsed_ns="<<ns<<" ns_per_call="<<double(ns)/calls<<" foreground_preserved="<<(foreground_after==foreground)<<"\n";
++ }
++ // A visibility notification may reenter the policy and enable background work.
++ // The gate must invoke it outside its lock and use the updated policy.
++ bool reentered=false;
++ nx::mk8_focus_notification([&]{
++  reentered=nx::mk8_focus_snapshot().configured;
++  uint8_t background_flags[4]={0,1,1,0};nx::IpcCtx change;change.cmd=13;change.in=background_flags;change.in_size=4;
++  check(nx::mk8_prepare_focus(change)==0);change.commit_reply();
++ });
++ ShowWindow(window,SW_HIDE);nx::mk8_focus_gate();
++ check(reentered&&nx::mk8_focus_snapshot().background);ShowWindow(window,SW_SHOWNOACTIVATE);
 + DestroyWindow(window);check(!c.validate_reply());bool rejected=false;try{nx::mk8_focus_gate();}catch(const std::exception&){rejected=true;}check(rejected);
 + rejected=false;try{c.commit_reply();}catch(const std::exception&){rejected=true;}check(rejected);
 + std::cout<<"focus_policy checks="<<n<<" PASS\n";return 0;
@@ -11470,13 +11816,15 @@
 +std::cout<<"native counter clock checks="<<count<<" PASS\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/native_counter_probe.h
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,85 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include "nvn/native_counters.h"
 +#include "nvn/nvn_draw_state.h"
 +#include <array>
 +#include <cstring>
++#include <chrono>
++#include <cstdlib>
 +
 +template<class Check> void native_counter_probe(uint64_t device,Check check) {
 +    using namespace nx;using namespace nx::nvn;
@@ -11515,6 +11863,18 @@
 +        native_counter_draw_end(command,query);pass_mark_written(1);draw_end_rendering(command);
 +    };
 +    const auto before=current();
++    if (std::getenv("NX_CLOCK_BENCH")) {
++        auto previous = before;
++        const auto started = std::chrono::steady_clock::now();
++        for (unsigned k = 0; k < 64; ++k) {
++            const auto value = current();
++            check(value >= previous);
++            previous = value;
++        }
++        const double elapsed = std::chrono::duration<double,std::micro>(
++            std::chrono::steady_clock::now()-started).count();
++        log("native clock benchmark: calls=64 total_us=%.3f us_per_call=%.3f",elapsed,elapsed/64.0);
++    }
 +    {
 +        std::lock_guard lock(gpu_lock());
 +        auto command=frame_begin(false);clears_begin_submit();replay::written_reset();replay::dedup_reset();
@@ -12043,6 +12403,34 @@
 +#include <set>
 +#include <cstring>
 +int main(){using namespace nx::mii;unsigned checks=0;auto check=[&](bool v){++checks;if(!v)throw std::runtime_error("native Mii assertion");};std::set<std::array<u8,50>> faces;for(u32 age=0;age<4;++age)for(u32 gender=0;gender<3;++gender)for(u32 race=0;race<4;++race)for(u64 seed=0;seed<128;++seed){std::array<u8,16> id{};id[0]=1;auto m=build_random(age,gender,race,seed,id);check(m.Verify()==ValidationResult::NoErrors);check(gender==2||u32(m.gender)==gender);check(m.height==64&&m.build==64&&m.eyebrow_y>=3&&m.padding==0);check((m.create_id[6]&0xf0)==0x40&&(m.create_id[8]&0xc0)==0x80);std::array<u8,50> face{};std::memcpy(face.data(),reinterpret_cast<const u8*>(&m)+38,50);faces.insert(face);}check(faces.size()>100);for(auto args:std::array<std::array<u32,3>,3>{{{4,0,0},{0,3,0},{0,0,4}}}){bool rejected=false;try{build_random(args[0],args[1],args[2],0,{});}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"native Mii random checks="<<checks<<" faces="<<faces.size()<<" PASS\n";}
+--- /dev/null
++++ b/tests/native_perf_test.cpp
+@@ -0,0 +1,25 @@
++#include "native_perf.h"
++#undef NDEBUG
++#include <cassert>
++#include <thread>
++#include <vector>
++int main() {
++    using namespace nx::perf;
++    { Scope disabled(Region::Replay, false); }
++    assert(take(Region::Replay).calls == 0);
++    { Scope parent(Region::Replay, true); { Scope child(Region::Draw, true); std::this_thread::sleep_for(std::chrono::milliseconds(2)); } }
++    const auto parent = take(Region::Replay), child = take(Region::Draw);
++    assert(parent.calls == 1 && child.calls == 1);
++    assert(parent.inclusive_ns >= child.inclusive_ns && child.inclusive_ns > 0);
++    assert(parent.inclusive_ns - parent.exclusive_ns == child.inclusive_ns);
++    assert(child.inclusive_ns == child.exclusive_ns);
++    std::vector<std::thread> threads;
++    for (int i = 0; i < 8; ++i) threads.emplace_back([] { for (int k = 0; k < 1000; ++k) { Scope scope(Region::Sets, true); } });
++    for (auto& thread : threads) thread.join();
++    const auto concurrent = take(Region::Sets);
++    assert(concurrent.calls == 8000 && concurrent.inclusive_ns == concurrent.exclusive_ns);
++    assert(take(Region::Sets).calls == 0);
++    { Scope sampled(Region::Focus, true, 1024); }
++    const auto weighted = take(Region::Focus);
++    assert(weighted.calls == 1024 && weighted.inclusive_ns == weighted.exclusive_ns);
++}
 --- /dev/null
 +++ b/tests/native_point_probe.h
 @@ -0,0 +1,70 @@

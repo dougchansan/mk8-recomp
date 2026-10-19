@@ -6,7 +6,7 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 39 CPU/component suites and a 1,633-check native
+Windows integration now passes 40 CPU/component suites and a 1,633-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
 entry point. R166 reconstructs 176 generic adapted files. Native sample counts
 and GPU-clock reports replace host placeholders. GPU comparisons replace the

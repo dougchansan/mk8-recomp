@@ -4,13 +4,41 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R166, reconstructing 176 generic adapted files.
-All 39 component suites and the 1,633-check native GPU fixture pass, plus a
+The current source recipe is R172, reconstructing 180 generic adapted files.
+All 40 component suites and the 1,633-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
+
+R172 adds opt-in aggregate replay timings, buffered routine logs with immediate
+fatal flushing, and a switch to disable per-frame stall tracing while retaining
+the hang watchdog. The first live timing experiment exposed millions of focus
+gate calls; the current profiler samples that gate once per 1,024 calls to reduce
+measurement overhead. Reported sampled focus costs are estimates. Matched game
+comparisons remain in progress; no game-frame speedup is established yet.
+
+The GPU clock now uses supported calibrated DEVICE-domain timestamps, with the
+same timestamp units/epoch as submitted GPU queries and a submitted-query fallback.
+An authored 64-read comparison measures 3.253 microseconds/read versus 92.617 for
+the submitted path; both pass 1,761 GPU checks, including monotonic clock reads
+and existing query bracketing. This is a local clock benchmark, not a game-FPS
+measurement. The original arena bounds validation remains unchanged.
+
+The focus gate combines duplicate ownership checks and locked sections without
+caching liveness. Hidden-window parking, destruction rejection and reentrant
+notification policy changes pass. Five alternating authored benchmark runs give
+median 20.339 versus 34.107 ns/call on one thread, and 283.345 versus 515.977 with
+16 threads. These figures do not establish its share of game-frame time.
+
+Existing R164 heavy stadium windows measured host replay at 1.93–2.29 seconds
+per frame, presentation at 140–185 ms and submission fence waits at 22–23 ms.
+Warm pipeline creation was negligible. Finer timings are required before
+attributing the replay cost to a particular function or adding another cache.
+The later R166 run was intentionally stopped for this performance campaign;
+its source, executable and saved input remained unchanged. It did not reproduce
+the arena failure. Native gameplay, performance and CPU/GPU overlap remain open.
 
 The R164 run presents its first native Mario Kart Stadium course intro.
 Root review of original presented frame1615 verifies the track, lit Mario and

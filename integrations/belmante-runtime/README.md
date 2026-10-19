@@ -6,6 +6,21 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
+R212 now passes a clean 24,000-target flight from Stadium's first-place/15-point
+results through native screenshot readback to Water Park driving, underwater
+anti-gravity and a completed first lap (HUD 2/3). The full second race/cup is
+unverified. A same-binary control without frame signatures and with captures
+every 1,800 presentations observes about 38.5 FPS in its course window; separate
+flights and changed diagnostics do not establish sustained 60 FPS. The optional
+chunk-512 path reaches the unchanged 6 GB guard and remains disabled.
+
+R213 adds opt-in replay versus presentation/non-replay attribution to existing
+GPU timestamp results, without new queries/waits or synchronization changes.
+Both changed sources have clean analyses and the full component/GPU/counter
+controls pass. A 3,600-presentation course flight passes with class totals
+matching the aggregate; median replay is 18.06 ms/frame versus 0.05 ms/frame
+for presentation/non-replay. These intervals include synchronization/scheduling.
+
 R201 now completes a native three-lap Mario Kart Stadium race, with the FINISH
 banner and first-place/15-point results reviewed. The 18,000-frame flight closes
 without a fatal error; its 11,280-frame racing window averages about 25 FPS
@@ -16,7 +31,7 @@ remain open; no release/tag/download is available.
 
 Windows integration now passes 40 CPU/component suites and a 2,261-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R212 reconstructs 192 generic adapted files. Native sample counts
+entry point. R213 reconstructs 193 generic adapted files. Native sample counts
 and GPU-clock reports replace host placeholders. GPU comparisons replace the
 inherited forced-on conditional renderer, including explicit gated clears and
 original counter-to-predicate chains; regressions verify accumulation,
@@ -44,11 +59,11 @@ advance then needs CPU texture readback. R207 supplies a bounded native GPU
 readback for uncompressed 2D color storage, standard and strided, preserving
 output canaries and waiting for actual GPU completion. Authored GPU pixels,
 pending writes and rejection tests pass. Actual game readback returns a 480×270
-RGBA8 image (518,400 bytes) and reaches loading; a subsequent descriptor failure
-keeps second-course gameplay unverified. R210/R212 add regression-backed stable
+RGBA8 image (518,400 bytes) and reached loading in R207, before that flight
+stopped on a descriptor lifetime failure. R212 now verifies Water Park driving. R210/R212 add regression-backed stable
 positive resolution within a replay and handle-cache expiration on replay serial,
-including when the recording epoch repeats. Actual continuation validation runs
-with those fixes. A separate synchronous readback control passes 259 checks.
+including when the recording epoch repeats. The clean two-course R212 flight
+passes with those fixes. A separate synchronous readback control passes 259 checks.
 R205 also avoids retaining empty descriptor-handle lookups across a replay:
 a late registration can now resolve its retained texture snapshot. The unchanged
 runtime fails the focused regression; the correction passes native sampled-view,

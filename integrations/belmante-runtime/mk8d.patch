@@ -7944,7 +7944,7 @@
      // format, Metal writes Inf/NaN, and the NaN spread through every later pass (bloom, the dialog's frosted-glass
 --- a/runtime/src/nvn/nvn_frames.cpp
 +++ b/runtime/src/nvn/nvn_frames.cpp
-@@ -40,6 +40,7 @@
+@@ -40,12 +40,14 @@
  #include <vector>
  
  #include "nvn_vk.h"
@@ -7952,7 +7952,14 @@
  #include "platform.h"
  
  namespace nx::nvn {
-@@ -284,10 +285,12 @@
+ 
+ using namespace nx::vk;
+ 
++void gpu_busy_note_kind(uint32_t slot,bool replay); // opt-in timestamp attribution only
+ VkQueue vk_queue();                // nvn_vk.cpp
+ std::recursive_mutex& gpu_lock();  // nvn_vk.cpp
+ 
+@@ -284,10 +286,12 @@
  // buffer: the next pass on their targets takes them as load operations), queues it, and begins the next one.
  VkCommandBuffer next_part(Slot& s) {
      pass_end_only(s.cbs[s.part], 0);
@@ -7965,7 +7972,15 @@
      if (s.ok) gpu_busy_part_begin(uint32_t(&s - g_slots), s.part, s.cbs[s.part]);
      if (!s.ok) log("nvn/vk: a part of a submit could not begin: it is lost");
      g_chunk_from = UINT64_MAX;
-@@ -383,6 +386,7 @@
+@@ -375,6 +379,7 @@
+     g_next = (g_next + 1) % g_slot_count;
+     g_begin = g_head;
+     s.replay = replay, s.part = s.queued = s.waited = 0, s.split_part = -1, s.ok = true;
++    gpu_busy_note_kind(uint32_t(&s-g_slots),replay);
+     s.begin_ns = plat::monotonic_ns();
+     g_plan_dispatches = g_seen_dispatches = 0;
+     g_chunking = false;
+@@ -383,6 +388,7 @@
          return VK_NULL_HANDLE;
      }
      g_current = &s;
@@ -7973,7 +7988,7 @@
      gpu_busy_part_begin(uint32_t(&s - g_slots), 0, s.cbs[0]);  // NX_GPU_PROFILE=3
      return s.cbs[0];
  }
-@@ -450,6 +454,10 @@
+@@ -450,6 +456,10 @@
  void frame_submit(VkSemaphore wait, VkSemaphore signal, std::vector<WriteBack> write_backs, bool wait_done) {
      if (!g_current) return;
      Slot& s = *g_current;
@@ -7984,6 +7999,50 @@
      g_current = nullptr;
      if (pipelined() && s.replay) {
          g_stats.submits++;
+--- a/runtime/src/nvn/nvn_gpu_busy.cpp
++++ b/runtime/src/nvn/nvn_gpu_busy.cpp
+@@ -21,6 +21,9 @@
+ double g_period_ns = 1.0;
+ double g_busy_ns = 0, g_span_ns = 0;
+ uint64_t g_parts = 0, g_not_ready = 0;
++bool g_replay[kSlots] = {};
++double g_class_ns[2] = {};
++uint64_t g_class_parts[2] = {};
+ 
+ uint64_t read_sysfs(const char* path) {
+     FILE* f = std::fopen(path, "r");
+@@ -39,6 +42,10 @@
+         return e && std::atoi(e) == 3;
+     }();
+     return on;
++}
++
++void gpu_busy_note_kind(uint32_t slot,bool replay) {
++    if(gpu_busy_on()&&slot<kSlots)g_replay[slot]=replay;
+ }
+ 
+ void gpu_busy_part_begin(uint32_t slot, uint32_t part, VkCommandBuffer cb) {
+@@ -79,6 +86,9 @@
+         }
+         if (t[1] < t[0]) continue;
+         g_busy_ns += double(t[1] - t[0]) * g_period_ns, g_parts++;
++        const auto kind=g_replay[slot]?0u:1u;
++        g_class_ns[kind]+=double(t[1]-t[0])*g_period_ns;
++        ++g_class_parts[kind];
+         first = std::min(first, t[0]), last = std::max(last, t[1]);
+     }
+     if (last > first) g_span_ns += double(last - first) * g_period_ns;
+@@ -91,6 +101,10 @@
+     log("gpu busy: %.2f ms/frame (%.1f parts/frame), span %.2f ms/frame, %llu not ready; clock %llu MHz, busy %llu%%",
+         g_busy_ns / 1e6 / double(frames), double(g_parts) / double(frames), g_span_ns / 1e6 / double(frames),
+         (unsigned long long)g_not_ready, (unsigned long long)(clk / 1000000), (unsigned long long)busy_pct);
++    log("gpu busy classes: replay %.2f ms/frame (%.1f parts/frame), present %.2f ms/frame (%.1f parts/frame)",
++        g_class_ns[0]/1e6/double(frames),double(g_class_parts[0])/double(frames),
++        g_class_ns[1]/1e6/double(frames),double(g_class_parts[1])/double(frames));
++    g_class_ns[0]=g_class_ns[1]=0;g_class_parts[0]=g_class_parts[1]=0;
+     g_busy_ns = g_span_ns = 0, g_parts = g_not_ready = 0;
+ }
+ 
 --- a/runtime/src/nvn/nvn_image.cpp
 +++ b/runtime/src/nvn/nvn_image.cpp
 @@ -6,6 +6,7 @@

@@ -1,6 +1,6 @@
 # mk8-recomp
 
-The current goal is a standalone native Mario Kart 8 Deluxe application: statically recompiled CPU code connected to native graphics, platform services, audio, input and storage. The Belmante-based native runtime now completes a three-lap Mario Kart Stadium race and renders first place with 15 points. Full-speed performance, audible audio, physical controls and broader gameplay verification remain in progress.
+The current goal is a standalone native Mario Kart 8 Deluxe application: statically recompiled CPU code connected to native graphics, platform services, audio, input and storage. The Belmante-based native runtime now completes a three-lap Mario Kart Stadium race and renders first place with 15 points. It also advances normally into Water Park and completes its first lap, including underwater driving. Full-speed performance, audible audio, physical controls and broader gameplay verification remain in progress.
 
 See [native runtime progress](docs/native-runtime-progress.md) for verified results and remaining work. This repository is `dougchansan/mk8-recomp`.
 
@@ -11,6 +11,8 @@ The [Belmante runtime integration](integrations/belmante-runtime/README.md) uses
 R202 repeats the full race with the real native audio device processing at zero gain: first place, 15 points, over 129,000 completed audio packets and no reported mixer drops or underruns. Its observed racing window averages about 29 FPS; sustained full speed and subjective listening remain unverified.
 
 A later repeat exposed another descriptor timing failure. R205 fixes a regression-backed stale empty-handle cache entry; the repeat race now finishes first with 15 points. Advancing results exposes a missing texture readback operation. R207 verifies the actual 480×270 native readback and reaches loading. R210/R212 address further replay-cache lifetime failures with regressions; actual second-course validation remains in progress. The successful races do not establish full gameplay stability.
+
+R212 passes a 24,000-frame run through Stadium results and Water Park lap 2/3. A same-build control with frame-signature hashing off and sparse captures observes about 38.5 FPS over 3,900 course presentations; sustained 60 FPS, complete-cup coverage and human audio/control checks remain open. The chunked-submission experiment reaches the unchanged memory guard and is rejected.
 
 The following figures describe the earlier guarded-runtime research track; the current native race result is the Belmante integration above.
 

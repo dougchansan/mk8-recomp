@@ -4,6 +4,57 @@ Updated 2026-10-19. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
+**R212 now advances into Water Park and completes its first lap.** A clean
+24,000-target flight finishes Stadium first/15 points, performs the real native
+480×270 RGBA8 readback, advances normally into the second Mushroom Cup race,
+and drives through its underwater anti-gravity section. Reviewed frame 23,940
+shows Water Park lap 2/3. The flight closes intentionally at 24,015 presentations
+after 852.8 seconds without a fatal/crash, timeout or source/executable/saved-input/
+foreground change. This verifies the transition and one second-course lap;
+the complete second race and cup remain unverified. Native audio records
+168,000 submitted / 167,992 completed packets at its last periodic sample,
+with 7 dropped buffers in one of 84 reported mixer windows and zero underruns.
+Subjective listening and physical controls remain separate gates.
+
+A same-binary 6,000-presentation control removes per-draw frame-signature hashing
+and reduces screenshots from every 60 to every 1,800 presentations. It closes
+intentionally after 167.7 seconds without errors or pin/foreground changes.
+The 3,900-presentation course range 2,101–6,000 averages about 38.5 FPS, compared
+with 28.6 FPS in the earlier heavy-validation flight; median presentation time
+is 0.50 versus 12.41 ms. These figures come from rounded 60-presentation reports
+in separate shared-desktop flights with different NPC/scheduling outcomes and
+two diagnostic settings changed. They do not isolate each diagnostic's cost or
+establish a universal speedup ratio or sustained 60 FPS.
+
+An independent native timestamp flight reports median queued GPU-part duration
+17.05 ms/frame over 25 course windows (mean 16.25, range 10.03–20.28 ms), with
+zero unavailable results. This indicates substantial GPU-side interval alongside
+CPU replay. GPU preemption/clock effects remain possible; Windows clock/utilization
+values are unavailable from this profiler's Linux-only counters, not measured zero.
+
+The per-render-pass profile gives a different scope: median labelled total
+4.36 ms/frame in ten course windows, with the largest label outside render passes
+(clears/uploads/copies, 1.575 ms), followed by two full-resolution pass labels
+(0.560 and 0.405 ms). Labels identify the first shader of a pass, not exclusive
+shader cost; profiling and queue/clock differences prevent subtracting these
+figures from the whole-part profile to assign a proven cause.
+
+R213 therefore separates existing retired GPU timestamp intervals into replay
+and presentation/non-replay submissions. It adds no GPU waits or queries and
+does not change rendering or synchronization. The 40 suites, 2,261 GPU checks,
+300-check sync/cutoff controls and GPU-busy/cache-disabled control pass; both
+changed source analyses are clean. The actual 3,600-presentation classification
+flight closes intentionally after 115.1 seconds without errors or changed pins/
+foreground. The course windows report median replay 18.06 ms/frame versus
+presentation/non-replay 0.05 ms/frame; class sums match their aggregate and all
+query results are available. These are queued intervals, not isolated shader work.
+The source recipe now reconstructs 193 generic adapted files.
+
+A bounded async-2/pipeline-0/chunk-512 control passes the authored GPU tests but
+reaches the unchanged 6 GB guard at 6.22 GB after at least 3,360 presentations;
+recent course windows fall near 12 FPS. It is rejected. Default chunk 0 remains
+in use, and no memory limit is raised. No release, tag or download is available.
+
 **R201 completes the first native race.** Reviewed frames show lap 2/3, lap 3/3,
 the FINISH banner at frame 14,040 and Mario first with 15 points in the results
 at frames 14,700 and 15,240. This is the original three-lap Mario Kart Stadium
@@ -78,7 +129,8 @@ All 40 suites, 2,261 GPU checks and 300-check sync/cutoff controls pass, includi
 all 2,261 GPU checks with the resolver fast cache disabled. A standalone synchronous
 readback probe passes 259 real-GPU pixel/row-gap checks. Incarnation analysis is
 clean; descriptor-set analysis retains one inherited nullable set-cache-slot
-warning. Actual race/results/readback/next-course validation of R212 is active.
+warning. The clean two-course R212 flight now passes as recorded above;
+the complete second race and cup remain open.
 
 R205's actual repeat now completes all three laps, FINISH at frame 13,860,
 and Mario first/15-point results at 15,720. Normal result-advance input then
@@ -105,7 +157,7 @@ Vulkan unit retains one inherited portability-chain dead-store warning. Those pi
 subsequent standalone 259-check probe and actual game readback pass as recorded
 above. Second-course gameplay remains unverified.
 
-The current source recipe is R212, reconstructing 192 generic adapted files.
+The current source recipe is R213, reconstructing 193 generic adapted files.
 All 40 component suites and the 2,261-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture

@@ -4,8 +4,11 @@ R187 completes a profiling-disabled async flight to its 6,000-frame target witho
 a fatal error, stopping intentionally after 1,273.4 seconds. Native frames show
 scripted racing through the first bend, anti-gravity section and glider jump.
 The last reviewed image shows first place and Lakitu's 2/3 sign, with the HUD
-still at 1/3; the lap transition needs follow-up. Glider frames also show severe
-brightness clipping. Complete gameplay and playable performance remain open.
+still at 1/3. The longer R188 run verifies a complete first lap: frame 6,420
+shows the HUD at 2/3 and continued driving in second place. A transient glider
+frame has severe brightness clipping, with normal colours returning next; an
+expected-game reference is needed before calling it a backend fault. Complete
+races, visual correctness and playable performance remain open.
 No release or download is available.
 
 R188 retains native null sampled views and empty-draw handling, with 40 suites,

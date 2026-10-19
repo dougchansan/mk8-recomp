@@ -26,9 +26,15 @@ R187's actual async race reaches its 6,000-frame target without a fatal error an
 is intentionally stopped after 1,273.4 seconds, last presented frame 6,004.
 Source, executable, saved input and foreground stay unchanged. Reviewed native
 frames show anti-gravity driving, the glider jump and first place beside Lakitu's
-2/3 sign. The final HUD still reads 1/3, so a completed lap needs follow-up.
-There is severe brightness clipping around the kart/lights in the glider frame.
-No complete-race or visual-correctness claim follows from this progress.
+2/3 sign. Its final HUD still reads 1/3. The longer R188 follow-up removes that
+ambiguity: reviewed frame 6,420 shows the lap HUD clearly at 2/3, with Mario
+past the start/finish line and continuing below the overpass in second place.
+One complete native lap is verified; a complete race remains unverified.
+
+A transient glider frame has severe brightness clipping around the kart/lights;
+normal kart/glider colour returns in the next sampled frame. This is an observed
+visual candidate, not a proven backend defect without an expected-game reference.
+No full visual-correctness claim follows from this progress.
 
 R188 makes repeated command-callback, scratch-reservation and device-property
 messages opt-in with `NX_TRACE_NVN_CALLS=1`. R187 emitted 808,139 identical

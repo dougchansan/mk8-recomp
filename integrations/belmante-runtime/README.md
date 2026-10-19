@@ -20,8 +20,10 @@ game run confirms corrected cup colors and colored lighting cubemaps. Diffuse
 lighting remains too dark in the selection menu. R164 now presents a native
 Mario Kart Stadium intro with a lit Mario and kart. R182 passes the old arena
 stop and reaches countdown/driving; R187 reaches 6,000 frames without a fatal
-error, including anti-gravity and the glider jump. Brightness clipping, completed
-laps/races, playable performance and full gameplay stability remain open.
+error, including anti-gravity and the glider jump. R188 verifies the first
+complete native lap with a clear 2/3 HUD at frame 6,420. A transient glider flash
+needs reference comparison; complete races, playable performance and full
+gameplay stability remain open.
 R188 makes repeated routine NVN messages opt-in with `NX_TRACE_NVN_CALLS=1`.
 R166 also restores native
 EQUAL depth semantics and disabled-bias behavior with GPU regressions. An earlier original

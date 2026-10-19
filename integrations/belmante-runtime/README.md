@@ -14,9 +14,9 @@ commit and exact game-produced-save reload to mode selection are verified.
 Audible audio, physical controls, broader gameplay and full-speed performance
 remain open; no release/tag/download is available.
 
-Windows integration now passes 40 CPU/component suites and a 2,240-check native
+Windows integration now passes 40 CPU/component suites and a 2,261-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R207 reconstructs 192 generic adapted files. Native sample counts
+entry point. R212 reconstructs 192 generic adapted files. Native sample counts
 and GPU-clock reports replace host placeholders. GPU comparisons replace the
 inherited forced-on conditional renderer, including explicit gated clears and
 original counter-to-predicate chains; regressions verify accumulation,
@@ -43,7 +43,12 @@ R205's actual repeat completes the race and first-place/15-point results. Result
 advance then needs CPU texture readback. R207 supplies a bounded native GPU
 readback for uncompressed 2D color storage, standard and strided, preserving
 output canaries and waiting for actual GPU completion. Authored GPU pixels,
-pending writes and rejection tests pass; actual transition coverage is pending.
+pending writes and rejection tests pass. Actual game readback returns a 480×270
+RGBA8 image (518,400 bytes) and reaches loading; a subsequent descriptor failure
+keeps second-course gameplay unverified. R210/R212 add regression-backed stable
+positive resolution within a replay and handle-cache expiration on replay serial,
+including when the recording epoch repeats. Actual continuation validation runs
+with those fixes. A separate synchronous readback control passes 259 checks.
 R205 also avoids retaining empty descriptor-handle lookups across a replay:
 a late registration can now resolve its retained texture snapshot. The unchanged
 runtime fails the focused regression; the correction passes native sampled-view,

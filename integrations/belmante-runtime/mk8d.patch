@@ -153,7 +153,15 @@
      runtime/src/hle_vi.cpp
      runtime/src/hle_hid.cpp
      runtime/src/hle_net.cpp
-@@ -185,7 +299,7 @@
+@@ -114,6 +228,7 @@
+     runtime/src/nvn/nvn_caps.cpp
+     runtime/src/nvn/nvn_renderpass.cpp
+     runtime/src/nvn/nvn_gpu_busy.cpp
++    runtime/src/nvn/native_counters.cpp
+     runtime/src/nvn/nvn_janitor.cpp
+     runtime/src/nvn/nvn_trace.cpp
+     runtime/src/nvn/nvn_device.cpp
+@@ -185,7 +300,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -162,7 +170,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +310,7 @@
+@@ -196,7 +311,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -171,7 +179,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,19 +322,56 @@
+@@ -208,19 +323,59 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -223,6 +231,9 @@
  endif()
 +
 +if(NX_TESTS)
++    add_executable(native_counter_clock_test tests/native_counter_clock_test.cpp)
++    target_include_directories(native_counter_clock_test PRIVATE runtime/src)
++    add_test(NAME native_counter_clock COMMAND native_counter_clock_test)
 +    add_executable(native_avc_sps_test tests/native_avc_sps_test.cpp)
 +    target_include_directories(native_avc_sps_test PRIVATE runtime/src)
 +    add_test(NAME native_avc_sps COMMAND native_avc_sps_test)
@@ -5458,6 +5469,377 @@
 +}
 +}
 --- /dev/null
++++ b/runtime/src/nvn/native_counter_clock.h
+@@ -0,0 +1,32 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <bit>
++#include <cstdint>
++#include <numeric>
++#include <stdexcept>
++
++namespace nx::nvn {
++struct NativeCounterRatio { uint64_t numerator=0,denominator=0; };
++inline NativeCounterRatio native_counter_ratio(float period_ns) {
++    const uint32_t bits=std::bit_cast<uint32_t>(period_ns);
++    const uint32_t exponent=(bits>>23)&255;
++    if((bits>>31)||!exponent||exponent==255)throw std::invalid_argument("invalid native GPU timestamp period");
++    uint64_t numerator=uint64_t((bits&0x7fffff)|0x800000)*384,denominator=625;
++    int shift=int(exponent)-127-23;
++    while(shift<0&&!(numerator&1)){numerator>>=1;++shift;}
++    if(shift<0){if(-shift>54)throw std::invalid_argument("native GPU timestamp ratio is too small");denominator<<=-shift;}
++    else {if(shift>30||numerator>(UINT64_MAX>>shift))throw std::invalid_argument("native GPU timestamp ratio is too large");numerator<<=shift;}
++    const uint64_t divisor=std::gcd(numerator,denominator);numerator/=divisor;denominator/=divisor;
++    if(numerator>UINT32_MAX||denominator>UINT32_MAX)throw std::invalid_argument("native GPU timestamp ratio exceeds exact shader arithmetic");
++    return {numerator,denominator};
++}
++inline uint64_t native_gpu_counter_ticks(uint64_t ticks,NativeCounterRatio ratio) {
++    if(!ratio.numerator||!ratio.denominator||ratio.numerator>UINT32_MAX||ratio.denominator>UINT32_MAX)
++        throw std::invalid_argument("invalid native GPU timestamp ratio");
++    return (ticks/ratio.denominator)*ratio.numerator+((ticks%ratio.denominator)*ratio.numerator)/ratio.denominator;
++}
++inline uint64_t native_counter_timestamp_ns(uint64_t ticks) {
++    return (ticks/384)*625+((ticks%384)*625)/384;
++}
++inline bool native_counter_report_type(uint32_t type) { return type==0||type==1||type==16; }
++}
+--- /dev/null
++++ b/runtime/src/nvn/native_counter_shaders.h
+@@ -0,0 +1,62 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Authored native GPU counter kernels; no title ISA or data.
++#pragma once
++#include <cstdint>
++namespace nx::nvn {
++inline constexpr uint32_t native_counter_sum_spv[] = {
++    0x07230203u,0x00010000u,0x00000000u,0x00000025u,0x00000000u,0x00020011u,0x00000001u,0x00020011u,
++    0x0000000bu,0x0003000eu,0x00000000u,0x00000001u,0x0005000fu,0x00000005u,0x00000001u,0x6e69616du,
++    0x00000000u,0x00060010u,0x00000001u,0x00000011u,0x00000001u,0x00000001u,0x00000001u,0x00030047u,
++    0x00000002u,0x00000003u,0x00050048u,0x00000002u,0x00000000u,0x00000023u,0x00000000u,0x00030047u,
++    0x00000003u,0x00000003u,0x00050048u,0x00000003u,0x00000000u,0x00000023u,0x00000000u,0x00040047u,
++    0x00000004u,0x00000006u,0x00000008u,0x00030047u,0x00000005u,0x00000002u,0x00050048u,0x00000005u,
++    0x00000000u,0x00000023u,0x00000000u,0x00040047u,0x00000006u,0x00000022u,0x00000000u,0x00040047u,
++    0x00000006u,0x00000021u,0x00000000u,0x00040047u,0x00000007u,0x00000022u,0x00000000u,0x00040047u,
++    0x00000007u,0x00000021u,0x00000001u,0x00020013u,0x00000008u,0x00030021u,0x00000009u,0x00000008u,
++    0x00020014u,0x0000000au,0x00040015u,0x0000000bu,0x00000020u,0x00000000u,0x00040015u,0x0000000cu,
++    0x00000040u,0x00000000u,0x0004002bu,0x0000000bu,0x0000000du,0x00000000u,0x0004002bu,0x0000000bu,
++    0x0000000eu,0x00000001u,0x00040020u,0x0000000fu,0x00000002u,0x0000000cu,0x0003001eu,0x00000002u,
++    0x0000000cu,0x00040020u,0x00000010u,0x00000002u,0x00000002u,0x0003001du,0x00000004u,0x0000000cu,
++    0x0003001eu,0x00000003u,0x00000004u,0x00040020u,0x00000011u,0x00000002u,0x00000003u,0x0003001eu,
++    0x00000005u,0x0000000bu,0x00040020u,0x00000012u,0x00000009u,0x00000005u,0x00040020u,0x00000013u,
++    0x00000009u,0x0000000bu,0x0004003bu,0x00000010u,0x00000006u,0x00000002u,0x0004003bu,0x00000011u,
++    0x00000007u,0x00000002u,0x0004003bu,0x00000012u,0x00000014u,0x00000009u,0x00050036u,0x00000008u,
++    0x00000001u,0x00000000u,0x00000009u,0x000200f8u,0x00000015u,0x00050041u,0x0000000fu,0x00000016u,
++    0x00000006u,0x0000000du,0x0004003du,0x0000000cu,0x00000017u,0x00000016u,0x00050041u,0x00000013u,
++    0x00000018u,0x00000014u,0x0000000du,0x0004003du,0x0000000bu,0x00000019u,0x00000018u,0x000200f9u,
++    0x0000001au,0x000200f8u,0x0000001au,0x000700f5u,0x0000000bu,0x0000001bu,0x0000000du,0x00000015u,
++    0x0000001cu,0x0000001du,0x000700f5u,0x0000000cu,0x0000001eu,0x00000017u,0x00000015u,0x0000001fu,
++    0x0000001du,0x000500b0u,0x0000000au,0x00000020u,0x0000001bu,0x00000019u,0x000400f6u,0x00000021u,
++    0x0000001du,0x00000000u,0x000400fau,0x00000020u,0x00000022u,0x00000021u,0x000200f8u,0x00000022u,
++    0x00060041u,0x0000000fu,0x00000023u,0x00000007u,0x0000000du,0x0000001bu,0x0004003du,0x0000000cu,
++    0x00000024u,0x00000023u,0x00050080u,0x0000000cu,0x0000001fu,0x0000001eu,0x00000024u,0x00050080u,
++    0x0000000bu,0x0000001cu,0x0000001bu,0x0000000eu,0x000200f9u,0x0000001du,0x000200f8u,0x0000001du,
++    0x000200f9u,0x0000001au,0x000200f8u,0x00000021u,0x0003003eu,0x00000016u,0x0000001eu,0x000100fdu,
++    0x00010038u,
++};
++inline constexpr uint32_t native_counter_clock_spv[] = {
++    0x07230203u,0x00010000u,0x00000000u,0x0000001eu,0x00000000u,0x00020011u,0x00000001u,0x00020011u,
++    0x0000000bu,0x0003000eu,0x00000000u,0x00000001u,0x0005000fu,0x00000005u,0x00000001u,0x6e69616du,
++    0x00000000u,0x00060010u,0x00000001u,0x00000011u,0x00000001u,0x00000001u,0x00000001u,0x00030047u,
++    0x00000002u,0x00000003u,0x00050048u,0x00000002u,0x00000000u,0x00000023u,0x00000000u,0x00050048u,
++    0x00000002u,0x00000001u,0x00000023u,0x00000008u,0x00040047u,0x00000003u,0x00000022u,0x00000000u,
++    0x00040047u,0x00000003u,0x00000021u,0x00000000u,0x00030047u,0x00000004u,0x00000002u,0x00050048u,
++    0x00000004u,0x00000000u,0x00000023u,0x00000000u,0x00050048u,0x00000004u,0x00000001u,0x00000023u,
++    0x00000008u,0x00020013u,0x00000005u,0x00030021u,0x00000006u,0x00000005u,0x00020014u,0x00000007u,
++    0x00040015u,0x00000008u,0x00000020u,0x00000000u,0x00040015u,0x00000009u,0x00000040u,0x00000000u,
++    0x0004002bu,0x00000008u,0x0000000au,0x00000000u,0x0004002bu,0x00000008u,0x0000000bu,0x00000001u,
++    0x00040020u,0x0000000cu,0x00000002u,0x00000009u,0x0004001eu,0x00000002u,0x00000009u,0x00000009u,
++    0x00040020u,0x0000000du,0x00000002u,0x00000002u,0x0004001eu,0x00000004u,0x00000009u,0x00000009u,
++    0x00040020u,0x0000000eu,0x00000009u,0x00000004u,0x00040020u,0x0000000fu,0x00000009u,0x00000009u,
++    0x0004003bu,0x0000000du,0x00000003u,0x00000002u,0x0004003bu,0x0000000eu,0x00000010u,0x00000009u,
++    0x00050036u,0x00000005u,0x00000001u,0x00000000u,0x00000006u,0x000200f8u,0x00000011u,0x00050041u,
++    0x0000000cu,0x00000012u,0x00000003u,0x0000000bu,0x0004003du,0x00000009u,0x00000013u,0x00000012u,
++    0x00050041u,0x0000000fu,0x00000014u,0x00000010u,0x0000000au,0x0004003du,0x00000009u,0x00000015u,
++    0x00000014u,0x00050041u,0x0000000fu,0x00000016u,0x00000010u,0x0000000bu,0x0004003du,0x00000009u,
++    0x00000017u,0x00000016u,0x00050086u,0x00000009u,0x00000018u,0x00000013u,0x00000017u,0x00050089u,
++    0x00000009u,0x00000019u,0x00000013u,0x00000017u,0x00050084u,0x00000009u,0x0000001au,0x00000018u,
++    0x00000015u,0x00050084u,0x00000009u,0x0000001bu,0x00000019u,0x00000015u,0x00050086u,0x00000009u,
++    0x0000001cu,0x0000001bu,0x00000017u,0x00050080u,0x00000009u,0x0000001du,0x0000001au,0x0000001cu,
++    0x0003003eu,0x00000012u,0x0000001du,0x000100fdu,0x00010038u,
++};
++}
+--- /dev/null
++++ b/runtime/src/nvn/native_counters.cpp
+@@ -0,0 +1,247 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "native_counters.h"
++#include "native_counter_shaders.h"
++#include "native_device.h"
++#include "native_guest_span.h"
++#include "nvn_draw_state.h"
++#include <array>
++#include <vector>
++#include <cstring>
++#include <stdexcept>
++
++namespace nx::nvn {
++VkQueue vk_queue();
++uint32_t vk_queue_family();
++namespace {
++using namespace vk;
++constexpr uint32_t slots_count=8,query_count=16384,invalid_query=UINT32_MAX;
++struct Slot {
++    VkQueryPool samples=VK_NULL_HANDLE,timestamps=VK_NULL_HANDLE;
++    uint32_t next_sample=0,next_timestamp=0,pending_first=0,pending_count=0;
++    bool reports=false;
++};
++struct Kernel {VkDescriptorSetLayout descriptors=VK_NULL_HANDLE;VkPipelineLayout layout=VK_NULL_HANDLE;VkPipeline pipeline=VK_NULL_HANDLE;};
++struct Counters {
++    std::array<Slot,slots_count> slots;
++    VkBuffer total=VK_NULL_HANDLE;VkDeviceMemory memory=VK_NULL_HANDLE;
++    Kernel sum,clock;
++    VkQueryPool current_query=VK_NULL_HANDLE;VkCommandPool current_pool=VK_NULL_HANDLE;
++    VkCommandBuffer current_command=VK_NULL_HANDLE;VkFence current_fence=VK_NULL_HANDLE;
++    NativeCounterRatio ratio{};
++    uint32_t slot=UINT32_MAX,active=invalid_query;
++    VkCommandBuffer command=VK_NULL_HANDLE;
++    bool initialized=false,enabled=false;
++} counters;
++void require(VkResult result,const char* operation) {
++    if(result!=VK_SUCCESS)throw std::runtime_error(std::string("native counter ")+operation+" failed: "+std::to_string(result));
++}
++Kernel kernel(const uint32_t* code,size_t bytes,uint32_t bindings,uint32_t push_bytes) {
++    Kernel result;
++    std::array<VkDescriptorSetLayoutBinding,2> entries{};
++    for(uint32_t index=0;index<bindings;++index)entries[index]={index,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr};
++    VkDescriptorSetLayoutCreateInfo descriptors{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
++    descriptors.bindingCount=bindings;descriptors.pBindings=entries.data();
++    require(p_vkCreateDescriptorSetLayout(vk_device(),&descriptors,nullptr,&result.descriptors),"descriptor layout");
++    VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT,0,push_bytes};
++    VkPipelineLayoutCreateInfo layout{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
++    layout.setLayoutCount=1;layout.pSetLayouts=&result.descriptors;layout.pushConstantRangeCount=1;layout.pPushConstantRanges=&push;
++    require(p_vkCreatePipelineLayout(vk_device(),&layout,nullptr,&result.layout),"pipeline layout");
++    VkShaderModuleCreateInfo module_info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};module_info.codeSize=bytes;module_info.pCode=code;
++    VkShaderModule module=VK_NULL_HANDLE;require(p_vkCreateShaderModule(vk_device(),&module_info,nullptr,&module),"shader module");
++    VkComputePipelineCreateInfo pipeline{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
++    pipeline.stage={VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};pipeline.stage.stage=VK_SHADER_STAGE_COMPUTE_BIT;
++    pipeline.stage.module=module;pipeline.stage.pName="main";pipeline.layout=result.layout;
++    const auto status=p_vkCreateComputePipelines(vk_device(),VK_NULL_HANDLE,1,&pipeline,nullptr,&result.pipeline);
++    p_vkDestroyShaderModule(vk_device(),module,nullptr);require(status,"compute pipeline");
++    return result;
++}
++void initialize() {
++    if(counters.initialized)return;
++    if(!vk_device()||!vk_features().shaderInt64)throw std::runtime_error("native counters require an initialized device with shaderInt64");
++    VkPhysicalDeviceProperties properties{};p_vkGetPhysicalDeviceProperties(vk_physical(),&properties);
++    uint32_t count=0;p_vkGetPhysicalDeviceQueueFamilyProperties(vk_physical(),&count,nullptr);
++    std::vector<VkQueueFamilyProperties> families(count);p_vkGetPhysicalDeviceQueueFamilyProperties(vk_physical(),&count,families.data());
++    if(vk_queue_family()>=count||families[vk_queue_family()].timestampValidBits!=64)
++        throw std::runtime_error("native counter clock profile requires 64 timestamp bits");
++    counters.ratio=native_counter_ratio(properties.limits.timestampPeriod);
++    counters.sum=kernel(native_counter_sum_spv,sizeof(native_counter_sum_spv),2,4);
++    counters.clock=kernel(native_counter_clock_spv,sizeof(native_counter_clock_spv),1,16);
++    VkBufferCreateInfo buffer{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};buffer.size=8;
++    buffer.usage=VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT;
++    require(p_vkCreateBuffer(vk_device(),&buffer,nullptr,&counters.total),"total buffer");
++    VkMemoryRequirements requirements{};p_vkGetBufferMemoryRequirements(vk_device(),counters.total,&requirements);
++    VkMemoryAllocateInfo allocation{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};allocation.allocationSize=requirements.size;
++    allocation.memoryTypeIndex=memory_type(requirements.memoryTypeBits,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
++    require(p_vkAllocateMemory(vk_device(),&allocation,nullptr,&counters.memory),"total allocation");
++    require(p_vkBindBufferMemory(vk_device(),counters.total,counters.memory,0),"total binding");
++    counters.initialized=true;
++    log("native counters: GPU period %.9g ns, native ratio %llu/%llu, timestamp bits64",double(properties.limits.timestampPeriod),
++        (unsigned long long)counters.ratio.numerator,(unsigned long long)counters.ratio.denominator);
++}
++Slot& context(VkCommandBuffer command) {
++    if(!command||counters.command!=command||counters.slot>=slots_count)
++        throw std::runtime_error("native counter command buffer is not the active frame part");
++    return counters.slots[counters.slot];
++}
++void pool(VkCommandBuffer command,VkQueryPool& handle,VkQueryType type) {
++    if(handle)return;
++    VkQueryPoolCreateInfo info{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};info.queryType=type;info.queryCount=query_count;
++    require(p_vkCreateQueryPool(vk_device(),&info,nullptr,&handle),"query pool");
++    p_vkCmdResetQueryPool(command,handle,0,query_count);
++}
++void barrier(VkCommandBuffer command,VkDescriptorBufferInfo buffer,VkAccessFlags source,VkAccessFlags destination,
++             VkPipelineStageFlags before=VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VkPipelineStageFlags after=VK_PIPELINE_STAGE_ALL_COMMANDS_BIT) {
++    VkBufferMemoryBarrier memory{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};memory.srcAccessMask=source;memory.dstAccessMask=destination;
++    memory.srcQueueFamilyIndex=memory.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;
++    memory.buffer=buffer.buffer;memory.offset=buffer.offset;memory.size=buffer.range;
++    p_vkCmdPipelineBarrier(command,before,after,0,0,nullptr,1,&memory,0,nullptr);
++}
++void dispatch(VkCommandBuffer command,const Kernel& program,const VkDescriptorBufferInfo* buffers,uint32_t count,const void* push,uint32_t bytes) {
++    const auto set=descriptor_set(program.descriptors);
++    std::array<VkWriteDescriptorSet,2> writes{};
++    for(uint32_t index=0;index<count;++index){auto& write=writes[index];write.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
++        write.dstSet=set;write.dstBinding=index;write.descriptorCount=1;write.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;write.pBufferInfo=buffers+index;}
++    p_vkUpdateDescriptorSets(vk_device(),count,writes.data(),0,nullptr);
++    p_vkCmdBindPipeline(command,VK_PIPELINE_BIND_POINT_COMPUTE,program.pipeline);
++    p_vkCmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_COMPUTE,program.layout,0,1,&set,0,nullptr);
++    p_vkCmdPushConstants(command,program.layout,VK_SHADER_STAGE_COMPUTE_BIT,0,bytes,push);
++    p_vkCmdDispatch(command,1,1,1);
++}
++void resolve(VkCommandBuffer command) {
++    auto& slot=context(command);
++    if(!slot.pending_count)return;
++    draw_end_rendering(command,2);
++    const uint32_t count=slot.pending_count;
++    const auto results=upload_alloc(uint64_t(count)*8,256);
++    p_vkCmdCopyQueryPoolResults(command,slot.samples,slot.pending_first,count,results.buffer,results.offset,8,VK_QUERY_RESULT_64_BIT|VK_QUERY_RESULT_WAIT_BIT);
++    const VkDescriptorBufferInfo data{results.buffer,results.offset,uint64_t(count)*8},total{counters.total,0,8};
++    barrier(command,data,VK_ACCESS_TRANSFER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
++    barrier(command,total,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT);
++    const VkDescriptorBufferInfo bindings[]={total,data};dispatch(command,counters.sum,bindings,2,&count,sizeof count);
++    barrier(command,total,VK_ACCESS_SHADER_WRITE_BIT,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
++    slot.pending_count=0;
++}
++uint8_t* target(uint64_t address) {
++    if(!address||(address&15))return nullptr;
++    uint64_t offset=0;auto* memory=pool_at_gpu(address,&offset);
++    if(!memory||offset>memory->size||16>memory->size-offset)return nullptr;
++    const auto host=pool_host(*memory,offset);
++    return host&&native_guest_span(host,16,3)?reinterpret_cast<uint8_t*>(host):nullptr;
++}
++void destroy_kernel(Kernel& program) {
++    if(program.pipeline)p_vkDestroyPipeline(vk_device(),program.pipeline,nullptr);
++    if(program.layout)p_vkDestroyPipelineLayout(vk_device(),program.layout,nullptr);
++    if(program.descriptors)p_vkDestroyDescriptorSetLayout(vk_device(),program.descriptors,nullptr);
++    program={};
++}
++}
++bool native_counter_target_valid(uint64_t address) {return target(address)!=nullptr;}
++void native_counter_frame_begin(uint32_t index,VkCommandBuffer command) {
++    if(index>=slots_count||counters.active!=invalid_query)throw std::runtime_error("native counter frame lifecycle mismatch");
++    counters.slot=index;counters.command=command;
++    auto& slot=counters.slots[index];
++    if(slot.pending_count)throw std::runtime_error("native counter results escaped their command buffer");
++    slot.next_sample=slot.next_timestamp=0;slot.reports=false;
++    if(slot.samples)p_vkCmdResetQueryPool(command,slot.samples,0,query_count);
++    if(slot.timestamps)p_vkCmdResetQueryPool(command,slot.timestamps,0,query_count);
++    if(counters.enabled)pool(command,slot.samples,VK_QUERY_TYPE_OCCLUSION);
++}
++void native_counter_part_begin(VkCommandBuffer command) {
++    if(counters.active!=invalid_query)throw std::runtime_error("native counter query crossed command buffers");
++    counters.command=command;
++}
++void native_counter_part_end(VkCommandBuffer command) {
++    if(counters.command!=command)return;
++    if(counters.active!=invalid_query)throw std::runtime_error("native counter draw query was not ended");
++    resolve(command);
++}
++bool native_counter_requires_wait() {return counters.slot<slots_count&&counters.slots[counters.slot].reports;}
++void native_counter_reset(VkCommandBuffer command,uint32_t type) {
++    if(type!=1)throw std::invalid_argument("native counter reset supports samples-passed only");
++    initialize();auto& slot=context(command);
++    if(!vk_features().occlusionQueryPrecise||zero_draws_on())throw std::runtime_error("native samples require precise occlusion and no overlapping diagnostic query");
++    draw_end_rendering(command,2);pool(command,slot.samples,VK_QUERY_TYPE_OCCLUSION);
++    if(counters.active!=invalid_query)throw std::runtime_error("native counter reset inside a draw");
++    slot.pending_count=0;
++    const VkDescriptorBufferInfo total{counters.total,0,8};
++    barrier(command,total,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT,VK_ACCESS_TRANSFER_WRITE_BIT);
++    p_vkCmdFillBuffer(command,counters.total,0,8,0);
++    barrier(command,total,VK_ACCESS_TRANSFER_WRITE_BIT,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT);
++    counters.enabled=true;
++}
++uint32_t native_counter_draw_begin(VkCommandBuffer command) {
++    if(!counters.enabled)return invalid_query;
++    auto& slot=context(command);
++    if(!pass_open()||!slot.samples||counters.active!=invalid_query||slot.next_sample>=query_count||zero_draws_on())
++        throw std::runtime_error("native occlusion query scope/capacity mismatch");
++    counters.active=slot.next_sample++;
++    p_vkCmdBeginQuery(command,slot.samples,counters.active,VK_QUERY_CONTROL_PRECISE_BIT);
++    return counters.active;
++}
++void native_counter_draw_end(VkCommandBuffer command,uint32_t query) {
++    if(query==invalid_query)return;
++    auto& slot=context(command);
++    if(counters.active!=query||!pass_open())throw std::runtime_error("native occlusion query end mismatch");
++    p_vkCmdEndQuery(command,slot.samples,query);
++    if(!slot.pending_count)slot.pending_first=query;
++    if(query!=slot.pending_first+slot.pending_count)throw std::runtime_error("native query results are not contiguous");
++    ++slot.pending_count;counters.active=invalid_query;
++}
++void native_counter_report(VkCommandBuffer command,uint32_t type,uint64_t address) {
++    if(!native_counter_report_type(type)||replay::written_separate())throw std::invalid_argument("unsupported native counter report profile");
++    auto* destination=target(address);if(!destination)throw std::invalid_argument("native counter result requires a live aligned writable range");
++    initialize();auto& slot=context(command);
++    draw_end_rendering(command,2);
++    if(type==1){if(!counters.enabled)throw std::runtime_error("native samples report requires an initial reset");resolve(command);}
++    pool(command,slot.timestamps,VK_QUERY_TYPE_TIMESTAMP);
++    if(slot.next_timestamp>=query_count)throw std::runtime_error("native timestamp query capacity exceeded");
++    const auto result=replay::written_bind(command,destination,16,16);
++    const VkDescriptorBufferInfo record{result.buffer,result.offset,16};
++    if(type==1){const VkDescriptorBufferInfo total{counters.total,0,8};barrier(command,total,VK_ACCESS_MEMORY_WRITE_BIT,VK_ACCESS_TRANSFER_READ_BIT);
++        const VkBufferCopy copy{0,result.offset,8};p_vkCmdCopyBuffer(command,counters.total,result.buffer,1,&copy);}
++    else p_vkCmdFillBuffer(command,result.buffer,result.offset,8,0);
++    const auto query=slot.next_timestamp++;
++    p_vkCmdWriteTimestamp(command,type==16?VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT:VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,slot.timestamps,query);
++    p_vkCmdCopyQueryPoolResults(command,slot.timestamps,query,1,result.buffer,result.offset+8,8,VK_QUERY_RESULT_64_BIT|VK_QUERY_RESULT_WAIT_BIT);
++    barrier(command,record,VK_ACCESS_TRANSFER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
++    const uint64_t ratio[]={counters.ratio.numerator,counters.ratio.denominator};dispatch(command,counters.clock,&record,1,ratio,sizeof ratio);
++    barrier(command,record,VK_ACCESS_SHADER_WRITE_BIT,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
++    slot.reports=true;
++    static uint64_t types=0;if(!(types&(1ull<<type))){types|=1ull<<type;log("native GPU counter report type=%u",type);}
++}
++uint64_t native_counter_current_ns() {
++    std::lock_guard lock(gpu_lock());initialize();
++    if(!counters.current_pool){
++        VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};pool_info.flags=VK_COMMAND_POOL_CREATE_TRANSIENT_BIT|VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;pool_info.queueFamilyIndex=vk_queue_family();
++        require(p_vkCreateCommandPool(vk_device(),&pool_info,nullptr,&counters.current_pool),"current clock command pool");
++        VkCommandBufferAllocateInfo allocation{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};allocation.commandPool=counters.current_pool;allocation.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY;allocation.commandBufferCount=1;
++        require(p_vkAllocateCommandBuffers(vk_device(),&allocation,&counters.current_command),"current clock command");
++        VkQueryPoolCreateInfo query{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};query.queryType=VK_QUERY_TYPE_TIMESTAMP;query.queryCount=1;
++        require(p_vkCreateQueryPool(vk_device(),&query,nullptr,&counters.current_query),"current clock query");
++        VkFenceCreateInfo fence{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};require(p_vkCreateFence(vk_device(),&fence,nullptr,&counters.current_fence),"current clock fence");
++    }
++    require(p_vkResetCommandPool(vk_device(),counters.current_pool,0),"current clock reset");
++    VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};begin.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
++    require(p_vkBeginCommandBuffer(counters.current_command,&begin),"current clock begin");
++    p_vkCmdResetQueryPool(counters.current_command,counters.current_query,0,1);
++    p_vkCmdWriteTimestamp(counters.current_command,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,counters.current_query,0);
++    require(p_vkEndCommandBuffer(counters.current_command),"current clock end");
++    require(p_vkResetFences(vk_device(),1,&counters.current_fence),"current clock fence reset");
++    VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};submit.commandBufferCount=1;submit.pCommandBuffers=&counters.current_command;
++    require(p_vkQueueSubmit(vk_queue(),1,&submit,counters.current_fence),"current clock submit");
++    require(p_vkWaitForFences(vk_device(),1,&counters.current_fence,VK_TRUE,5000000000ull),"current clock wait");
++    uint64_t ticks=0;require(p_vkGetQueryPoolResults(vk_device(),counters.current_query,0,1,sizeof ticks,&ticks,sizeof ticks,VK_QUERY_RESULT_64_BIT),"current clock result");
++    return native_counter_timestamp_ns(native_gpu_counter_ticks(ticks,counters.ratio));
++}
++void native_counter_release() {
++    if(!vk_device())return;
++    for(auto& slot:counters.slots){if(slot.samples)p_vkDestroyQueryPool(vk_device(),slot.samples,nullptr);if(slot.timestamps)p_vkDestroyQueryPool(vk_device(),slot.timestamps,nullptr);}
++    if(counters.current_fence)p_vkDestroyFence(vk_device(),counters.current_fence,nullptr);
++    if(counters.current_query)p_vkDestroyQueryPool(vk_device(),counters.current_query,nullptr);
++    if(counters.current_pool)p_vkDestroyCommandPool(vk_device(),counters.current_pool,nullptr);
++    destroy_kernel(counters.sum);destroy_kernel(counters.clock);
++    if(counters.total)p_vkDestroyBuffer(vk_device(),counters.total,nullptr);
++    if(counters.memory)p_vkFreeMemory(vk_device(),counters.memory,nullptr);
++    counters={};
++}
++}
+--- /dev/null
++++ b/runtime/src/nvn/native_counters.h
+@@ -0,0 +1,18 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn_vk.h"
++#include "native_counter_clock.h"
++
++namespace nx::nvn {
++void native_counter_frame_begin(uint32_t slot,VkCommandBuffer command);
++void native_counter_part_begin(VkCommandBuffer command);
++void native_counter_part_end(VkCommandBuffer command);
++bool native_counter_requires_wait();
++bool native_counter_target_valid(uint64_t address);
++void native_counter_reset(VkCommandBuffer command,uint32_t type);
++void native_counter_report(VkCommandBuffer command,uint32_t type,uint64_t address);
++uint32_t native_counter_draw_begin(VkCommandBuffer command);
++void native_counter_draw_end(VkCommandBuffer command,uint32_t query);
++uint64_t native_counter_current_ns();
++void native_counter_release();
++}
+--- /dev/null
 +++ b/runtime/src/nvn/native_debug_buffer_snapshot.h
 @@ -0,0 +1,8 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -5693,7 +6075,7 @@
      // The CPU wrote the texture's memory (nvnMemoryPoolFlushMappedRange over it, e.g. a glyph cache): upload again.
      std::atomic<bool> dirty{false};
      // What of the memory the CPU wrote, as bytes from `memory` ([lo, hi); UINT64_MAX / 0: nothing known yet). Merged by
-@@ -305,6 +308,9 @@
+@@ -305,16 +308,20 @@
  // objects (blend, depth/stencil, vertex layouts, ...) are decoded when recorded, through the SDK driver's getters,
  // and kept in the list's blobs: the game may reuse its structs right after the call.
  
@@ -5703,7 +6085,11 @@
  struct Cmd {
      enum Op : uint8_t {
          SetRenderTargets, ClearColor, ClearDepthStencil, SetViewport, SetScissor, CallList,
-@@ -315,6 +321,7 @@
+         SetDepthRange, BindProgram, BindUniformBuffer, BindStorageBuffer, BindTexture, BindVertexBuffer,
+         BindVertexAttribs, BindVertexStreams, BindBlendState, BindColorState, BindChannelMaskState,
+         BindDepthStencilState, BindPolygonState, SetBlendColor, UpdateUniformBuffer, SetTexturePool, SetSamplerPool,
+-        DrawArrays, DrawElements, ReportCounter, SetRasterizerDiscard, SetRenderEnable, CopyTextureToTexture,
++        DrawArrays, DrawElements, ReportCounter, ResetCounter, SetRasterizerDiscard, SetRenderEnable, CopyTextureToTexture,
          BindImage, DispatchCompute,
          SetStencilRef, SetStencilMask, SetStencilValueMask, SetPolygonOffsetClamp, SetDepthBounds, SetDepthClamp,
          BindDeferred,  // mask: 0 textures, 1 images, 2 uniform buffers, 3 storage buffers; a[0] the guest array
@@ -6043,7 +6429,13 @@
  #include "platform.h"
  
  namespace nx::nvn {
-@@ -498,7 +499,44 @@
+@@ -493,12 +494,50 @@
+     r.imageExtent = {snap.w, snap.h, 1};
+     p_vkCmdCopyImageToBuffer(cb, snap.s.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, snap.s.buffer, 1, &r);
+     if (back != VK_IMAGE_LAYOUT_UNDEFINED) transition(cb, img, back);
++    if (raw_early) snap.raw_format = VK_FORMAT_R8G8B8A8_UNORM;
+     g_snaps.push_back(snap);
+ }
  
  bool debug_snapshots_pending() { return !g_snaps.empty(); }
  
@@ -6088,7 +6480,7 @@
      for (Snap& snap : g_snaps) {
          void* p = nullptr;
          if (snap.raw_format == VK_FORMAT_R16G16B16A16_SFLOAT &&
-@@ -514,6 +552,18 @@
+@@ -514,6 +553,18 @@
              }
              log("snapshot %llx: %ux%u rgba16f, %llu NaN, %llu Inf of %llu values, largest finite %g", (unsigned long long)snap.draw, snap.w,
                  snap.h, (unsigned long long)nan, (unsigned long long)inf, (unsigned long long)n, big);
@@ -6109,7 +6501,7 @@
              char name[64];
 --- a/runtime/src/nvn/nvn_device.cpp
 +++ b/runtime/src/nvn/nvn_device.cpp
-@@ -1,129 +1,80 @@
+@@ -1,129 +1,81 @@
 -// NVN device (docs/NVN.md, phases N2-N3). Values come from what the game checks and from the SDK's own NVN driver
 -// (recompiled in sdk; NX_NVN_REAL=1 records where each of its procs lives, see nvn_trace.cpp).
 -#include <map>
@@ -6118,6 +6510,7 @@
 +#include "nvn_vk.h"
 +#include "native_device.h"
 +#include "native_raster_policy.h"
++#include "native_counters.h"
 +#define WIN32_LEAN_AND_MEAN
 +#define NOMINMAX
 +#include <windows.h>
@@ -6150,7 +6543,7 @@
 +}
 +void finalize_native_device(uint64_t key){
 + if(!native_device_alive(key))fatal("native device finalize requires live identity");worker_finish();
-+ {std::lock_guard guard(gpu_lock());if(!vk::p_vkDeviceWaitIdle||vk::p_vkDeviceWaitIdle(vk_device())!=VK_SUCCESS)fatal("native device drain failed");}
++ {std::lock_guard guard(gpu_lock());if(!vk::p_vkDeviceWaitIdle||vk::p_vkDeviceWaitIdle(vk_device())!=VK_SUCCESS)fatal("native device drain failed");native_counter_release();}
 + auto* device=get<Device>(key);if(!device)fatal("native device identity lost while draining");device->ready.store(false,std::memory_order_release);current_device.store(0,std::memory_order_release);destroy(key);log("nvn: native device finalized");
 +}
 +void set_native_origin(uint64_t key,uint32_t mode){auto* device=get<Device>(key);if(!device||!device->ready.load()||mode!=1)throw std::invalid_argument("native raster supports a live device and upper-left origin only");device->origin.store(mode,std::memory_order_release);log("nvn: native window origin mode=%u",mode);}
@@ -6320,7 +6713,7 @@
 +NX_HLE("nvnDeviceGetWindowOriginMode",nx::nvn::DeviceGetOrigin);
 --- a/runtime/src/nvn/nvn_draw.cpp
 +++ b/runtime/src/nvn/nvn_draw.cpp
-@@ -11,11 +11,15 @@
+@@ -11,11 +11,16 @@
  #include <cstring>
  #include <set>
  
@@ -6330,13 +6723,14 @@
  #include "nvn_ultrawide.h"
  #include "platform.h"
 +#include "native_bc3_block_view.h"
++#include "native_counters.h"
  
  namespace nx::nvn {
 +VkPhysicalDevice vk_physical();
  
  using namespace nx::vk;
  
-@@ -150,8 +154,18 @@
+@@ -150,8 +155,18 @@
          colors[k].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
          colors[k].loadOp = fresh >> k & 1 ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
          colors[k].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -6357,7 +6751,7 @@
      }
      GpuImage* dimg = t.depth ? image_of(t.depth) : nullptr;
      g_pass_images[8] = dimg;
-@@ -207,20 +221,27 @@
+@@ -207,20 +222,27 @@
      if (shaders)
          for (const ShaderInfo* s : *shaders)
              if (s->stage == ShaderStage::Compute) cs = s;
@@ -6388,7 +6782,7 @@
      draw_end_rendering(cb, 2);
      gather_textures(stages);
      build_sets(cb, stages, layout);
-@@ -256,6 +277,7 @@
+@@ -256,6 +278,7 @@
  }
  
  bool draw(VkCommandBuffer cb, const Targets& t, uint32_t mode, bool indexed, const Cmd& c) {
@@ -6396,6 +6790,57 @@
      g_stats.total++;
      if (g_state.rasterizer_discard || !g_state.render_enable) return false;  // nothing reaches the targets
      const auto* shaders = program_shaders(g_state.program);
+@@ -502,13 +525,17 @@
+             p_vkCmdBindIndexBuffer(cb, in.index.buffer, in.index.offset, in.index_type);
+             g_bound.has_index = true, g_bound.index = in.index, g_bound.index_type = in.index_type, g_state_set++;
+         }
++        const auto counter=native_counter_draw_begin(cb);
+         bool q = zero_draws_on() && zero_draws_begin(cb, vs->hash + " " + (fs ? fs->hash : std::string("-")));
+         p_vkCmdDrawIndexed(cb, count, uint32_t(std::max(1, c.i[3])), 0, c.i[1], uint32_t(c.i[2]));
+         if (q) zero_draws_end(cb);
++        native_counter_draw_end(cb,counter);
+     } else {
++        const auto counter=native_counter_draw_begin(cb);
+         bool q = zero_draws_on() && zero_draws_begin(cb, vs->hash + " " + (fs ? fs->hash : std::string("-")));
+         p_vkCmdDraw(cb, uint32_t(c.i[1]), uint32_t(std::max(1, c.i[3])), uint32_t(c.i[0]), uint32_t(c.i[2]));
+         if (q) zero_draws_end(cb);
++        native_counter_draw_end(cb,counter);
+     }
+     g_stats.done++;
+     g_pass_written |= ((1u << t.color_count) - 1) | (g_state.depth.depth_write || g_state.depth.stencil_test ? 1u << 8 : 0);
+--- a/runtime/src/nvn/nvn_draw_state.cpp
++++ b/runtime/src/nvn/nvn_draw_state.cpp
+@@ -6,6 +6,7 @@
+ 
+ #include "nvn_draw_state.h"
+ #include "platform.h"
++#include "native_counters.h"
+ 
+ namespace nx::nvn {
+ 
+@@ -118,20 +119,8 @@
+                 }
+             break;
+         }
+-        case Cmd::ReportCounter: {  // {value, timestamp}: the work before it is done when the replay gets here
+-            static uint64_t reports = 0, types_seen = 0;
+-            if (c.n < 64 && !(types_seen >> c.n & 1)) types_seen |= 1ull << c.n, log("nvn: first counter report of type %u", c.n);
+-            if (uint8_t* p = const_cast<uint8_t*>(guest_bytes(c.a[0]))) {
+-                // NX_FAKE_GPU_TIME=1: every report of a submit carries the submit's start (a GPU with no cost):
+-                // the game picks its present interval from the timings it measures (bisecting its 30 fps mode).
+-                static const bool fake = std::getenv("NX_FAKE_GPU_TIME") != nullptr;
+-                uint64_t v[2] = {++reports, fake ? submit_start_ns() : plat::monotonic_ns()};
+-                std::memcpy(p, v, sizeof v);
+-                dedup_invalidate(p, sizeof v);
+-                written_cpu_write(p, sizeof v);
+-            }
+-            break;
+-        }
++        case Cmd::ReportCounter: native_counter_report(cb,c.n,c.a[0]);break;
++        case Cmd::ResetCounter: native_counter_reset(cb,c.n);break;
+         case Cmd::DrawArrays: draw_call(cb, targets, c.n, false, c); break;
+         case Cmd::DrawElements: draw_call(cb, targets, c.n, true, c); break;
+         default: raster_command(c); break;
 --- a/runtime/src/nvn/nvn_draw_state.h
 +++ b/runtime/src/nvn/nvn_draw_state.h
 @@ -33,6 +33,7 @@
@@ -6437,6 +6882,48 @@
      /* 0x3d */ {VK_FORMAT_A2B10G10R10_UNORM_PACK32, 0}, {VK_FORMAT_A2B10G10R10_UINT_PACK32, 0},
      // 0x3f R11G11B10F becomes RGBA16F: Maxwell stores negative/NaN results of blending as 0 in this unsigned float
      // format, Metal writes Inf/NaN, and the NaN spread through every later pass (bloom, the dialog's frosted-glass
+--- a/runtime/src/nvn/nvn_frames.cpp
++++ b/runtime/src/nvn/nvn_frames.cpp
+@@ -40,6 +40,7 @@
+ #include <vector>
+ 
+ #include "nvn_vk.h"
++#include "native_counters.h"
+ #include "platform.h"
+ 
+ namespace nx::nvn {
+@@ -284,10 +285,12 @@
+ // buffer: the next pass on their targets takes them as load operations), queues it, and begins the next one.
+ VkCommandBuffer next_part(Slot& s) {
+     pass_end_only(s.cbs[s.part], 0);
++    native_counter_part_end(s.cbs[s.part]);
+     gpu_busy_part_end(uint32_t(&s - g_slots), s.part, s.cbs[s.part]);
+     if (s.ok && submit_part(s.cbs[s.part], s.fences[s.part], VK_NULL_HANDLE, VK_NULL_HANDLE)) s.queued |= 1u << s.part;
+     s.part++;
+     s.ok = begin_part(s.cbs[s.part]);
++    if (s.ok) native_counter_part_begin(s.cbs[s.part]);
+     if (s.ok) gpu_busy_part_begin(uint32_t(&s - g_slots), s.part, s.cbs[s.part]);
+     if (!s.ok) log("nvn/vk: a part of a submit could not begin: it is lost");
+     g_chunk_from = UINT64_MAX;
+@@ -383,6 +386,7 @@
+         return VK_NULL_HANDLE;
+     }
+     g_current = &s;
++    native_counter_frame_begin(uint32_t(&s-g_slots),s.cbs[0]);
+     gpu_busy_part_begin(uint32_t(&s - g_slots), 0, s.cbs[0]);  // NX_GPU_PROFILE=3
+     return s.cbs[0];
+ }
+@@ -450,6 +454,10 @@
+ void frame_submit(VkSemaphore wait, VkSemaphore signal, std::vector<WriteBack> write_backs, bool wait_done) {
+     if (!g_current) return;
+     Slot& s = *g_current;
++    if (s.ok) native_counter_part_end(s.cbs[s.part]);
++    // Reports may be in the late graphics part, beyond the compute split.
++    // Retire their CPU-visible written ranges only after the whole submission.
++    wait_done = wait_done || native_counter_requires_wait();
+     g_current = nullptr;
+     if (pipelined() && s.replay) {
+         g_stats.submits++;
 --- a/runtime/src/nvn/nvn_image.cpp
 +++ b/runtime/src/nvn/nvn_image.cpp
 @@ -6,6 +6,7 @@
@@ -7454,7 +7941,7 @@
      // The written ranges first (nvn_written.cpp): two bindings of one dispatch that meet get one copy, and bindings
      // that read what the dispatch writes see it, as on the GPU.
      for (const ShaderInfo* s : shaders)
-@@ -522,6 +556,30 @@
+@@ -522,6 +556,33 @@
                  }
                  default: info = buffer_of(cb, nullptr, 0x1000, 16, false, false); break;
              }
@@ -7464,15 +7951,18 @@
 +                const char* value = std::getenv("NX_DUMP_FS_UNIFORMS");
 +                return std::string(value ? value : "");
 +            }();
-+            if (!selection.empty() && s->stage == ShaderStage::Fragment &&
-+                selection.find(s->hash) != std::string::npos &&
++            const bool selected = !selection.empty() && (selection.find(s->hash) != std::string::npos ||
++                (s->stage == ShaderStage::Vertex && std::any_of(shaders.begin(), shaders.end(), [&](const ShaderInfo* stage) {
++                    return stage->stage == ShaderStage::Fragment && selection.find(stage->hash) != std::string::npos;
++                })));
++            if (selected &&
 +                b.nvn.source == NvnSource::UniformBlock && b.nvn.index >= 0 && b.nvn.index < 18) {
 +                static std::map<std::string, std::vector<uint64_t>> captured_draws;
 +                static uint64_t sequence = 0;
 +                auto& draws = captured_draws[s->hash];
 +                if (draws.size() < 2 && std::find(draws.begin(), draws.end(), g_stats.done) == draws.end())
 +                    draws.push_back(g_stats.done);
-+                if (sequence < 32 && std::find(draws.begin(), draws.end(), g_stats.done) != draws.end()) {
++                if (sequence < 64 && std::find(draws.begin(), draws.end(), g_stats.done) != draws.end()) {
 +                    const auto tag = 0xd000000000000000ull | ++sequence;
 +                    const auto& bound = g_state.uniforms[st][b.nvn.index];
 +                    const bool captured = debug_buffer_snapshot(cb, info, tag);
@@ -7485,7 +7975,7 @@
              VkDescriptorType type = VkDescriptorType(b.type);
              if (b.set == 0 && b.binding < 64 && layout.dynamic >> b.binding & 1) {  // the offset goes with the bind
                  d.dynamic |= 1ull << b.binding, d.dynamic_offset[b.binding] = uint32_t(info.offset);
-@@ -543,7 +601,7 @@
+@@ -543,7 +604,7 @@
          const ResolvedTexture r = k < t.resolved.size() ? t.resolved[k] : ResolvedTexture{};
          VkDescriptorImageInfo ii{};
          ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -7494,7 +7984,7 @@
                                   : dummy_view(cb, b->image);
          ii.sampler = r.vk_sampler ? r.vk_sampler : sampler_for(r.sampler, b->image.depth);
          images.push_back(ii);
-@@ -657,6 +715,22 @@
+@@ -657,6 +718,22 @@
              else
                  texture = 0;
          }
@@ -7621,6 +8111,61 @@
      if (g_trace)
          log("nvn: shader %s %s: %zu bindings, %zu inputs, %zu outputs, c[1] %u bytes", hash.c_str(),
              stage_name(info->stage), info->refl.bindings.size(), info->refl.inputs.size(), info->refl.outputs.size(),
+--- a/runtime/src/nvn/nvn_state.cpp
++++ b/runtime/src/nvn/nvn_state.cpp
+@@ -20,6 +20,9 @@
+ #include <vector>
+ 
+ #include "nvn.h"
++#include "native_counters.h"
++#include "native_device.h"
++#include "native_guest_span.h"
+ #include "nvn_shaders.h"
+ #include "platform.h"
+ 
+@@ -276,19 +279,27 @@
+ 
+ void ignore(CPU&) {}
+ 
+-// ReportCounter(cmd, NVNcounterType, NVNbufferAddress): the GPU writes {u64 value, u64 timestamp} there when it gets
+-// to this point. Engines read these to know how far the GPU is (Wonder skips drawing the scene when they never
+-// arrive), so the replay writes them.
+ void ReportCounter(CPU& c) {
++    if(!command_buffer_recording_thread(c.x[0])||!native_counter_report_type(uint32_t(c.x[1]))||!native_counter_target_valid(c.x[2]))
++        throw std::invalid_argument("native counter report requires recording and a supported writable target");
+     Cmd cmd{Cmd::ReportCounter};
+     cmd.n = uint32_t(c.x[1]);
+     cmd.a[0] = c.x[2];
+     record(c.x[0], cmd);
+ }
+-
+-// Our GPU timestamps are host nanoseconds: the conversions are identities.
+-void GetTimestampInNanoseconds(CPU& c) { c.x[0] = c.x[1] ? ld<uint64_t>(c.x[1] + 8) : 0; }  // (device, counterData*)
+-void GetCurrentTimestampInNanoseconds(CPU& c) { c.x[0] = plat::monotonic_ns(); }
++void ResetCounter(CPU& c) {
++    if(!command_buffer_recording_thread(c.x[0])||c.x[1]!=1)throw std::invalid_argument("native sample reset requires active recording");
++    Cmd cmd{Cmd::ResetCounter};cmd.n=uint32_t(c.x[1]);record(c.x[0],cmd);
++}
++
++void GetTimestampInNanoseconds(CPU& c) {
++    if(!native_device_alive(c.x[0])||!native_guest_span(c.x[1],16,1))throw std::invalid_argument("native counter timestamp requires a live device and readable record");
++    c.x[0]=native_counter_timestamp_ns(ld<uint64_t>(c.x[1]+8));
++}
++void GetCurrentTimestampInNanoseconds(CPU& c) {
++    if(!native_device_alive(c.x[0]))throw std::invalid_argument("native GPU clock requires a live device");
++    c.x[0]=native_counter_current_ns();
++}
+ 
+ 
+ }  // namespace
+@@ -320,6 +331,7 @@
+ NX_HLE("nvnCommandBufferDrawElementsInstanced", DrawElementsInstanced);
+ NX_HLE("nvnCommandBufferBarrier", ignore);
+ NX_HLE("nvnCommandBufferReportCounter", ReportCounter);
++NX_HLE("nvnCommandBufferResetCounter", ResetCounter);
+ NX_HLE("nvnDeviceGetTimestampInNanoseconds", GetTimestampInNanoseconds);
+ NX_HLE("nvnDeviceGetCurrentTimestampInNanoseconds", GetCurrentTimestampInNanoseconds);  // every replayed command is serialized for now
+ 
 --- a/runtime/src/nvn/nvn_texture_layout.cpp
 +++ b/runtime/src/nvn/nvn_texture_layout.cpp
 @@ -2,8 +2,7 @@
@@ -7759,15 +8304,17 @@
  void upload_texture(VkCommandBuffer cb, const Texture& t, GpuImage& img, uint64_t lo, uint64_t hi) {
 --- a/runtime/src/nvn/nvn_vk.cpp
 +++ b/runtime/src/nvn/nvn_vk.cpp
-@@ -21,6 +21,7 @@
+@@ -20,7 +20,9 @@
+ #include <vector>
  
  #include "nvn_vk.h"
++#include "native_counters.h"
  #include "platform.h"
 +#include "vi_state.h"
  
  #include <nx/game.h>
  
-@@ -396,6 +397,7 @@
+@@ -396,6 +398,7 @@
  }  // namespace
  
  std::recursive_mutex& gpu_lock() { return g_gpu; }
@@ -7775,7 +8322,26 @@
  VkDevice vk_device() { return g_device; }
  VkPhysicalDevice vk_physical() { return g_physical; }
  VkQueue vk_queue() { return g_queue; }
-@@ -638,6 +640,7 @@
+@@ -479,7 +482,9 @@
+     p_vkResetCommandBuffer(g_cb, 0);
+     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+-    return check(p_vkBeginCommandBuffer(g_cb, &bi), "vkBeginCommandBuffer");
++    const bool ready=check(p_vkBeginCommandBuffer(g_cb, &bi), "vkBeginCommandBuffer");
++    if(ready)native_counter_frame_begin(0,g_cb);
++    return ready;
+ }
+ 
+ // Where the submitting thread's time goes, logged with the draw stats, per presented frame: the replay (recording
+@@ -491,6 +496,7 @@
+ 
+ void end_and_wait(VkSemaphore wait, VkSemaphore signal) {
+     uint64_t t0 = plat::monotonic_ns();
++    native_counter_part_end(g_cb);
+     p_vkEndCommandBuffer(g_cb);
+     VkPipelineStageFlags stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+@@ -638,6 +644,7 @@
  }
  
  void gpu_present(uint64_t texture, const int32_t* crop) {
@@ -9717,13 +10283,14 @@
 + auto wrong=main;wrong[0]=0x68;bool rejected=false;try{native_video::avc_info(wrong);}catch(const std::invalid_argument&){rejected=true;}check(rejected);std::vector<uint8_t> annex{0,0,0,1};annex.insert(annex.end(),main.begin(),main.end());annex.insert(annex.end(),{0,0,1,0x68,0xaa});auto nals=native_video::avc_nals(annex);check(nals.size()==2&&nals[0].size()==main.size()&&nals[1][0]==0x68);check(native_video::avc_nals(std::span<const uint8_t>{}).empty());std::printf("AVC SPS metadata checks=%u PASS\n",checks);}
 --- /dev/null
 +++ b/tests/native_bc3_block_probe.h
-@@ -0,0 +1,102 @@
+@@ -0,0 +1,104 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include "nvn/nvn_draw_state.h"
 +#include <cstring>
 +#include <iostream>
 +#include "native_bc3_sample_probe.h"
++#include "native_bc3_snapshot_probe.h"
 +
 +template<class Check> void native_bc3_block_probe(Check check) {
 +    using namespace nx;
@@ -9818,6 +10385,7 @@
 +        check(offset == 480);
 +    }
 +    native_bc3_sample_probe(key, check);
++    native_bc3_snapshot_probe(key, check);
 +    destroy(key);
 +}
 --- /dev/null
@@ -9865,6 +10433,38 @@
 + VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=output.buffer;barrier.offset=output.offset;barrier.size=32;vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
 + float actual[8];std::memcpy(actual,output.ptr,sizeof actual);const float expected[8]={1,0,0,1,1,1,0,1};for(unsigned n=0;n<8;++n)check(std::isfinite(actual[n])&&std::fabs(actual[n]-expected[n])<1e-6f);
 + vk::p_vkDestroyPipeline(device,pipeline,nullptr);vk::p_vkDestroyShaderModule(device,module,nullptr);vk::p_vkDestroyPipelineLayout(device,pipeline_layout,nullptr);vk::p_vkDestroyDescriptorSetLayout(device,layout,nullptr);vk::p_vkDestroySampler(device,sampler,nullptr);
++}
+--- /dev/null
++++ b/tests/native_bc3_snapshot_probe.h
+@@ -0,0 +1,29 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/nvn_draw_state.h"
++#include "platform.h"
++#include <array>
++#include <cstdio>
++
++template<class Check> void native_bc3_snapshot_probe(uint64_t texture, Check check) {
++    using namespace nx;
++    using namespace nx::nvn;
++    std::lock_guard lock(gpu_lock());
++    auto* image = image_of(texture);
++    check(image && image->format == VK_FORMAT_BC3_UNORM_BLOCK);
++    const auto command = frame_begin(false);
++    g_snap_level = g_snap_layer = 0;
++    debug_snapshot(command, *image, 0xcfff0030);
++    frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, true);
++    debug_snapshots_write();
++    FILE* file = plat::fopen_utf8(plat::data_root() + "/frames/00000_cfff0030.raw", "rb");
++    check(file != nullptr);
++    std::array<uint32_t, 67> words{};
++    check(std::fread(words.data(), sizeof(uint32_t), words.size(), file) == words.size());
++    check(std::fgetc(file) == EOF);
++    check(std::fclose(file) == 0);
++    check(words[0] == 8 && words[1] == 8 && words[2] == VK_FORMAT_R8G8B8A8_UNORM);
++    bool exact = true;
++    for (unsigned index = 3; index < words.size(); ++index) exact &= words[index] == 0xff0000ff;
++    check(exact); // Native BC3 decode and blit preserve both red and alpha 255.
 +}
 --- /dev/null
 +++ b/tests/native_buffer_texture_probe.h
@@ -9919,8 +10519,176 @@
 +#include <iostream>
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
 --- /dev/null
++++ b/tests/native_counter_clock_test.cpp
+@@ -0,0 +1,55 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/native_counter_clock.h"
++#include <array>
++#include <iostream>
++#include <string>
++#include <limits>
++int main(){try{unsigned count=0;auto check=[&](bool value){++count;if(!value)throw std::runtime_error("native counter clock assertion "+std::to_string(count));};
++struct Case{uint32_t period;uint64_t ticks,numerator,denominator,expected;};
++constexpr Case cases[]={
++ {1065353216u,0ull,384ull,625ull,0ull},
++ {1065353216u,1ull,384ull,625ull,0ull},
++ {1065353216u,124ull,384ull,625ull,76ull},
++ {1065353216u,125ull,384ull,625ull,76ull},
++ {1065353216u,625ull,384ull,625ull,384ull},
++ {1065353216u,1000000ull,384ull,625ull,614400ull},
++ {1065353216u,18446744073709551615ull,384ull,625ull,11333679558887148512ull},
++ {1065353216u,9223372036854775931ull,384ull,625ull,5666839779443574332ull},
++ {1092616192u,0ull,768ull,125ull,0ull},
++ {1092616192u,1ull,768ull,125ull,6ull},
++ {1092616192u,124ull,768ull,125ull,761ull},
++ {1092616192u,125ull,768ull,125ull,768ull},
++ {1092616192u,625ull,768ull,125ull,3840ull},
++ {1092616192u,1000000ull,768ull,125ull,6144000ull},
++ {1092616192u,18446744073709551615ull,768ull,125ull,2656331146614175426ull},
++ {1092616192u,9223372036854775931ull,768ull,125ull,1328165573307088472ull},
++ {1056964608u,0ull,192ull,625ull,0ull},
++ {1056964608u,1ull,192ull,625ull,0ull},
++ {1056964608u,124ull,192ull,625ull,38ull},
++ {1056964608u,125ull,192ull,625ull,38ull},
++ {1056964608u,625ull,192ull,625ull,192ull},
++ {1056964608u,1000000ull,192ull,625ull,307200ull},
++ {1056964608u,18446744073709551615ull,192ull,625ull,5666839779443574256ull},
++ {1056964608u,9223372036854775931ull,192ull,625ull,2833419889721787166ull},
++ {1118218923u,0ull,32768001ull,640000ull,0ull},
++ {1118218923u,1ull,32768001ull,640000ull,51ull},
++ {1118218923u,124ull,32768001ull,640000ull,6348ull},
++ {1118218923u,125ull,32768001ull,640000ull,6400ull},
++ {1118218923u,625ull,32768001ull,640000ull,32000ull},
++ {1118218923u,1000000ull,32768001ull,640000ull,51200001ull},
++ {1118218923u,18446744073709551615ull,32768001ull,640000ull,3689377637779525443ull},
++ {1118218923u,9223372036854775931ull,32768001ull,640000ull,11068060855744544852ull},
++ {1108616685u,0ull,29127111ull,1280000ull,0ull},
++ {1108616685u,1ull,29127111ull,1280000ull,22ull},
++ {1108616685u,124ull,29127111ull,1280000ull,2821ull},
++ {1108616685u,125ull,29127111ull,1280000ull,2844ull},
++ {1108616685u,625ull,29127111ull,1280000ull,14222ull},
++ {1108616685u,1000000ull,29127111ull,1280000ull,22755555ull},
++ {1108616685u,18446744073709551615ull,29127111ull,1280000ull,13937538365522904799ull},
++ {1108616685u,9223372036854775931ull,29127111ull,1280000ull,6968769182761455210ull},
++};
++for(auto c:cases){auto ratio=nx::nvn::native_counter_ratio(std::bit_cast<float>(c.period));check(ratio.numerator==c.numerator&&ratio.denominator==c.denominator);check(nx::nvn::native_gpu_counter_ticks(c.ticks,ratio)==c.expected);}
++for(float period:{0.0f,-1.0f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN(),std::numeric_limits<float>::denorm_min()}){bool rejected=false;try{(void)nx::nvn::native_counter_ratio(period);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
++for(auto ratio:{nx::nvn::NativeCounterRatio{0,1},nx::nvn::NativeCounterRatio{1,0},nx::nvn::NativeCounterRatio{UINT64_MAX,1}}){bool rejected=false;try{(void)nx::nvn::native_gpu_counter_ticks(1,ratio);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
++check(nx::nvn::native_counter_timestamp_ns(384)==625);check(nx::nvn::native_counter_timestamp_ns(0)==0);check(nx::nvn::native_counter_report_type(0)&&nx::nvn::native_counter_report_type(1)&&nx::nvn::native_counter_report_type(16));check(!nx::nvn::native_counter_report_type(2)&&!nx::nvn::native_counter_report_type(17));
++std::cout<<"native counter clock checks="<<count<<" PASS\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/native_counter_probe.h
+@@ -0,0 +1,71 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/native_counters.h"
++#include "nvn/nvn_draw_state.h"
++#include <array>
++#include <cstring>
++
++template<class Check> void native_counter_probe(uint64_t device,Check check) {
++    using namespace nx;using namespace nx::nvn;
++    auto alloc=[](uint64_t size){auto address=kernel_alloc(size,4096);vm_set(address,size,kMemHeap,3);return address;};
++    const auto memory=alloc(4096),pool_key=alloc(256),command_key=alloc(256),control=alloc(4096),texture_key=alloc(256);
++    auto& backing=make<MemoryPool>(pool_key);backing.memory=memory;backing.size=4096;backing.gpu=gpu_alloc(4096);pool_register(&backing);
++    std::memset(reinterpret_cast<void*>(memory),0xcd,4096);
++    CPU api{};
++    auto call=[&](const char* name){auto function=hle_lookup(name);check(function!=nullptr);function(api);};
++    api.x[0]=command_key;api.x[1]=device;call("nvnCommandBufferInitialize");check(api.x[0]==1);
++    api.x[0]=command_key;api.x[1]=pool_key;api.x[2]=0;api.x[3]=4096;call("nvnCommandBufferAddCommandMemory");
++    api.x[0]=command_key;api.x[1]=control;api.x[2]=4096;call("nvnCommandBufferAddControlMemory");
++    auto begin=[&]{api.x[0]=command_key;call("nvnCommandBufferBeginRecording");};
++    auto end=[&]{api.x[0]=command_key;call("nvnCommandBufferEndRecording");auto result=command_list(api.x[0]);check(bool(result));return result;};
++    auto reset=[&](uint32_t type){api.x[0]=command_key;api.x[1]=type;call("nvnCommandBufferResetCounter");};
++    auto report=[&](uint32_t type,uint64_t address){api.x[0]=command_key;api.x[1]=type;api.x[2]=address;call("nvnCommandBufferReportCounter");};
++    bool rejected=false;try{reset(1);}catch(const std::invalid_argument&){rejected=true;}check(rejected);
++    begin();
++    for(unsigned variant=0;variant<4;++variant){rejected=false;try{
++        if(variant==0)reset(0);else if(variant==1)report(99,backing.gpu);else if(variant==2)report(0,backing.gpu+8);else report(0,backing.gpu+4096);
++    }catch(const std::invalid_argument&){rejected=true;}check(rejected);}
++    vm_set(memory,4096,kMemHeap,1);rejected=false;try{report(0,backing.gpu);}catch(const std::invalid_argument&){rejected=true;}check(rejected);vm_set(memory,4096,kMemHeap,3);
++    reset(1);auto reset_list=end();check(reset_list->cmds.size()==1&&reset_list->cmds[0].op==Cmd::ResetCounter);
++    auto report_list=[&](uint32_t type,uint32_t offset){begin();report(type,backing.gpu+offset);auto list=end();check(list->cmds.size()==1&&list->cmds[0].op==Cmd::ReportCounter);return list;};
++    const auto top=report_list(16,0),empty=report_list(1,16),first=report_list(1,32),second=report_list(1,48),repeat=report_list(1,64),reset_empty=report_list(1,80),bottom=report_list(0,96),last=report_list(1,112),across=report_list(1,128);
++    auto& texture=make<Texture>(texture_key);texture.target=1;texture.width=texture.height=4;texture.depth=texture.levels=1;texture.format=0x25;
++    Targets targets{};targets.color_count=1;targets.colors[0]=texture_key;
++    auto current=[&]{api.x[0]=device;call("nvnDeviceGetCurrentTimestampInNanoseconds");return api.x[0];};
++    auto timestamp=[&](uint32_t offset){api.x[0]=device;api.x[1]=memory+offset;call("nvnDeviceGetTimestampInNanoseconds");return api.x[0];};
++    auto execute=[&](VkCommandBuffer command,const std::shared_ptr<CmdList>& list){Targets ignored{};replay_list(command,ignored,*list,0);};
++    auto geometry=[&](VkCommandBuffer command){
++        pass_begin(command,targets);
++        const auto query=native_counter_draw_begin(command);
++        const float red[]={1,0,0,1};VkRect2D rectangle{{0,0},{4,4}};
++        check(mask_clear(command,targets,0,15,red,rectangle));
++        native_counter_draw_end(command,query);pass_mark_written(1);draw_end_rendering(command);
++    };
++    const auto before=current();
++    {
++        std::lock_guard lock(gpu_lock());
++        auto command=frame_begin(false);clears_begin_submit();replay::written_reset();replay::dedup_reset();
++        execute(command,top);execute(command,reset_list);execute(command,empty);
++        geometry(command);execute(command,first);geometry(command);execute(command,second);execute(command,repeat);
++        execute(command,reset_list);execute(command,reset_empty);geometry(command);execute(command,last);execute(command,bottom);
++        check(native_counter_requires_wait());
++        // A report after graphics must wait for its final part even in pipelined mode.
++        frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,draw_take_write_backs(),false);
++    }
++    for(auto [offset,value]:std::array<std::pair<uint32_t,uint64_t>,8>{{{0,0},{16,0},{32,16},{48,32},{64,32},{80,0},{96,0},{112,16}}})
++        check(ld<uint64_t>(memory+offset)==value);
++    const auto after=current(),first_time=timestamp(0),last_time=timestamp(96);
++    check(before<=first_time&&first_time<=last_time&&last_time<=after);
++    check(first_time>0&&timestamp(16)>=first_time&&timestamp(112)<=last_time);
++    {
++        std::lock_guard lock(gpu_lock());auto command=frame_begin(false);clears_begin_submit();replay::written_reset();replay::dedup_reset();
++        geometry(command); // No report: command-buffer retirement still accumulates these samples.
++        frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++    }
++    {
++        std::lock_guard lock(gpu_lock());auto command=frame_begin(false);replay::written_reset();replay::dedup_reset();execute(command,across);
++        frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,draw_take_write_backs(),false);
++    }
++    check(ld<uint64_t>(memory+128)==32);check(timestamp(128)>=last_time);
++    api.x[0]=command_key;call("nvnCommandBufferFinalize");api.x[0]=pool_key;call("nvnMemoryPoolFinalize");destroy(texture_key);
++}
+--- /dev/null
++++ b/tests/native_counter_sync_probe.h
+@@ -0,0 +1,33 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/native_counters.h"
++#include "nvn/native_device.h"
++#include <iostream>
++namespace nx::nvn {void gpu_submit(const std::vector<std::shared_ptr<CmdList>>&,std::shared_ptr<const DeferredValues>);}
++
++inline int native_counter_sync_probe() {
++    using namespace nx;using namespace nx::nvn;
++    if(_putenv_s("NX_PIPELINED","0"))throw std::runtime_error("sync counter fixture setup failed");
++    unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("sync counter assertion "+std::to_string(checks));};
++    check(find_symbol("nnMain")==0);memory_init();
++    auto alloc=[](uint64_t size){auto p=kernel_alloc(size,4096);vm_set(p,size,kMemHeap,3);return p;};
++    const auto device=alloc(7008);check(initialize_native_device(device,0));
++    const auto memory=alloc(4096),pool_key=alloc(256),command_key=alloc(256),control=alloc(4096);
++    auto& pool=make<MemoryPool>(pool_key);pool.memory=memory;pool.size=4096;pool.gpu=gpu_alloc(4096);pool_register(&pool);
++    std::memset(reinterpret_cast<void*>(memory),0xcd,4096);
++    CPU api{};auto call=[&](const char* name){auto fn=hle_lookup(name);check(fn!=nullptr);fn(api);};
++    api.x[0]=command_key;api.x[1]=device;call("nvnCommandBufferInitialize");check(api.x[0]==1);
++    api.x[0]=command_key;api.x[1]=pool_key;api.x[2]=0;api.x[3]=4096;call("nvnCommandBufferAddCommandMemory");
++    api.x[0]=command_key;api.x[1]=control;api.x[2]=4096;call("nvnCommandBufferAddControlMemory");
++    api.x[0]=command_key;call("nvnCommandBufferBeginRecording");
++    auto report=[&](uint32_t type,uint32_t offset){api.x[0]=command_key;api.x[1]=type;api.x[2]=pool.gpu+offset;call("nvnCommandBufferReportCounter");};
++    report(16,0);api.x[0]=command_key;api.x[1]=1;call("nvnCommandBufferResetCounter");report(1,16);report(0,32);
++    api.x[0]=command_key;call("nvnCommandBufferEndRecording");auto list=command_list(api.x[0]);check(list&&list->cmds.size()==4);
++    gpu_submit({list},nullptr); // The game's real synchronous entry point, rather than frame_begin().
++    check(ld<uint64_t>(memory)==0&&ld<uint64_t>(memory+16)==0&&ld<uint64_t>(memory+32)==0);
++    check(ld<uint64_t>(memory+8)>0&&ld<uint64_t>(memory+40)>=ld<uint64_t>(memory+8));
++    const auto first=ld<uint64_t>(memory+40);gpu_submit({list},nullptr);check(ld<uint64_t>(memory+40)>first);
++    api.x[0]=command_key;call("nvnCommandBufferFinalize");api.x[0]=pool_key;call("nvnMemoryPoolFinalize");
++    finalize_native_device(device);check(!native_device_alive(device));
++    std::cout<<"native counter sync checks="<<checks<<" guest_modules=0 PASS\n";return 0;
++}
+--- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,241 @@
+@@ -0,0 +1,245 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -9956,14 +10724,17 @@
 +#include "native_rgb565_probe.h"
 +#include "native_bc3_block_probe.h"
 +#include "native_uniform_snapshot_probe.h"
++#include "native_counter_probe.h"
++#include "native_counter_sync_probe.h"
 +#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
++ if(argc==2&&std::string_view(argv[1])=="--counter-sync")return native_counter_sync_probe();
 +#ifdef _WIN32
 + if(argc==4&&std::string_view(argv[1])=="--avc-private")return codec_probe::run(argv[2],std::strtoull(argv[3],nullptr,16));
 +#endif
 + const bool block_probe=argc==2&&std::string_view(argv[1])=="--gpu-block";
 + const bool gpu=block_probe||(argc==2&&std::string_view(argv[1])=="--gpu");if(argc>1&&!gpu)throw std::runtime_error("expected --gpu, --gpu-block or no arguments");
-+ if(gpu){if(_putenv_s("NX_PIPELINED","1"))throw std::runtime_error("fixture pipeline mode setup failed");}
++ if(gpu){if(_putenv_s("NX_PIPELINED","1")||_putenv_s("NX_SNAP_RAW","1"))throw std::runtime_error("fixture pipeline/raw snapshot mode setup failed");}
 + unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("native device assertion "+std::to_string(n));};
 + for(const char* name:{"_ZN2nv20SetGraphicsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_","_ZN2nv28SetGraphicsDevtoolsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_"}){auto setter=nx::hle_lookup(name);check(setter!=nullptr);nx::CPU invalid_allocator{};bool rejected=false;try{setter(invalid_allocator);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
 + check(nx::find_symbol("nnMain")==0);nx::memory_init();native_wait_cancellation_probe(check); {const auto mii_output=nx::kernel_alloc(6*sizeof(nx::mii::CharInfoElement),16);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);uint32_t creator_key=0;nx::IpcCtx mii_open{};mii_open.cmd=0;mii_open.in=reinterpret_cast<uint8_t*>(&creator_key);mii_open.in_size=4;auto mii_manager=nx::make_service("mii:u");check(mii_manager&&mii_manager->handle(mii_open)==0&&mii_open.out_objects.size()==1);auto database=mii_open.out_objects[0];for(uint32_t sources:{0u,1u,2u,3u}){nx::IpcCtx query{};query.cmd=2;query.in=reinterpret_cast<const uint8_t*>(&sources);query.in_size=4;check(database->handle(query)==0);uint32_t count=99;std::memcpy(&count,query.out.data(),4);check(count==((sources&2)?6u:0u));}uint32_t defaults_source=2;nx::IpcCtx list{};list.cmd=3;list.in=reinterpret_cast<const uint8_t*>(&defaults_source);list.in_size=4;list.b.push_back({mii_output,6*sizeof(nx::mii::CharInfoElement)});std::memset(reinterpret_cast<void*>(mii_output),0xcd,6*sizeof(nx::mii::CharInfoElement));check(database->handle(list)==0);check(nx::ld<uint8_t>(mii_output)==0xcd);check(list.validate_reply&&list.validate_reply());check(bool(list.commit_reply));list.commit_reply();nx::mii::CharInfoElement first{};std::memcpy(&first,reinterpret_cast<void*>(mii_output),sizeof first);check(first.source==1&&first.info.Verify()==nx::mii::ValidationResult::NoErrors);nx::IpcCtx revoked=list;revoked.out.clear();revoked.commit_reply={};revoked.validate_reply={};check(database->handle(revoked)==0);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,1);check(!revoked.validate_reply());nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);nx::IpcCtx short_list{};short_list.cmd=3;short_list.in=reinterpret_cast<const uint8_t*>(&defaults_source);short_list.in_size=4;short_list.b.push_back({mii_output,sizeof(nx::mii::CharInfoElement)});check(database->handle(short_list)==0x47e);uint32_t invalid_source=4;nx::IpcCtx invalid_mii{};invalid_mii.cmd=2;invalid_mii.in=reinterpret_cast<const uint8_t*>(&invalid_source);invalid_mii.in_size=4;check(database->handle(invalid_mii)==0xe401);}
@@ -10159,6 +10930,7 @@
 + native_small_r11_probe(check);
 + native_buffer_texture_probe(device,check);
 + native_uniform_snapshot_probe(check);
++ native_counter_probe(device,check);
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

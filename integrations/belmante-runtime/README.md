@@ -6,8 +6,11 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 37 CPU/component suites and a 653-check native
-GPU fixture on an RX 9070 XT. R151 reconstructs 153 generic adapted files. Its
+Windows integration now passes 38 CPU/component suites and a 752-check native
+GPU fixture on an RX 9070 XT, plus 19 checks through the synchronous submission
+entry point. R156 reconstructs 164 generic adapted files. Native sample counts
+and GPU-clock reports replace host placeholders; regressions verify accumulation,
+resets, query retirement and both submission paths. Its
 RGB565 correction and bounded BC3 integer block views pass authored GPU encoding,
 face/mip readback and compressed-sampling regressions. Integer fragment outputs
 are compiled offline and checked against actual render-target types. The original

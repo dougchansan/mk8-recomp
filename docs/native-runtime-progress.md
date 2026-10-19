@@ -4,12 +4,32 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R151, reconstructing 153 generic adapted files.
-All 37 component suites and the 653-check native GPU fixture pass. A production
+The current source recipe is R156, reconstructing 164 generic adapted files.
+All 38 component suites and the 752-check native GPU fixture pass, plus a
+separate 19-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
+
+R151 passes the race UI shader and reaches a new missing API,
+`nvnCommandBufferResetCounter`, with an actual samples-passed counter request.
+The new native counter module uses precise Vulkan occlusion queries around
+original NVN draws, accumulates ended query results on the GPU across reports
+and submissions, and writes results through the checked GPU-written range path.
+Timestamp reports use real top/bottom GPU queries, with an exact rational
+conversion into native counter units. The current-timestamp getter also queries
+the GPU. The inherited sequence-number/host-clock reports are removed.
+
+GPU regressions check zero and exact positive sample counts, cumulative and
+repeated reports, reset behavior, accumulation across submissions, and consistent
+top/bottom/current clocks. Counter readbacks retire after the entire submission,
+including its late graphics part. Both pipelined and synchronous paths are wired;
+the dedicated synchronous regression reproduces the previous unbound-context
+failure and passes after the fix. The inspected hardware has a 10 ns GPU tick,
+64 timestamp bits, shaderInt64 and precise occlusion support. Counter types
+0, 1 and 16 are supported; other statistics and conditional-culling semantics
+remain open. The original-game run is validating the new module.
 
 R150 corrects a second color defect: the original RGB565 cup icons store red in
 the low five bits, while the old Vulkan mapping used the high five bits. An

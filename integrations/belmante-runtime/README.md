@@ -6,9 +6,9 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 39 CPU/component suites and a 1,567-check native
+Windows integration now passes 39 CPU/component suites and a 1,633-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R164 reconstructs 174 generic adapted files. Native sample counts
+entry point. R166 reconstructs 176 generic adapted files. Native sample counts
 and GPU-clock reports replace host placeholders. GPU comparisons replace the
 inherited forced-on conditional renderer, including explicit gated clears and
 original counter-to-predicate chains; regressions verify accumulation,
@@ -19,7 +19,9 @@ are compiled offline and checked against actual render-target types. The origina
 game run confirms corrected cup colors and colored lighting cubemaps. Diffuse
 lighting remains too dark in the selection menu. R164 now presents a native
 Mario Kart Stadium intro with a lit Mario and kart; countdown, driving and full
-gameplay stability remain under verification. The latest original
+gameplay stability remain under verification. The run reaches the player grid,
+then stops on a command-memory arena bounds check. R166 also restores native
+EQUAL depth semantics and disabled-bias behavior with GPU regressions. The latest original
 game run passes point setup and reaches original counter requests before a
 missing HDR-compositor stage. All 122 remaining common vertex/pixel stages now
 translate and pass module creation; the private cache holds 7,365 stages.

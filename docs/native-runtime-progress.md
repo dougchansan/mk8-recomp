@@ -4,21 +4,40 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R164, reconstructing 174 generic adapted files.
-All 39 component suites and the 1,567-check native GPU fixture pass, plus a
+The current source recipe is R166, reconstructing 176 generic adapted files.
+All 39 component suites and the 1,633-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
 
-The active R164 run presents its first native Mario Kart Stadium course intro.
+The R164 run presents its first native Mario Kart Stadium course intro.
 Root review of original presented frame1615 verifies the track, lit Mario and
 kart, spotlights, particles and50cc course UI. The lossless PNG and original RGB
 hash are retained privately with the run receipt. This uses the unchanged static
 CPU archives, native Vulkan backend and required offline shader cache; no game
 state was patched to reach the scene. Countdown, driving, stability and complete
 gameplay remain under verification. No release or download is available.
+
+R164 continues through the course cameras to the player starting-grid view with
+its first-race banner, then closes naturally with a command-memory arena bounds
+failure before the countdown. The run lasts 4,193.906 seconds with source,
+executable and saved profile unchanged. Its owned supervisor deadline was extended
+without suspending title threads or modifying game memory; both supervisor and
+extension guard finish after the title exits. Driving is not verified.
+
+R166 preserves the original EQUAL depth comparison and ignores stored bias when
+polygon offset is disabled. The inherited workaround previously changed EQUAL
+to LESS_OR_EQUAL and implicitly enabled bias. A new authored GPU regression
+reproduces both violations: matching geometry with disabled stored bias loses
+all 16 expected pixels, while closer geometry passes EQUAL incorrectly. After the
+correction, all eight depth cases pass through the production pipeline builder
+and original recorded bias setter. All 39 component suites, 1,633 native GPU checks
+and 300 synchronous checks pass, including the separate diagnostic-cutoff follow-through.
+This is an API-correctness fix; its effect on selection-menu lighting is unproven.
+The arena validation remains, with exact pool/offset/size/callback/LR diagnostics
+for the next reproduction. No bound is relaxed to advance the game.
 
 R162 passes the former point guard, executes the original samples-passed report
 and records conditional-render requests during race loading. It closes naturally

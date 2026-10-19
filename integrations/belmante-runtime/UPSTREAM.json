@@ -4,7 +4,7 @@
   "license": "MIT",
   "license_sha256": "7f728cfaa94ff27c2a40c906dac12564a216077ceb017fb2d01cc29ba6697720",
   "local_changes_license": "GPL-3.0-or-later",
-  "patch_sha256": "56b7046ac244d4c704b0b0474bebe2b02645340d64222a09a1baa845b3126d49",
+  "patch_sha256": "a466b4a0e58eb80f8d89e69e442e987b4f4312773820f82f5edf9f91548791a1",
   "changed_files": [
     "CMakeLists.txt",
     "games/mk8d/game.cpp",
@@ -143,6 +143,8 @@
     "tests/native_counter_clock_test.cpp",
     "tests/native_counter_probe.h",
     "tests/native_counter_sync_probe.h",
+    "tests/native_depth_contract_probe.h",
+    "tests/native_depth_test_shader.h",
     "tests/native_device_fixture.cpp",
     "tests/native_exit_policy_test.cpp",
     "tests/native_font_bundle_test.cpp",

@@ -6500,7 +6500,7 @@
      make<CommandBuffer>(c.x[0]);
      c.x[0] = 1;
  }
-@@ -145,12 +192,15 @@
+@@ -145,12 +192,20 @@
      if (auto* cb = get<CommandBuffer>(c.x[0])) {
          std::lock_guard lk(cb->lock);
          cb->recording = std::make_shared<CmdList>();
@@ -6512,11 +6512,16 @@
      if (auto* cb = get<CommandBuffer>(c.x[0])) {
          std::lock_guard lk(cb->lock);
 +        if(!cb->recording->cmds.empty())fatal("native multi-arena recording is not integrated");
-+        const auto* pool=get<MemoryPool>(c.x[1]);if(!pool||c.x[2]>pool->size||c.x[3]>pool->size-c.x[2])fatal("native command arena exceeds memory pool");
++        const auto* pool=get<MemoryPool>(c.x[1]);
++        if(!pool||c.x[2]>pool->size||c.x[3]>pool->size-c.x[2])
++            fatal("native command arena exceeds memory pool: cb=%llx pool=%llx offset=%llx bytes=%llx live=%u pool-bytes=%llx pool-gpu=%llx base=%llx arena-bytes=%llx callback-active=%u lr=%s",
++                (unsigned long long)c.x[0],(unsigned long long)c.x[1],(unsigned long long)c.x[2],(unsigned long long)c.x[3],
++                unsigned(pool!=nullptr),(unsigned long long)(pool?pool->size:0),(unsigned long long)(pool?pool->gpu:0),
++                (unsigned long long)cb->command_base,(unsigned long long)cb->command_size,unsigned(cb->callback_active),describe(c.x[30]).c_str());
          cb->command_size = c.x[3];
          cb->command_base = 0;
          cb->command_memory = command_memory_address(c.x[1], c.x[2]);
-@@ -161,6 +211,8 @@
+@@ -161,6 +216,8 @@
  void AddControlMemory(CPU& c) {  // (cmd, void* memory, size_t size)
      if (auto* cb = get<CommandBuffer>(c.x[0])) {
          std::lock_guard lk(cb->lock);
@@ -6525,7 +6530,7 @@
          cb->control_size = c.x[2];
          cb->control_base = 0;
      }
-@@ -193,6 +245,7 @@
+@@ -193,6 +250,7 @@
  }
  
  void CommandBufferEndRecording(CPU& c) {  // NVNcommandHandle
@@ -6533,7 +6538,7 @@
      std::shared_ptr<CmdList> list = std::make_shared<CmdList>();
      uint64_t start = 0, end = 0, pool = 0;
      const uint64_t cb_guest = c.x[0];
-@@ -204,7 +257,7 @@
+@@ -204,7 +262,7 @@
          cb->command_base = used(cb->command_size, cb->command_base, n, kCommandBytes);
          end = std::max(cb->command_memory + cb->command_base, start + 1);
          cb->control_base = used(cb->control_size, cb->control_base, n, kControlBytes);
@@ -6542,7 +6547,7 @@
      }
      list->epoch = current_epoch();
      g_ends++;
-@@ -303,10 +356,24 @@
+@@ -303,10 +361,24 @@
  
  void SetRenderTargets(CPU& c) {
      Cmd cmd{Cmd::SetRenderTargets};
@@ -6570,7 +6575,7 @@
      // The views pick the level and layer rendered to (a bloom chain renders each mip of one texture in turn).
      TargetViews tv;
      for (uint32_t k = 0; k < n && c.x[3]; k++) {
-@@ -341,6 +408,34 @@
+@@ -341,6 +413,34 @@
      static std::atomic<int> logged{0};
      if ((cmd.i[3] < 0 || cmd.i[2] < 0) && logged++ < 10)
          log("nvn: SetViewport with a negative size: %d %d %d %d", cmd.i[0], cmd.i[1], cmd.i[2], cmd.i[3]);
@@ -6605,7 +6610,7 @@
  }
  
  void SetScissor(CPU& c) {
-@@ -371,6 +466,7 @@
+@@ -371,6 +471,7 @@
          g_no_cb++;
          return;
      }
@@ -6613,7 +6618,7 @@
      std::lock_guard lk(cb->lock);
      if (blob) {
          cmd.blob = uint32_t(cb->recording->blobs.size());
-@@ -381,6 +477,8 @@
+@@ -381,6 +482,8 @@
  }
  
  // A handle's list for the traces, without marking it used (which would keep it from being dropped).
@@ -6622,7 +6627,7 @@
  std::shared_ptr<CmdList> peek_list(uint64_t handle) {
      std::lock_guard lk(g_handles_lock);
      auto it = g_handles.find(handle);
-@@ -507,6 +605,9 @@
+@@ -507,6 +610,9 @@
  NX_HLE("nvnCommandBufferClearDepthStencil", ClearDepthStencil);
  NX_HLE("nvnCommandBufferSetViewport", SetViewport);
  NX_HLE("nvnCommandBufferSetScissor", SetScissor);
@@ -6632,7 +6637,7 @@
  NX_HLE("nvnCommandBufferCallCommands", CallCommands);
  NX_HLE("nvnCommandBufferAddCommandMemory", AddCommandMemory);
  NX_HLE("nvnCommandBufferAddControlMemory", AddControlMemory);
-@@ -518,3 +619,10 @@
+@@ -518,3 +624,10 @@
  NX_HLE("nvnCommandBufferGetControlMemoryFree", (memory_query<false, 2>));
  
  }  // namespace nx::nvn
@@ -7986,7 +7991,20 @@
          st.pName = "main";
          if (s == key.vs && key.uw_x > 0) {  // NX_ULTRAWIDE: constant 0 of the patched vertex module
              static VkSpecializationMapEntry entry{0, 0, sizeof(float)};
-@@ -554,6 +591,8 @@
+@@ -410,9 +447,10 @@
+     // depth; two translated shaders compiled separately by Metal do not, and Wonder's whole course colour pass was
+     // discarded (only the sky showed). LESS_OR_EQUAL keeps what EQUAL keeps for opaque geometry after a pre-pass.
+     if (key.depth.depth_func == 3 && !key.depth.depth_write) {
+-        ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+-        static const bool always = std::getenv("NX_EQUAL_ALWAYS") != nullptr;  // diagnostic: EQUAL passes test nothing
++        // Exact native comparison by default; alternate comparisons require diagnostics.
++        static const bool always = std::getenv("NX_EQUAL_ALWAYS") != nullptr;
+         if (always) ds.depthCompareOp = VK_COMPARE_OP_ALWAYS;
++        else if (equal_slack_pass(key.depth)) ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+     }
+     ds.stencilTestEnable = has_depth && key.depth.stencil_test && !std::getenv("NX_NO_STENCIL");
+     VkStencilOpState* faces[2] = {&ds.front, &ds.back};
+@@ -554,6 +592,8 @@
  
  VkImageView attachment_view(GpuImage& img, uint32_t level, uint32_t layer, VkFormat format) {
      if (format == VK_FORMAT_UNDEFINED) format = img.format;
@@ -7995,7 +8013,7 @@
      level = std::min(level, img.levels - 1);
      // A 3D image's slice is a layer of its 2D-array-compatible views, counted at this level.
      layer = std::min(layer, img.view_type == VK_IMAGE_VIEW_TYPE_3D ? std::max(1u, img.depth >> level) - 1 : img.layers - 1);
-@@ -568,15 +607,36 @@
+@@ -568,15 +608,36 @@
          ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
          ci.format = format;
          ci.subresourceRange = {img.aspect, level, 1, layer, 1};
@@ -8033,7 +8051,7 @@
      bool dirty = t->dirty.exchange(false);
      uint64_t dirty_lo = t->dirty_lo.exchange(UINT64_MAX), dirty_hi = t->dirty_hi.exchange(0);
      if (dirty_hi <= dirty_lo) dirty_lo = 0, dirty_hi = UINT64_MAX;  // marked without a range: all of it
-@@ -595,8 +655,14 @@
+@@ -595,8 +656,14 @@
          }
      }
      // A texture already on the GPU that the CPU wrote part of: only those bytes go again (the glyph cache).
@@ -8048,7 +8066,7 @@
      if (img->layout == VK_IMAGE_LAYOUT_UNDEFINED) {  // never written: black, not garbage
          transition(cb, *img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
          VkImageSubresourceRange r{img->aspect, 0, img->levels, 0, img->layers};
-@@ -609,11 +675,12 @@
+@@ -609,11 +676,12 @@
  }
  
  VkImageView sampled_view(VkCommandBuffer cb, uint64_t texture, const ImageShape& shape, const ViewInfo* view,
@@ -8062,7 +8080,7 @@
          if (++no_image % 100000 == 1) log("nvn/vk: dummy sampled: %llu with no image, %llu with an incompatible view",
                                            (unsigned long long)no_image, (unsigned long long)incompatible);
          return dummy_view(cb, shape);
-@@ -643,6 +710,7 @@
+@@ -643,6 +711,7 @@
      }
      VkImageView v = view_of(*img, view_type(shape), vi);
      if (!v) {
@@ -8334,7 +8352,24 @@
  #include <cstdlib>
  
  #include "nvn_draw_state.h"
-@@ -107,6 +109,13 @@
+@@ -56,12 +58,14 @@
+ namespace {
+ float equal_slack_units() {
+     static const char* env = std::getenv("NX_EQUAL_SLACK");
+-    static const float units = env ? float(std::atof(env)) : 4.0f;
++    static const float units = env ? float(std::atof(env)) : 0.0f;
+     return units;
+ }
+ }  // namespace
+ 
+-// The colour pass after a pre-pass tests EQUAL (taken as LESS_OR_EQUAL, nvn_pipeline.cpp) against depth another
++// Optional NX_EQUAL_SLACK diagnostics relax EQUAL and bias toward a pre-pass. Native
++// defaults preserve the exact comparison and the original polygon-offset enable state.
++// The colour pass after a pre-pass tests EQUAL against depth another
+ // vertex shader wrote: Metal compiles the two apart, and where the colour pass lands a few ulps behind, the pixel
+ // keeps the pre-pass's clear (black silhouettes, black/white wedges on slopes). A bias toward the camera of a few
+ // units, plus one per unit of slope, covers that; it lets through only what lies within that distance of the
+@@ -107,6 +111,13 @@
                  log("nvn: depth bounds test enabled (%g..%g), not applied", c.f[0], c.f[1]);
              return true;
          }
@@ -11546,8 +11581,154 @@
 +    std::cout<<"native counter sync checks="<<checks<<" guest_modules=0 PASS\n";return 0;
 +}
 --- /dev/null
++++ b/tests/native_depth_contract_probe.h
+@@ -0,0 +1,80 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/nvn_draw_state.h"
++#include "native_depth_test_shader.h"
++#include "native_point_test_shaders.h"
++#include <cstring>
++#include <iostream>
++#include <iterator>
++
++template<class Check> void native_depth_contract_probe(uint64_t device, Check check) {
++    using namespace nx;using namespace nx::nvn;
++    check(vk_depth_clip_control() || depth_remap());
++    static ShaderInfo vertex,fragment;
++    vertex.hash="authored-depth-contract-vertex";vertex.spirv.assign(std::begin(native_depth_triangle),std::end(native_depth_triangle));
++    fragment.hash="authored-depth-contract-fragment";fragment.spirv.assign(std::begin(native_point_fragment),std::end(native_point_fragment));
++    check(reflect_spirv(vertex.spirv.data(),vertex.spirv.size(),vertex.refl));vertex.stage=vertex.refl.stage;
++    check(reflect_spirv(fragment.spirv.data(),fragment.spirv.size(),fragment.refl));fragment.stage=fragment.refl.stage;
++    auto alloc=[](uint64_t bytes){auto address=kernel_alloc(bytes,4096);vm_set(address,bytes,kMemHeap,3);return address;};
++    const auto colour_key=alloc(256),depth_key=alloc(256),command_key=alloc(256),control=alloc(4096),pool_key=alloc(256),memory=alloc(4096);
++    auto& pool=make<MemoryPool>(pool_key);pool.memory=memory;pool.size=4096;pool.gpu=gpu_alloc(4096);pool_register(&pool);
++    auto& colour=make<Texture>(colour_key);colour.target=1;colour.width=colour.height=4;colour.depth=colour.levels=1;colour.format=0x25;
++    auto& depth=make<Texture>(depth_key);depth.target=1;depth.width=depth.height=4;depth.depth=depth.levels=1;depth.format=0x34;
++    CPU api{};auto call=[&](const char* name){auto function=hle_lookup(name);check(function!=nullptr);function(api);};
++    api.x[0]=command_key;api.x[1]=device;call("nvnCommandBufferInitialize");check(api.x[0]==1);
++    api.x[0]=command_key;api.x[1]=pool_key;api.x[2]=0;api.x[3]=4096;call("nvnCommandBufferAddCommandMemory");
++    api.x[0]=command_key;api.x[1]=control;api.x[2]=4096;call("nvnCommandBufferAddControlMemory");
++    struct Case{const char* name;float clear_depth,units;uint32_t compare;bool bias;unsigned expected;};
++    const Case cases[]={
++        {"equal_disabled_stored_bias",0.5f,1000,3,false,16},
++        {"equal_matching_depth",0.5f,0,3,false,16},
++        {"equal_rejects_closer",0.75f,0,3,false,0},
++        {"less_equal_accepts_closer",0.75f,0,4,false,16},
++        {"equal_enabled_positive_bias",0.5f,1000,3,true,0},
++        {"equal_enabled_zero_bias",0.5f,0,3,true,16},
++        {"less_equal_enabled_bias",0.5f,1000,4,true,0},
++        {"less_equal_disabled_bias",0.5f,1000,4,false,16}
++    };
++    Targets targets{};targets.color_count=1;targets.colors[0]=colour_key;targets.depth=depth_key;
++    bool all=true;
++    for(const auto& test:cases){
++        api.x[0]=command_key;call("nvnCommandBufferBeginRecording");
++        api.x[0]=command_key;api.v[0].f32[0]=0;api.v[1].f32[0]=test.units;api.v[2].f32[0]=0;
++        call("nvnCommandBufferSetPolygonOffsetClamp");
++        api.x[0]=command_key;call("nvnCommandBufferEndRecording");auto list=command_list(api.x[0]);
++        check(list&&list->cmds.size()==1&&list->cmds[0].op==Cmd::SetPolygonOffsetClamp);
++        std::lock_guard lock(gpu_lock());auto command=frame_begin(false);clears_begin_submit();
++        replay::g_state={};replay_list(command,targets,*list,0);check(replay::g_state.bias_units==test.units);
++        auto* image=image_of(colour_key);auto* zimage=image_of(depth_key);check(image&&zimage&&zimage->format==VK_FORMAT_D32_SFLOAT);
++        transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);VkClearColorValue black{};black.float32[3]=1;
++        VkImageSubresourceRange crange{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
++        vk::p_vkCmdClearColorImage(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&black,1,&crange);image->rendered=true;
++        transition(command,*zimage,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);VkClearDepthStencilValue clear{test.clear_depth,0};
++        VkImageSubresourceRange zrange{VK_IMAGE_ASPECT_DEPTH_BIT,0,1,0,1};
++        vk::p_vkCmdClearDepthStencilImage(command,zimage->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&clear,1,&zrange);zimage->rendered=true;
++        PipelineKey key{};key.vs=&vertex;key.fs=&fragment;key.topology=4;key.polygon.mode=2;key.polygon.offset_enables=test.bias?4:0;
++        key.color_count=1;key.color_formats[0]=image->format;key.depth_format=zimage->format;key.mask.mask[0]=15;
++        key.depth.depth_test=1;key.depth.depth_write=0;key.depth.depth_func=test.compare;
++        replay::g_state.depth=key.depth;replay::g_state.polygon=key.polygon;
++        const std::vector<const ShaderInfo*> shaders{&vertex,&fragment};const auto& layout=program_layout(shaders);
++        const auto pipeline=graphics_pipeline(key,layout);check(pipeline!=VK_NULL_HANDLE);
++        pass_begin(command,targets);vk::p_vkCmdBindPipeline(command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);
++        VkViewport viewport{0,0,4,4,0,1};VkRect2D scissor{{0,0},{4,4}};
++        vk::p_vkCmdSetViewport(command,0,1,&viewport);vk::p_vkCmdSetScissor(command,0,1,&scissor);
++        const float blend[4]={};vk::p_vkCmdSetBlendConstants(command,blend);
++        replay::raster_dynamic(command,equal_slack_pass(replay::g_state.depth));
++        vk::p_vkCmdDraw(command,3,1,0,0);pass_mark_written(1);draw_end_rendering(command);
++        const auto pixels=upload_alloc(64,16);std::memset(pixels.ptr,0xcd,64);transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
++        VkBufferImageCopy copy{};copy.bufferOffset=pixels.offset;copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent={4,4,1};
++        vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,pixels.buffer,1,&copy);
++        VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
++        barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=pixels.buffer;barrier.offset=pixels.offset;barrier.size=64;
++        vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);
++        frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);unsigned red=0;bool valid=true;
++        for(unsigned index=0;index<16;++index){uint32_t value;std::memcpy(&value,pixels.ptr+index*4,4);valid&=value==0xff000000u||value==0xff0000ffu;red+=value==0xff0000ffu;}
++        const bool pass=valid&&red==test.expected;all&=pass;
++        std::cout<<"native depth case="<<test.name<<" pixels="<<red<<" expected="<<test.expected<<" "<<(pass?"PASS":"FAIL")<<"\n";
++    }
++    replay::g_state={};api.x[0]=command_key;call("nvnCommandBufferFinalize");api.x[0]=pool_key;call("nvnMemoryPoolFinalize");destroy(colour_key);destroy(depth_key);
++    check(all);
++}
+--- /dev/null
++++ b/tests/native_depth_test_shader.h
+@@ -0,0 +1,60 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Authored fullscreen triangle from MIT upstream nvn_mask_clear.cpp; LICENSE.upstream applies.
++#pragma once
++#include <cstdint>
++inline constexpr uint32_t native_depth_triangle[] = {
++    0x07230203,0x00010000,0x000d000b,0x0000002c,
++0x00000000,0x00020011,0x00000001,0x0006000b,
++0x00000001,0x4c534c47,0x6474732e,0x3035342e,
++0x00000000,0x0003000e,0x00000000,0x00000001,
++0x0007000f,0x00000000,0x00000004,0x6e69616d,
++0x00000000,0x0000000c,0x0000001d,0x00040047,
++0x0000000c,0x0000000b,0x0000002a,0x00030047,
++0x0000001b,0x00000002,0x00050048,0x0000001b,
++0x00000000,0x0000000b,0x00000000,0x00050048,
++0x0000001b,0x00000001,0x0000000b,0x00000001,
++0x00050048,0x0000001b,0x00000002,0x0000000b,
++0x00000003,0x00050048,0x0000001b,0x00000003,
++0x0000000b,0x00000004,0x00020013,0x00000002,
++0x00030021,0x00000003,0x00000002,0x00030016,
++0x00000006,0x00000020,0x00040017,0x00000007,
++0x00000006,0x00000002,0x00040015,0x0000000a,
++0x00000020,0x00000001,0x00040020,0x0000000b,
++0x00000001,0x0000000a,0x0004003b,0x0000000b,
++0x0000000c,0x00000001,0x0004002b,0x0000000a,
++0x0000000e,0x00000001,0x0004002b,0x0000000a,
++0x00000010,0x00000002,0x00040017,0x00000017,
++0x00000006,0x00000004,0x00040015,0x00000018,
++0x00000020,0x00000000,0x0004002b,0x00000018,
++0x00000019,0x00000001,0x0004001c,0x0000001a,
++0x00000006,0x00000019,0x0006001e,0x0000001b,
++0x00000017,0x00000006,0x0000001a,0x0000001a,
++0x00040020,0x0000001c,0x00000003,0x0000001b,
++0x0004003b,0x0000001c,0x0000001d,0x00000003,
++0x0004002b,0x0000000a,0x0000001e,0x00000000,
++0x0004002b,0x00000006,0x00000020,0x40000000,
++0x0004002b,0x00000006,0x00000022,0x3f800000,
++0x0004002b,0x00000006,0x00000025,0x00000000,
++0x00040020,0x00000029,0x00000003,0x00000017,
++0x0005002c,0x00000007,0x0000002b,0x00000022,
++0x00000022,0x00050036,0x00000002,0x00000004,
++0x00000000,0x00000003,0x000200f8,0x00000005,
++0x0004003d,0x0000000a,0x0000000d,0x0000000c,
++0x000500c4,0x0000000a,0x0000000f,0x0000000d,
++0x0000000e,0x000500c7,0x0000000a,0x00000011,
++0x0000000f,0x00000010,0x0004006f,0x00000006,
++0x00000012,0x00000011,0x000500c7,0x0000000a,
++0x00000014,0x0000000d,0x00000010,0x0004006f,
++0x00000006,0x00000015,0x00000014,0x00050050,
++0x00000007,0x00000016,0x00000012,0x00000015,
++0x0005008e,0x00000007,0x00000021,0x00000016,
++0x00000020,0x00050083,0x00000007,0x00000024,
++0x00000021,0x0000002b,0x00050051,0x00000006,
++0x00000026,0x00000024,0x00000000,0x00050051,
++0x00000006,0x00000027,0x00000024,0x00000001,
++0x00070050,0x00000017,0x00000028,0x00000026,
++0x00000027,0x00000025,0x00000022,0x00050041,
++0x00000029,0x0000002a,0x0000001d,0x0000001e,
++0x0003003e,0x0000002a,0x00000028,0x000100fd,
++0x00010038
++};
+--- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,261 @@
+@@ -0,0 +1,263 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -11587,6 +11768,7 @@
 +#include "native_counter_probe.h"
 +#include "native_conditional_probe.h"
 +#include "native_point_probe.h"
++#include "native_depth_contract_probe.h"
 +#include "native_counter_sync_probe.h"
 +#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
@@ -11806,6 +11988,7 @@
 + native_counter_probe(device,check);
 + native_conditional_probe(device,check);
 + native_point_probe(device,check);
++ native_depth_contract_probe(device,check);
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

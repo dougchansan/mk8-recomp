@@ -4,13 +4,36 @@ Updated 2026-10-19. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R189, reconstructing 189 generic adapted files.
-All 40 component suites and the 1,902-check native GPU fixture pass, plus a
+The current source recipe is R194, reconstructing 189 generic adapted files.
+All 40 component suites and the 1,928-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
+
+R194 indexes retained texture snapshots by memory pool and GPU address for CPU
+admission. Hints store keys rather than pointers: every candidate still requires
+current ownership, registry/type and full-descriptor validation. A unique full
+match uses the hint; ambiguous matches retain the legacy search. Creation and
+last-reference retirement maintain the index. It is separate from the pool
+flush index and does not change dirtying, replay epochs or the generation cache.
+
+The earlier bounded probe finds retained snapshots through a registry of about
+34,000 objects even when the live pool index has only one candidate. R194's actual
+2,700-frame course probe closes without a fatal error after 132.6 seconds, source,
+executable, saved input and foreground unchanged. Across fifteen measured course
+windows, median identity time is 8.363 ms/frame, versus 315.509 ms/frame in the
+earlier R189 probe. The 900 race frames average 47.630 ms (about 21 FPS), with a
+35.1 ms median. These are different flights, not a controlled whole-game FPS ratio.
+
+Same-executable, profiling-disabled title controls retain all 2,073,600 RGB pixels
+and draw order, with medians of 19.05 ms indexed versus 46.8 ms legacy over frames
+121–180. This is one title-scene pair. Expanded native tests cover pending snapshot
+ownership, last-reference retirement, equal-address/different-shape candidates,
+duplicates, stale hints and owner reuse. Both search modes pass the 1,930-check
+benchmark fixture; the normal native fixture passes 1,928 checks. Full-race and
+full-speed verification remain open; no release/tag/download is available.
 
 R187 adds native Vulkan null descriptors for explicit unbound samples and the
 observed unavailable cube view over a live one-layer 2D image. The reference

@@ -1,5 +1,11 @@
 # Native performance work
 
+R194 reduces the measured retained-texture admission hotspot. Its course probe
+reports median identity time of 8.363 ms/frame, compared with 315.509 ms/frame in
+the earlier R189 probe. The 900 measured race frames average 47.630 ms (about
+21 FPS), median 35.1 ms. Different flights are not a controlled FPS speedup ratio.
+Full-speed gameplay and complete races remain unverified; no download is offered.
+
 R187 completes a profiling-disabled async flight to its 6,000-frame target without
 a fatal error, stopping intentionally after 1,273.4 seconds. Native frames show
 scripted racing through the first bend, anti-gravity section and glider jump.
@@ -58,6 +64,41 @@ still spends 304.608 ms/frame in identity resolution across its 15 measured
 windows. Pool narrowing alone has not resolved the main bottleneck. The next
 probe records whether expensive results come from pool candidates or retained
 resources reached through the full registry. No course-speedup claim is made.
+
+The follow-up bounded trace identifies the missing resources: all 96 captured
+full-registry results are retained E-key snapshots, while their pools have
+1, 41 or 42 indexed live keys and the registry contains about 34,460 objects.
+These are the first successful results per route/thread, not hit-ratio samples.
+
+R194 adds a separate `(pool, GPU address)` snapshot admission index, maintained
+at snapshot creation and final-reference retirement. Each hint is revalidated
+against current reference ownership, registry type and every existing descriptor
+field. Only a unique full match bypasses the full scan; ambiguity keeps the
+legacy search. The existing generation cache, bounds/permission/device checks,
+replay epochs and fallback remain. The flush index is unchanged. The completed
+route probe is removed from production; aggregate phase timers remain opt-in.
+
+The actual indexed course probe reaches 2,700 target frames without a fatal
+error, stopping intentionally after 132.6 seconds (last presented frame 2,729).
+Source/executable/save/foreground remain unchanged. Fifteen 60-frame windows
+ending at 1,859–2,699 give median identity 8.363 ms/frame and target recording
+7.677 ms/frame inclusive, compared with the earlier 315.509/313.466 ms figures.
+These are elapsed, overlapping scope measurements, not additive CPU percentages.
+
+A profiling-disabled same-executable title comparison over frames 121–180 gives:
+
+| Snapshot admission | Median interval | Mean interval |
+| --- | ---: | ---: |
+| Legacy search control | 46.80 ms | 86.31 ms |
+| Indexed search | 19.05 ms | 57.90 ms |
+
+Frame 120 is identical across all 2,073,600 RGB pixels, with the same draw count
+and shader order. It is one sequential title pair on a shared desktop; this does
+not establish a full-race speedup or full rendering correctness. The fixture's
+three alternating pairs pass 1,930 checks through both search modes, including
+pending ownership, last-reference retirement, duplicate candidates and different
+shapes sharing an address. The normal fixture passes 1,928 checks. Local lookup
+microbenchmarks are retained as controls, not substituted for course timing.
 
 The old code forced a zero instance count to one. GPU readback reproduces the
 unintended pixel for both indexed and non-indexed draws. The corrected replay
@@ -140,6 +181,7 @@ measured medians of 20.339 versus 34.107 ns/call on one thread and 283.345 versu
 | `NX_STALL_LOG=0` | Disable the per-frame stall sampler; the separate hang watchdog remains active |
 | `NX_GPU_CLOCK=submitted` | Force the existing submitted-query clock for comparison |
 | `NX_SPAN_CACHE=0` | Force uncached guest/host span validation for comparison |
+| `NX_TEXTURE_POOL_INDEX=0` | Force legacy whole-registry copied-texture search instead of pool/snapshot hints |
 | `NX_FULL_QUERY_RESET=1` | Reset entire query pools on reuse for comparison |
 | `NX_SPAN_RANGE_CACHE=0` | Retain only exact-start span reuse, disabling checked-region reuse |
 | `NX_CPU_CALL_PROFILE=1` | Sample indirect compiled/HLE calls every 4093 calls and rank inclusive thread CPU cycles |

@@ -8,7 +8,7 @@ no game code, assets or generated modules. No release or download is available.
 
 Windows integration now passes 40 CPU/component suites and a 1,902-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R187 reconstructs 189 generic adapted files. Native sample counts
+entry point. R188 reconstructs 189 generic adapted files. Native sample counts
 and GPU-clock reports replace host placeholders. GPU comparisons replace the
 inherited forced-on conditional renderer, including explicit gated clears and
 original counter-to-predicate chains; regressions verify accumulation,
@@ -18,11 +18,14 @@ face/mip readback and compressed-sampling regressions. Integer fragment outputs
 are compiled offline and checked against actual render-target types. The original
 game run confirms corrected cup colors and colored lighting cubemaps. Diffuse
 lighting remains too dark in the selection menu. R164 now presents a native
-Mario Kart Stadium intro with a lit Mario and kart; countdown, driving and full
-gameplay stability remain under verification. The run reaches the player grid,
-then stops on a command-memory arena bounds check. R166 also restores native
-EQUAL depth semantics and disabled-bias behavior with GPU regressions. The latest original
-game run passes point setup and reaches original counter requests before a
+Mario Kart Stadium intro with a lit Mario and kart. R182 passes the old arena
+stop and reaches countdown/driving; R187 reaches 6,000 frames without a fatal
+error, including anti-gravity and the glider jump. Brightness clipping, completed
+laps/races, playable performance and full gameplay stability remain open.
+R188 makes repeated routine NVN messages opt-in with `NX_TRACE_NVN_CALLS=1`.
+R166 also restores native
+EQUAL depth semantics and disabled-bias behavior with GPU regressions. An earlier original
+game run passed point setup and reaches original counter requests before a
 missing HDR-compositor stage. All 122 remaining common vertex/pixel stages now
 translate and pass module creation; the private cache holds 7,365 stages.
 Native fixed point sizes now reach checked vertex outputs, while programmable

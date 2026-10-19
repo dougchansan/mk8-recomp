@@ -4,7 +4,7 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R187, reconstructing 189 generic adapted files.
+The current source recipe is R188, reconstructing 189 generic adapted files.
 All 40 component suites and the 1,902-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
@@ -20,7 +20,22 @@ it neither retypes shader instructions nor invents cube faces. Nonzero handles
 without registered resources, unsupported formats and physical bounds remain
 guarded. GPU tests sample valid 2D/cube colours, null 2D/cube/shadow values and the
 unavailable cube view; negative children retain failure when the feature is
-disabled or a nonzero descriptor is missing. The actual race run is in progress.
+disabled or a nonzero descriptor is missing.
+
+R187's actual async race reaches its 6,000-frame target without a fatal error and
+is intentionally stopped after 1,273.4 seconds, last presented frame 6,004.
+Source, executable, saved input and foreground stay unchanged. Reviewed native
+frames show anti-gravity driving, the glider jump and first place beside Lakitu's
+2/3 sign. The final HUD still reads 1/3, so a completed lap needs follow-up.
+There is severe brightness clipping around the kart/lights in the glider frame.
+No complete-race or visual-correctness claim follows from this progress.
+
+R188 makes repeated command-callback, scratch-reservation and device-property
+messages opt-in with `NX_TRACE_NVN_CALLS=1`. R187 emitted 808,139 identical
+callback lines in a 39.2 MB log. The same native GPU executable passes all 1,902
+checks with tracing off and on, with identical test receipts and the expected
+message differences. All 40 suites and 300-check sync/cutoff regressions pass.
+No game-frame speedup is attributed to this change yet.
 
 The earlier R185 trace confirms a positive 408-index/one-instance particle draw,
 with a BC3 one-layer 2D resource and array view requested as a cube. This was not

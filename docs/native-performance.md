@@ -1,13 +1,27 @@
 # Native performance work
 
-Earlier builds reached native stadium rendering and the player starting grid.
-R182 reaches native countdown and initial scripted driving, with a later shader
-binding failure. Playable performance and complete gameplay remain unverified. No release or
-download is available.
+R187 completes a profiling-disabled async flight to its 6,000-frame target without
+a fatal error, stopping intentionally after 1,273.4 seconds. Native frames show
+scripted racing through the first bend, anti-gravity section and glider jump.
+The last reviewed image shows first place and Lakitu's 2/3 sign, with the HUD
+still at 1/3; the lap transition needs follow-up. Glider frames also show severe
+brightness clipping. Complete gameplay and playable performance remain open.
+No release or download is available.
 
-R187's component-verified candidate adds zero-work draw handling and native null
-sampled views, with the real race validation in progress. Its 40 suites, 1,902 native
-GPU checks and separate 300-check sync/cutoff regressions pass.
+R188 retains native null sampled views and empty-draw handling, with 40 suites,
+1,902 native GPU checks and separate 300-check sync/cutoff regressions passing.
+It makes routine callback/scratch/property messages opt-in. Tracing off and on
+produces identical GPU test receipts on the same executable. R187 produced
+808,139 callback messages and a 39.2 MB log; this proves repeated diagnostic work,
+not a measured frame-rate cost or speedup from removing it.
+
+R187 race windows of 600 frames each range from 183.4 to 371.6 ms mean interval
+(2.69–5.45 FPS). These are different sections of one race, with sparse image
+readbacks enabled, not a controlled optimization comparison. A read-only
+10.25-second CPU-accounting window during frames 3609–3650 shows one unnamed
+thread using 9.625 CPU seconds (about 94% of one core); the identified replay
+thread uses 0.625 CPU seconds (about 6%). This records CPU consumption, not a
+function-level or GPU critical-path diagnosis. Call-level profiling is next.
 
 The old code forced a zero instance count to one. GPU readback reproduces the
 unintended pixel for both indexed and non-indexed draws. The corrected replay
@@ -86,6 +100,7 @@ measured medians of 20.339 versus 34.107 ns/call on one thread and 283.345 versu
 | `NX_NATIVE_PERF=1` | Aggregate host timings for replay, draws, compute, textures, descriptors, pipelines, uploads, state, clears, copies, list lookup, presentation, clock reads, focus and logging |
 | `NX_BUFFERED_LOG=1` | Buffer routine file logging, flushing on subsequent writes at least every 250 ms; fatal messages flush immediately |
 | `NX_LOG_STDERR=0` | Suppress duplicate routine stderr messages; fatal stderr remains enabled |
+| `NX_TRACE_NVN_CALLS=1` | Enable routine command-callback, scratch-reservation and device-property messages |
 | `NX_STALL_LOG=0` | Disable the per-frame stall sampler; the separate hang watchdog remains active |
 | `NX_GPU_CLOCK=submitted` | Force the existing submitted-query clock for comparison |
 | `NX_SPAN_CACHE=0` | Force uncached guest/host span validation for comparison |

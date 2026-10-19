@@ -12,6 +12,14 @@ IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
 
+The active R164 run presents its first native Mario Kart Stadium course intro.
+Root review of original presented frame1615 verifies the track, lit Mario and
+kart, spotlights, particles and50cc course UI. The lossless PNG and original RGB
+hash are retained privately with the run receipt. This uses the unchanged static
+CPU archives, native Vulkan backend and required offline shader cache; no game
+state was patched to reach the scene. Countdown, driving, stability and complete
+gameplay remain under verification. No release or download is available.
+
 R162 passes the former point guard, executes the original samples-passed report
 and records conditional-render requests during race loading. It closes naturally
 after 1,825.422 seconds when the HDR compositor stage c61922efb137d6e4 is missing.
@@ -37,8 +45,8 @@ Actual R162 input captures contain finite, approximately unit normal/tangent
 vectors in the captured GPU buffer prefixes. Those prefixes are not a complete
 indexed-vertex proof because base vertex is unrecorded. Mario's face remains dark
 in the presented image. Full model draw outputs, mip contents and sample coverage
-are being collected to distinguish shading from raster/depth rejection. No native
-race image or playable result is claimed.
+are being collected to distinguish shading from raster/depth rejection. A native course intro is now verified; driving and a playable result remain
+unverified.
 
 R162 supplies the original NVN point size to native point pipelines. When the
 offline vertex stage has no programmable PointSize output, a checked SPIR-V

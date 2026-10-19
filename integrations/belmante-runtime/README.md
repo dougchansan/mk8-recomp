@@ -17,7 +17,9 @@ RGB565 correction and bounded BC3 integer block views pass authored GPU encoding
 face/mip readback and compressed-sampling regressions. Integer fragment outputs
 are compiled offline and checked against actual render-target types. The original
 game run confirms corrected cup colors and colored lighting cubemaps. Diffuse
-lighting remains too dark and race rendering is unverified. The latest original
+lighting remains too dark in the selection menu. R164 now presents a native
+Mario Kart Stadium intro with a lit Mario and kart; countdown, driving and full
+gameplay stability remain under verification. The latest original
 game run passes point setup and reaches original counter requests before a
 missing HDR-compositor stage. All 122 remaining common vertex/pixel stages now
 translate and pass module creation; the private cache holds 7,365 stages.

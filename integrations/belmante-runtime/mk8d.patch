@@ -6839,7 +6839,7 @@
              log("snapshot %llx: %ux%u rgba16f, %llu NaN, %llu Inf of %llu values, largest finite %g", (unsigned long long)snap.draw, snap.w,
                  snap.h, (unsigned long long)nan, (unsigned long long)inf, (unsigned long long)n, big);
 +            const uint64_t bytes = uint64_t(snap.w) * snap.h * 8;
-+            if (bytes <= (4u << 20)) {
++            if (bytes <= (16u << 20)) {
 +                char name[64];
 +                std::snprintf(name, sizeof name, "/frames/00000_%llx.raw", (unsigned long long)snap.draw);
 +                if (FILE* file = plat::fopen_utf8(plat::data_root() + name, "wb")) {
@@ -6853,6 +6853,52 @@
              p_vkUnmapMemory(vk_device(), snap.s.buffer_memory);
          } else if (snap.raw_format && p_vkMapMemory(vk_device(), snap.s.buffer_memory, 0, VK_WHOLE_SIZE, 0, &p) == VK_SUCCESS) {
              char name[64];
+@@ -552,7 +611,9 @@
+ 
+ bool zero_draws_on() {
+     static const bool on = std::getenv("NX_ZERO_DRAWS") != nullptr;
+-    return on;
++    static const uint64_t until = [] { const char* value=std::getenv("NX_ZERO_DRAWS_UNTIL_FRAME");
++        return value?std::strtoull(value,nullptr,10):UINT64_MAX; }();
++    return on && g_frame < until;
+ }
+ 
+ void zero_draws_begin_submit(VkCommandBuffer cb) {
+@@ -570,7 +631,8 @@
+ // Around one draw call (inside the render pass). Returns false when this submit's queries are used up.
+ bool zero_draws_begin(VkCommandBuffer cb, const std::string& label) {
+     if (!zero_draws_on() || !g_zero_pool || g_zero_labels.size() >= kZeroQueries) return false;
+-    p_vkCmdBeginQuery(cb, g_zero_pool, uint32_t(g_zero_labels.size()), 0);
++    p_vkCmdBeginQuery(cb, g_zero_pool, uint32_t(g_zero_labels.size()),
++        std::getenv("NX_ZERO_DRAW_DETAIL") && vk_features().occlusionQueryPrecise ? VK_QUERY_CONTROL_PRECISE_BIT : 0);
+     g_zero_labels.push_back(label);
+     return true;
+ }
+@@ -590,7 +652,8 @@
+ }
+ 
+ void zero_draws_log() {
+-    if (!zero_draws_on()) return;
++    // Retain the last window's results even when logging occurs after its cutoff.
++    if (g_zero_stats.empty()) return;
+     std::vector<std::pair<uint64_t, std::string>> zero;
+     for (auto& [label, z] : g_zero_stats)
+         if (z.samples == 0) zero.push_back({z.draws, label});
+@@ -598,6 +661,14 @@
+     log("zero draws: %zu of %zu shader pairs produced no pixel", zero.size(), g_zero_stats.size());
+     for (size_t k = 0; k < zero.size() && k < 25; k++)
+         log("zero draws: %6llu x %s", (unsigned long long)zero[k].first, zero[k].second.c_str());
++    if (std::getenv("NX_ZERO_DRAW_DETAIL")) {
++        uint32_t logged=0;
++        for (const auto& [label,stat] : g_zero_stats) {
++            if (logged++>=512) break;
++            log("draw samples: draws=%llu samples=%llu precise=%u %s",(unsigned long long)stat.draws,
++                (unsigned long long)stat.samples,unsigned(vk_features().occlusionQueryPrecise),label.c_str());
++        }
++    }
+     g_zero_stats.clear();
+ }
+ 
 --- a/runtime/src/nvn/nvn_device.cpp
 +++ b/runtime/src/nvn/nvn_device.cpp
 @@ -1,129 +1,81 @@
@@ -7146,7 +7192,31 @@
      g_stats.total++;
      if (g_state.rasterizer_discard || !g_state.render_enable) return false;  // nothing reaches the targets
      const auto* shaders = program_shaders(g_state.program);
-@@ -365,6 +390,30 @@
+@@ -311,12 +336,17 @@
+                     (unsigned long long)r.texture, (void*)img, img ? img->width : 0, img ? img->height : 0,
+                     img ? int(img->format) : 0, img ? img->levels : 0, img ? img->layers : 0, img ? int(img->uploaded) : 0,
+                     img ? int(img->rendered) : 0);
+-                if (img)
+-                    for (uint32_t l = 0; l < (img->layers > 1 ? std::min(img->layers, 12u) : 1u); l++) {
+-                        g_snap_layer = l, g_snap_level = 0;
+-                        debug_snapshot(cb, *img, 0xC0000000ull + tag * 4096 + k * 16 + l);
+-                    }
+-                g_snap_layer = 0;
++                if (img) {
++                    const uint32_t levels = std::getenv("NX_DUMP_DRAW_MIPS") ? std::min(img->levels, 2u) : 1u;
++                    for (uint32_t level = 0; level < levels; ++level)
++                        for (uint32_t l = 0; l < (img->layers > 1 ? std::min(img->layers, 12u) : 1u); ++l) {
++                            g_snap_layer = l, g_snap_level = level;
++                            const uint64_t snapshot = level ? 0xA0000000ull + tag * 4096 + k * 256 + level * 16 + l :
++                                                              0xC0000000ull + tag * 4096 + k * 16 + l;
++                            debug_snapshot(cb, *img, snapshot);
++                        }
++                }
++                g_snap_layer = g_snap_level = 0;
+             }
+         }
+     }
+@@ -365,6 +395,30 @@
          return false;
      }
      check_vertex_ranges(vs, fs, indexed, c, in);  // NX_CHECK_VERTS (nvn_written.cpp)
@@ -7177,7 +7247,7 @@
      if (!g_rendering) {
          if (gpu_profile_on()) {
              GpuImage* img = t.color_count && t.colors[0] ? image_of(t.colors[0]) : nullptr;
-@@ -381,6 +430,7 @@
+@@ -381,6 +435,7 @@
      std::memset(&key, 0, sizeof key);  // the key is compared byte for byte
      key.vs = vs, key.fs = fs;
      key.topology = mode;
@@ -7185,21 +7255,29 @@
      key.attrib_count = uint32_t(std::min<size_t>(g_state.attribs.size(), 16));
      std::copy_n(g_state.attribs.begin(), key.attrib_count, key.attribs);
      key.stream_count = uint32_t(std::min<size_t>(g_state.streams.size(), 16));
-@@ -502,13 +552,21 @@
+@@ -502,13 +557,27 @@
              p_vkCmdBindIndexBuffer(cb, in.index.buffer, in.index.offset, in.index_type);
              g_bound.has_index = true, g_bound.index = in.index, g_bound.index_type = in.index_type, g_state_set++;
          }
+-        bool q = zero_draws_on() && zero_draws_begin(cb, vs->hash + " " + (fs ? fs->hash : std::string("-")));
 +        if (g_state.conditional_address) native_conditional_begin(cb);
 +        const auto counter=native_counter_draw_begin(cb);
-         bool q = zero_draws_on() && zero_draws_begin(cb, vs->hash + " " + (fs ? fs->hash : std::string("-")));
++        bool q = zero_draws_on() && zero_draws_begin(cb, vs->hash + " " + (fs ? fs->hash : std::string("-")) +
++              (std::getenv("NX_ZERO_DRAW_DETAIL") ? " count="+std::to_string(indexed?c.i[0]:c.i[1])+
++               " base="+std::to_string(indexed?c.i[1]:c.i[0])+" test="+std::to_string(g_state.depth.depth_test)+" depth="+std::to_string(g_state.depth.depth_func)+
++               " write="+std::to_string(g_state.depth.depth_write) : std::string()));
          p_vkCmdDrawIndexed(cb, count, uint32_t(std::max(1, c.i[3])), 0, c.i[1], uint32_t(c.i[2]));
          if (q) zero_draws_end(cb);
 +        native_counter_draw_end(cb,counter);
 +        if (g_state.conditional_address) native_conditional_end(cb);
      } else {
+-        bool q = zero_draws_on() && zero_draws_begin(cb, vs->hash + " " + (fs ? fs->hash : std::string("-")));
 +        if (g_state.conditional_address) native_conditional_begin(cb);
 +        const auto counter=native_counter_draw_begin(cb);
-         bool q = zero_draws_on() && zero_draws_begin(cb, vs->hash + " " + (fs ? fs->hash : std::string("-")));
++        bool q = zero_draws_on() && zero_draws_begin(cb, vs->hash + " " + (fs ? fs->hash : std::string("-")) +
++              (std::getenv("NX_ZERO_DRAW_DETAIL") ? " count="+std::to_string(indexed?c.i[0]:c.i[1])+
++               " base="+std::to_string(indexed?c.i[1]:c.i[0])+" test="+std::to_string(g_state.depth.depth_test)+" depth="+std::to_string(g_state.depth.depth_func)+
++               " write="+std::to_string(g_state.depth.depth_write) : std::string()));
          p_vkCmdDraw(cb, uint32_t(c.i[1]), uint32_t(std::max(1, c.i[3])), uint32_t(c.i[0]), uint32_t(c.i[2]));
          if (q) zero_draws_end(cb);
 +        native_counter_draw_end(cb,counter);
@@ -11469,7 +11547,7 @@
 +}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,252 @@
+@@ -0,0 +1,261 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -11513,6 +11591,14 @@
 +#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
 + if(argc==2&&std::string_view(argv[1])=="--counter-sync")return native_counter_sync_probe();
++ if(argc==2&&std::string_view(argv[1])=="--zero-cutoff"){
++  if(_putenv_s("NX_ZERO_DRAWS","1")||_putenv_s("NX_ZERO_DRAWS_UNTIL_FRAME","1"))throw std::runtime_error("zero cutoff setup failed");
++  nx::g_frame=0;if(!nx::nvn::zero_draws_on())throw std::runtime_error("zero diagnostic did not start");
++  nx::g_frame=1;if(nx::nvn::zero_draws_on())throw std::runtime_error("zero diagnostic did not stop before native counters");
++  std::cout<<"zero diagnostic cutoff active-to-inactive PASS\n";
++  return native_counter_sync_probe();
++ }
++
 +#ifdef _WIN32
 + if(argc==4&&std::string_view(argv[1])=="--avc-private")return codec_probe::run(argv[2],std::strtoull(argv[3],nullptr,16));
 +#endif
@@ -11716,6 +11802,7 @@
 + native_single_layer_array_sample_probe(check);
 + native_uniform_snapshot_probe(check);
 + native_image_snapshot_subresource_probe(check);
++ native_full_hd_hdr_snapshot_probe(check);
 + native_counter_probe(device,check);
 + native_conditional_probe(device,check);
 + native_point_probe(device,check);
@@ -12187,7 +12274,7 @@
 +int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("touch policy assertion");};nx::NativeTouchPolicy p;std::array<uint8_t,nx::NativeTouchPolicy::StateBytes> state{};check(p.states(state,1)==0);p.initialize();check(p.states(state,0)==0);check(p.states(state,1)==1);uint64_t sample=0;std::memcpy(&sample,state.data(),8);check(sample==1);for(size_t i=8;i<state.size();++i)check(state[i]==0);check(p.states(state,16)==1);std::memcpy(&sample,state.data(),8);check(sample==2);bool bad=false;try{p.states(std::span<uint8_t>(state).first(4),1);}catch(const std::invalid_argument&){bad=true;}check(bad);std::cout<<"native_touch_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/native_uniform_snapshot_probe.h
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,124 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include "nvn/native_debug_buffer_snapshot.h"
@@ -12195,6 +12282,7 @@
 +#include "nvn/nvn_draw_state.h"
 +#include <vector>
 +#include <array>
++#include <algorithm>
 +#include <cstdio>
 +#include <cstring>
 +
@@ -12283,6 +12371,31 @@
 +                             payload[i + 2] == 0x4400 && payload[i + 3] == 0x3c00;
 +                check(exact);
 +            }
++    }
++    destroy(key);
++}
++
++// A full-HD HDR model target exceeds the old 4 MiB file limit.
++template<class Check> void native_full_hd_hdr_snapshot_probe(Check check) {
++    using namespace nx;using namespace nx::nvn;
++    const auto key=kernel_alloc(256,4096);auto& texture=make<Texture>(key);
++    texture.target=1;texture.width=1920;texture.height=1080;texture.depth=texture.levels=1;texture.format=0x29;
++    {
++        std::lock_guard lock(gpu_lock());auto* image=image_of(key);
++        check(image&&image->format==VK_FORMAT_R16G16B16A16_SFLOAT);
++        auto command=frame_begin(false);transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
++        VkClearColorValue colour{};colour.float32[0]=0.25f;colour.float32[1]=0.5f;colour.float32[2]=colour.float32[3]=1;
++        VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
++        vk::p_vkCmdClearColorImage(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&colour,1,&range);
++        g_snap_level=g_snap_layer=0;debug_snapshot(command,*image,0xdffd0000);
++        frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);debug_snapshots_write();
++        FILE* file=plat::fopen_utf8(plat::data_root()+"/frames/00000_dffd0000.raw","rb");check(file!=nullptr);
++        std::array<uint32_t,3> header{};check(std::fread(header.data(),4,3,file)==3);
++        check(header[0]==1920&&header[1]==1080&&header[2]==VK_FORMAT_R16G16B16A16_SFLOAT);
++        std::array<uint64_t,4096> pixels{};size_t left=1920u*1080u;bool exact=true;
++        while(left){const auto count=std::min(left,pixels.size());if(std::fread(pixels.data(),8,count,file)!=count){exact=false;break;}
++            for(size_t n=0;n<count;++n)exact&=pixels[n]==0x3c003c0038003400ull;left-=count;}
++        check(exact&&left==0);check(std::fgetc(file)==EOF);check(std::fclose(file)==0);
 +    }
 +    destroy(key);
 +}

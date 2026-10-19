@@ -4,13 +4,41 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R162, reconstructing 174 generic adapted files.
-All 39 component suites and the 1,560-check native GPU fixture pass, plus a
+The current source recipe is R164, reconstructing 174 generic adapted files.
+All 39 component suites and the 1,567-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
+
+R162 passes the former point guard, executes the original samples-passed report
+and records conditional-render requests during race loading. It closes naturally
+after 1,825.422 seconds when the HDR compositor stage c61922efb137d6e4 is missing.
+Source, executable and saved profile remain unchanged; foreground changes during
+the run. The stage is hdr_compose/v210/pixel from the original common graphics
+archive. Its code hash and every compiler-consumed control field match the live
+capture. All 122 remaining vertex/pixel stages from that inventory now translate
+and pass GPU module creation, growing the private cache from 7,243 to 7,365. One
+geometry stage is outside this batch. Module acceptance gives no pipeline or
+rendering-equivalence credit; the new original-game flight is in progress.
+
+R164 retains full-HD HDR draw readbacks up to 16 MiB. The previous 4 MiB file limit
+discarded model targets after copying them. An authored 1920x1080 GPU-clear test
+checks the complete 16,588,800-byte half-float payload, header and EOF. The prior
+writer fails that regression. Optional captures also include mip1. A bounded
+draw-sample diagnostic reports mesh counts and depth state, and can turn off
+before original counter requests; a regression verifies its cutoff followed by
+the real 300-check synchronous counter path. The old cutoff behavior fails.
+All 39 component suites, 1,567 native GPU checks and 300 synchronous checks pass;
+the two changed implementation files analyze cleanly.
+
+Actual R162 input captures contain finite, approximately unit normal/tangent
+vectors in the captured GPU buffer prefixes. Those prefixes are not a complete
+indexed-vertex proof because base vertex is unrecorded. Mario's face remains dark
+in the presented image. Full model draw outputs, mip contents and sample coverage
+are being collected to distinguish shading from raster/depth rejection. No native
+race image or playable result is claimed.
 
 R162 supplies the original NVN point size to native point pipelines. When the
 offline vertex stage has no programmable PointSize output, a checked SPIR-V
@@ -26,7 +54,8 @@ included. CPU regressions cover structured early returns, helper functions,
 existing outputs and malformed inputs. All 39 component suites, 1,560 native GPU
 checks and 300 synchronous checks pass. Static CPU archives are unchanged. An
 initial Windows paging-capacity compiler failure is preserved; the unchanged
-source succeeds with one compiler on retry. Original-game validation is running.
+source succeeds with one compiler on retry. Its original-game run passes point
+setup before the later missing HDR-compositor stage described above.
 
 R161 replaces the inherited forced-on conditional-render handler with GPU
 predicates. The original SDK maps API modes 0/1 to equal/not-equal rendering.

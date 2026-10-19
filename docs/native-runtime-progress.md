@@ -4,13 +4,31 @@ Updated 2026-10-19. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R194, reconstructing 189 generic adapted files.
-All 40 component suites and the 1,928-check native GPU fixture pass, plus a
+The current source recipe is R201, reconstructing 192 generic adapted files.
+All 40 component suites and the 1,950-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
+
+R201 stabilizes a temporary texture selected after a replay has begun. The old
+empty-at-mark fallback follows the current object again after fast-cache eviction,
+so finalization can lose the incarnation already used by that replay. An authored
+regression reproduces the loss on unchanged production code. The corrected resolver
+keeps the first positive post-mark selection until the replay ends, protected by
+the existing deferred-retirement epoch. It never pins misses, and subsequent
+replays see the current incarnation. Both finalization and same-address recreation
+retain the original native sampled view and red GPU pixels in the old replay.
+The full 1,950-check GPU fixture also passes with the fast resolver cache disabled.
+Actual full-race validation is in progress; this is not a completed-race claim.
+
+Windows failure reporting now safely handles threads without a guest CPU context,
+flushes critical crash messages in buffered mode, and catches exceptions at native
+thread and replay-worker boundaries. Three no-GPU child probes verify native-thread,
+real replay-worker and no-guest SEH diagnostics. Failure-only shader/resource/epoch
+context helps diagnose the real race stops. No missing nonzero resource has been
+converted to a null binding, and the generation/lifetime/bounds checks remain.
 
 R194 indexes retained texture snapshots by memory pool and GPU address for CPU
 admission. Hints store keys rather than pointers: every candidate still requires

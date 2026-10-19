@@ -1,5 +1,15 @@
 # Native performance work
 
+R201 adds a regression-backed lifetime correction alongside the performance work.
+A temporary texture first resolved after the replay mark could disappear after
+finalization and fast-cache eviction, despite its old object remaining deferred.
+The first positive empty-at-mark selection is now stable for that replay; misses
+are not retained, and the selection is discarded at replay end. Native GPU tests
+cover finalization, replacement at the same address, cache eviction, real red-pixel
+readback and current/next-replay visibility. All 40 suites, 1,950 GPU checks and
+300-check sync/cutoff regressions pass. The 1,950-check fixture passes with the fast
+resolver cache disabled as well. Full-race validation remains in progress.
+
 R194 reduces the measured retained-texture admission hotspot. Its course probe
 reports median identity time of 8.363 ms/frame, compared with 315.509 ms/frame in
 the earlier R189 probe. The 900 measured race frames average 47.630 ms (about

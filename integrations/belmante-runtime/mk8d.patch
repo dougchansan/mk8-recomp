@@ -1241,12 +1241,13 @@
  };
 --- a/runtime/src/kernel.cpp
 +++ b/runtime/src/kernel.cpp
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,5 @@
++#include "native_failure.h"
 +#include "mk8_focus_policy.h"
  // A small Horizon kernel: handles, threads, synchronization (mutex/condvar/address arbitration), events,
  // memory and GetInfo. Services (IPC) live in ipc.cpp.
  #include <algorithm>
-@@ -18,6 +19,7 @@
+@@ -18,6 +20,7 @@
  
  #include "kernel_state.h"
  #include "platform.h"
@@ -1254,7 +1255,7 @@
  
  namespace nx {
  
-@@ -43,6 +45,11 @@
+@@ -43,6 +46,11 @@
  
  using namespace kstate;
  
@@ -1266,7 +1267,7 @@
  uint32_t handle_add(std::shared_ptr<KObject> o) {
      std::lock_guard lk(g_k);
      uint32_t h = g_next_handle++;
-@@ -53,6 +60,7 @@
+@@ -53,6 +61,7 @@
  std::shared_ptr<KObject> handle_get(uint32_t h) {
      std::lock_guard lk(g_k);
      if (h == kPseudoCurrentThread && t_self) return t_self->self.lock();
@@ -1274,7 +1275,15 @@
      auto it = g_handles.find(h);
      return it == g_handles.end() ? nullptr : it->second;
  }
-@@ -337,7 +345,8 @@
+@@ -75,6 +84,7 @@
+ uint64_t heap_size() { return g_heap_size; }
+ 
+ CPU& current_cpu() { return t_self->ctx; }
++CPU* try_current_cpu() noexcept { return t_self ? &t_self->ctx : nullptr; }
+ 
+ uint64_t system_tick() { return plat::monotonic_ns() * 192 / 10000; }  // 19.2 MHz
+ 
+@@ -337,7 +347,8 @@
      };
      auto until = std::chrono::steady_clock::now() + std::chrono::nanoseconds(timeout < 0 ? 0 : timeout);
      KThread* self = t_self;
@@ -1284,7 +1293,7 @@
      g_sync_waiters.push_back(self);
      struct Leave {
          KThread* t;
-@@ -350,11 +359,12 @@
+@@ -350,11 +361,12 @@
              objs[i]->consume();
              return 0;
          }
@@ -1298,7 +1307,7 @@
          if (timeout < 0)
              self->cv.wait(lk);
          else if (self->cv.wait_until(lk, until) == std::cv_status::timeout && ready() < 0)
-@@ -587,7 +597,8 @@
+@@ -587,7 +599,8 @@
          case 0x19: {  // CancelSynchronization(thread handle)
              auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[0])));
              std::lock_guard lk(g_k);
@@ -1308,7 +1317,7 @@
              notify_all();
              break;
          }
-@@ -616,9 +627,13 @@
+@@ -616,9 +629,13 @@
          case 0x22:  // SendSyncRequestWithUserBuffer(buf, size, handle)
              rc = ipc_request(c, uint32_t(c.x[2]), c.x[0], c.x[1]);
              break;
@@ -1325,7 +1334,7 @@
          case 0x25: {  // GetThreadId(handle) -> id
              auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[1])));
              c.x[1] = t ? t->id : 0;
-@@ -678,7 +693,7 @@
+@@ -678,7 +695,7 @@
              rc = unmap_transfer_memory(uint32_t(c.x[0]), c.x[1], c.x[2]);
              break;
          default:
@@ -1334,7 +1343,7 @@
                  (unsigned long long)c.x[0], (unsigned long long)c.x[1], (unsigned long long)c.x[2]);
              rc = 0;
      }
-@@ -691,7 +706,8 @@
+@@ -691,7 +708,8 @@
  namespace {
  thread_local int t_svc_role = 0;  // 1 game main, 2 the thread that presents
  std::mutex g_svc_lock;
@@ -1344,7 +1353,7 @@
  bool svc_profile_on() {
      static const bool on = std::getenv("NX_SVC_PROFILE") != nullptr;
      return on;
-@@ -706,28 +722,40 @@
+@@ -706,28 +724,40 @@
      std::vector<std::pair<uint64_t, std::tuple<int, uint32_t, uint64_t>>> v;
      uint64_t total = 0;
      for (auto& [k, val] : g_svc_prof)
@@ -1509,15 +1518,15 @@
 +        if (g_log_file) std::setvbuf(g_log_file, nullptr, _IOFBF, 65536);
 +    }
 +    static const bool stderr_enabled = [] { const auto* e = std::getenv("NX_LOG_STDERR"); return !e || e[0]!='0'; }();
-+    const bool fatal_message = std::strncmp(buf, "FATAL:", 6)==0;
-+    if (stderr_enabled || fatal_message) plat::log_line(buf);
++    const bool critical_message = std::strncmp(buf, "FATAL:", 6)==0 || std::strncmp(buf, "CRASH:", 6)==0;
++    if (stderr_enabled || critical_message) plat::log_line(buf);
      if (g_log_file) {
          std::fprintf(g_log_file, "%s\n", buf);
 -        std::fflush(g_log_file);
 +        static const bool buffered = [] { const auto* e = std::getenv("NX_BUFFERED_LOG"); return e && e[0]=='1'; }();
 +        static uint64_t last_flush = 0;
 +        const auto now = buffered ? perf::now() : 0;
-+        if (!buffered || fatal_message || now-last_flush>=250000000ull) {
++        if (!buffered || critical_message || now-last_flush>=250000000ull) {
 +            std::fflush(g_log_file);
 +            last_flush = now;
 +        }
@@ -2108,6 +2117,19 @@
 + bool is_locked()const{std::lock_guard guard(mutex);return locked;}
 +};
 +inline NativeExitPolicy& native_exit_policy(){static NativeExitPolicy value;return value;}
++}
+--- /dev/null
++++ b/runtime/src/native_failure.h
+@@ -0,0 +1,10 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <nx/runtime.h>
++namespace nx {
++CPU* try_current_cpu() noexcept;
++namespace plat {
++void install_failure_handlers();
++[[noreturn]] void report_current_exception();
++}
 +}
 --- /dev/null
 +++ b/runtime/src/native_font_bundle.h
@@ -7992,6 +8014,58 @@
      // A sampled depth/stencil view reads depth.
      vi.subresourceRange = {aspect == 3 ? VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT) : img->aspect, 0, img->levels, 0,
                             img->layers};
+--- a/runtime/src/nvn/nvn_incarnation.cpp
++++ b/runtime/src/nvn/nvn_incarnation.cpp
+@@ -28,6 +28,11 @@
+ std::atomic<uint64_t> g_epoch{1};  // bumped under objects_lock (alone) by each recorded change
+ // guest -> (epoch of the change, object it retired; null: there was none), in epoch order. Under objects_lock.
+ std::unordered_map<uint64_t, std::vector<std::pair<uint64_t, Object*>>> g_retired;
++// A post-mark object may be selected through the empty-at-mark fallback.
++// Keep that positive choice for this replay, including after fast-cache eviction.
++// Its retirement epoch is newer than the active floor, so deferred ownership
++// already protects it. Never pin a miss or expose this choice outside the replay.
++thread_local std::unordered_map<uint64_t,Object*> g_postmark_selected;
+ std::atomic<uint64_t> g_resolved_old{0};  // replay lookups answered with a retired incarnation
+ 
+ }  // namespace
+@@ -53,6 +58,8 @@
+ }
+ 
+ Object* find_object(uint64_t guest, uint64_t mark) {
++    const bool active=mark&&t_replay_serial&&mark==t_replay_mark;
++    if(active)if(const auto selected=g_postmark_selected.find(guest);selected!=g_postmark_selected.end())return selected->second;
+     auto it = objects().find(guest);
+     Object* current = it == objects().end() ? nullptr : it->second.get();
+     if (!mark || g_retired.empty()) return current;
+@@ -61,7 +68,10 @@
+     for (auto& [epoch, object] : h->second)
+         if (epoch > mark) {  // the first change after the mark retired what the replay must see
+             // Created after the mark (null then) and before the replay: the object the lists mean (DEBUG.md #64).
+-            if (!object && !mark_empty_old()) return current;
++            if (!object && !mark_empty_old()) {
++                if(active&&current)g_postmark_selected.emplace(guest,current);
++                return current;
++            }
+             if (object != current) {
+                 uint64_t n = g_resolved_old.fetch_add(1, std::memory_order_relaxed) + 1;
+                 if (n == 1 || n == 100 || n % 10000 == 0)
+@@ -139,6 +149,7 @@
+ // the time a submit starts, the next frames' textures and pool slots are already there (DEBUG.md #57).
+ // NX_MARK_AT_SUBMIT=1: the mark at the submit's start (#55's).
+ ReplayScope::ReplayScope(uint64_t lists_epoch) {
++    g_postmark_selected.clear();
+     if (texture_race_old()) {
+         g_floor = UINT64_MAX;
+         drain_objects();
+@@ -160,7 +171,7 @@
+     t_replay_serial = ++serial;
+ }
+ 
+-ReplayScope::~ReplayScope() { t_replay_mark = 0, t_replay_serial = 0; }
++ReplayScope::~ReplayScope() { g_postmark_selected.clear(); t_replay_mark = 0, t_replay_serial = 0; }
+ 
+ bool resolve_cache_on() {
+     static const bool on = [] {
 --- a/runtime/src/nvn/nvn_objects.cpp
 +++ b/runtime/src/nvn/nvn_objects.cpp
 @@ -1,7 +1,10 @@
@@ -8704,7 +8778,7 @@
      if (img->layout == VK_IMAGE_LAYOUT_UNDEFINED) {  // never written: black, not garbage
          transition(cb, *img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
          VkImageSubresourceRange r{img->aspect, 0, img->levels, 0, img->layers};
-@@ -609,11 +678,13 @@
+@@ -609,11 +678,29 @@
  }
  
  VkImageView sampled_view(VkCommandBuffer cb, uint64_t texture, const ImageShape& shape, const ViewInfo* view,
@@ -8715,11 +8789,27 @@
      GpuImage* img = ensure_contents(cb, texture);
      static uint64_t no_image = 0, incompatible = 0;
      if (!img) {
-+        if(required)throw std::invalid_argument("required native sampled texture has no image");
++        if(required) {
++            log("CRASH: required sampled image missing key=%llx replay-mark=%llu replay-serial=%llu epoch=%llu floor=%llu",
++                (unsigned long long)texture,(unsigned long long)t_replay_mark,(unsigned long long)t_replay_serial,
++                (unsigned long long)current_epoch(),(unsigned long long)replay_floor());
++            const auto* resolved=get<Texture>(texture);
++            std::shared_lock guard(objects_lock());
++            const auto found=objects().find(texture);
++            const auto* live=found==objects().end()?nullptr:dynamic_cast<Texture*>(found->second.get());
++            log("CRASH: missing image resolved=%p current=%p resolved-image=%p target=%u format=%u size=%ux%ux%u levels=%u samples=%u pool=%llx gpu=%llx memory=%llx bytes=%llu",
++                (const void*)resolved,(const void*)live,resolved?(void*)resolved->image.get():nullptr,
++                resolved?resolved->target:0,resolved?resolved->format:0,resolved?resolved->width:0,
++                resolved?resolved->height:0,resolved?resolved->depth:0,resolved?resolved->levels:0,
++                resolved?resolved->samples:0,(unsigned long long)(resolved?resolved->pool:0),
++                (unsigned long long)(resolved?resolved->gpu:0),(unsigned long long)(resolved?resolved->memory:0),
++                (unsigned long long)(resolved?resolved->storage_size:0));
++            throw std::invalid_argument("required native sampled texture has no image");
++        }
          if (++no_image % 100000 == 1) log("nvn/vk: dummy sampled: %llu with no image, %llu with an incompatible view",
                                            (unsigned long long)no_image, (unsigned long long)incompatible);
          return dummy_view(cb, shape);
-@@ -643,6 +714,7 @@
+@@ -643,6 +730,7 @@
      }
      VkImageView v = view_of(*img, view_type(shape), vi);
      if (!v) {
@@ -8727,7 +8817,7 @@
          *layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
          if (++incompatible % 1000 == 1)
              log("nvn/vk: texture %llx (%ux%u x%u, view type %d) sampled as view type %d: dummy", (unsigned long long)texture,
-@@ -653,6 +725,7 @@
+@@ -653,6 +741,7 @@
  }
  
  VkPipeline compute_pipeline(const ShaderInfo* cs, const ProgramLayout& layout) {
@@ -9203,7 +9293,46 @@
  namespace nx::nvn::replay {
  
  using namespace nx::vk;
-@@ -403,6 +413,7 @@
+@@ -104,6 +114,11 @@
+             if (then && (!now || moved || now->target != then->target || now->format != then->format)) texture = e.snapshot;
+         }
+         if (view && e.has_view) *view = e.view;
++        if(texture&&!get<Texture>(texture))
++            log("CRASH: lookup selected absent texture handle=%llx selected=%llx source=%llx snapshot=%llx mark=%llu serial=%llu epoch=%llu",
++                (unsigned long long)handle,(unsigned long long)texture,(unsigned long long)e.texture,
++                (unsigned long long)e.snapshot,(unsigned long long)t_replay_mark,(unsigned long long)t_replay_serial,
++                (unsigned long long)current_epoch());
+     }
+ }
+ 
+@@ -114,6 +129,17 @@
+     uint32_t sid = 0, tid = handle_texture(handle, &sid);
+     auto* tp = get<DescriptorPool>(g_state.texture_pool);
+     if (!tp) return "no pool";
++    PoolEntry marked;
++    {std::shared_lock lk(objects_lock());if(!pool_entry_at(g_state.texture_pool,tid,t_replay_mark,marked)) {
++        if(auto it=tp->textures.find(tid);it!=tp->textures.end())marked.texture=it->second;
++        if(auto it=tp->snapshots.find(tid);it!=tp->snapshots.end())marked.snapshot=it->second;
++    }}
++    const auto* marked_source=marked.texture?get<Texture>(marked.texture):nullptr;
++    const auto* marked_snapshot=marked.snapshot?get<Texture>(marked.snapshot):nullptr;
++    log("CRASH: marked slot source=%llx snapshot=%llx resolved-source=%p resolved-snapshot=%p replay=%llu/%llu epoch=%llu floor=%llu keep-env=%s",
++        (unsigned long long)marked.texture,(unsigned long long)marked.snapshot,(const void*)marked_source,(const void*)marked_snapshot,
++        (unsigned long long)t_replay_mark,(unsigned long long)t_replay_serial,(unsigned long long)current_epoch(),
++        (unsigned long long)replay_floor(),std::getenv("NX_KEEP_TEXTURES")?std::getenv("NX_KEEP_TEXTURES"):"unset");
+     std::shared_lock lk(objects_lock());
+     PoolEntry e;
+     bool at_mark = pool_entry_at(g_state.texture_pool, tid, t_replay_mark, e);
+@@ -123,7 +149,7 @@
+         auto o = objects().find(key);
+         auto* t = o == objects().end() ? nullptr : dynamic_cast<Texture*>(o->second.get());
+         char b[96];
+-        std::snprintf(b, sizeof b, "%llx(%ux%u f%x m%llx)", (unsigned long long)(key & 0xFFFFF), t ? t->width : 0,
++        std::snprintf(b, sizeof b, "%llx(%ux%u f%x m%llx)", (unsigned long long)key, t ? t->width : 0,
+                       t ? t->height : 0, t ? t->format : 0, (unsigned long long)(t ? t->memory : 0));
+         return std::string(b);
+     };
+@@ -403,6 +429,7 @@
  // passes when textures or images need them. A set is allocated when its first binding is written: the sets no stage
  // declares anything in (usually two of the four) are neither allocated nor bound.
  void build_sets(VkCommandBuffer cb, const std::vector<const ShaderInfo*>& shaders, const ProgramLayout& layout) {
@@ -9211,7 +9340,7 @@
      Descriptors& d = g_sets;
      if (draw_slow(kSlowScratch))
          d = Descriptors{};
-@@ -451,6 +462,33 @@
+@@ -451,6 +478,33 @@
          return s->stage == ShaderStage::Compute &&
                 (all_write_backs() || (b.binding < 64 && written_storage_bindings(s) >> b.binding & 1));
      };
@@ -9245,7 +9374,7 @@
      // The written ranges first (nvn_written.cpp): two bindings of one dispatch that meet get one copy, and bindings
      // that read what the dispatch writes see it, as on the GPU.
      for (const ShaderInfo* s : shaders)
-@@ -522,6 +560,33 @@
+@@ -522,6 +576,33 @@
                  }
                  default: info = buffer_of(cb, nullptr, 0x1000, 16, false, false); break;
              }
@@ -9279,17 +9408,29 @@
              VkDescriptorType type = VkDescriptorType(b.type);
              if (b.set == 0 && b.binding < 64 && layout.dynamic >> b.binding & 1) {  // the offset goes with the bind
                  d.dynamic |= 1ull << b.binding, d.dynamic_offset[b.binding] = uint32_t(info.offset);
-@@ -543,7 +608,8 @@
+@@ -543,8 +624,19 @@
          const ResolvedTexture r = k < t.resolved.size() ? t.resolved[k] : ResolvedTexture{};
          VkDescriptorImageInfo ii{};
          ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 -        ii.imageView = r.texture ? sampled_view(cb, r.texture, b->image, &r.view, &ii.imageLayout)
+-                                 : dummy_view(cb, b->image);
 +        const bool native_null=!r.texture&&vk_null_descriptors()&&native_shader_uses_sampled_float_profile(s);
-+        ii.imageView = native_null?VK_NULL_HANDLE:r.texture ? sampled_view(cb, r.texture, b->image, &r.view, &ii.imageLayout, native_shader_uses_sampled_float_profile(s))
-                                  : dummy_view(cb, b->image);
++        try {
++            ii.imageView = native_null?VK_NULL_HANDLE:r.texture ? sampled_view(cb, r.texture, b->image, &r.view, &ii.imageLayout, native_shader_uses_sampled_float_profile(s))
++                                     : dummy_view(cb, b->image);
++        } catch(...) {
++            const auto& draw=current_draw_invocation;
++            log("CRASH: sampled descriptor shader=%s texture=%llx handle=%llx binding=%u slot=%d texture-pool=%llx sampler-pool=%llx dim=%u array=%u depth=%u view=%u/%u:%u/%u format=%u draw=%u/%u/%d/%d",
++                s->hash.c_str(),(unsigned long long)r.texture,(unsigned long long)(k<t.handles.size()?t.handles[k]:0),
++                b->binding,b->nvn.index,(unsigned long long)g_state.texture_pool,(unsigned long long)g_state.sampler_pool,
++                b->image.dim,unsigned(b->image.arrayed),unsigned(b->image.depth),r.view.base_level,r.view.levels,
++                r.view.min_layer,r.view.layers,r.view.format,unsigned(draw.active),unsigned(draw.indexed),draw.count,draw.instances);
++            throw;
++        }
          ii.sampler = r.vk_sampler ? r.vk_sampler : sampler_for(r.sampler, b->image.depth);
          images.push_back(ii);
-@@ -614,6 +680,7 @@
+         VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+@@ -614,6 +706,7 @@
  // Texture bindings of a program's stages and their handles, into g_textures. kNeedBreak: one needs a transfer or a
  // layout change (so no render pass may be open while the sets are built); kSampledPending: one has a pending clear.
  uint32_t gather_textures(const std::vector<const ShaderInfo*>& shaders) {
@@ -9297,7 +9438,7 @@
      DrawTextures& t = g_textures;
      if (draw_slow(kSlowScratch))
          t = DrawTextures{};
-@@ -642,6 +709,7 @@
+@@ -642,6 +735,7 @@
          t.handles[k] = handle;
          ResolvedTexture& r = t.resolved[k];
          uint64_t texture = 0;
@@ -9305,7 +9446,7 @@
          // A pool entry naming a texture that no longer exists samples the dummy, like no texture: it ended the
          // render pass at every draw (~1.4M times in a run, docs/nvn/DEBUG.md #34).
          if (HandleSlot* slot = handle_slot(handle)) {
-@@ -657,7 +725,40 @@
+@@ -657,7 +751,40 @@
              else
                  texture = 0;
          }
@@ -9840,6 +9981,31 @@
  void replay_copy(VkCommandBuffer cb, const Cmd& c, const CmdList& list);  // nvn_copy.cpp: texture copies
  void forget_image_views(const GpuImage& img);
  // nvn_debug.cpp: NX_SNAP_DRAWS mid-frame snapshots of colour target 0.
+--- a/runtime/src/nvn/nvn_worker.cpp
++++ b/runtime/src/nvn/nvn_worker.cpp
+@@ -1,3 +1,6 @@
++#if defined(_WIN32)
++#include "native_failure.h"
++#endif
+ // The replay thread (NX_REPLAY_THREAD=0 turns it off). nvnQueueSubmitCommands and nvnQueuePresentTexture used to
+ // replay into Vulkan and wait for the GPU on the game's render thread, and the game's main thread waits for that
+ // thread every frame: the frame was game logic + recording + replay + GPU, one after the other (~30 fps in a course
+@@ -65,7 +68,14 @@
+         std::lock_guard lk(g_lock);
+         if (!g_started) {
+             g_started = true;
+-            std::thread(run).detach();
++            std::thread([] {
++#if defined(_WIN32)
++                try { run(); }
++                catch (...) { plat::report_current_exception(); }
++#else
++                run();
++#endif
++            }).detach();
+         }
+         serial = ++g_enqueued;
+         g_jobs.push_back({serial, std::move(job)});
 --- /dev/null
 +++ b/runtime/src/nvn/sdk53_packaged_texture.h
 @@ -0,0 +1,16 @@
@@ -10019,7 +10185,14 @@
      pthread_threadid_np(nullptr, &tid);
 --- a/runtime/src/platform_win.cpp
 +++ b/runtime/src/platform_win.cpp
-@@ -22,6 +22,9 @@
+@@ -1,3 +1,6 @@
++#include "native_failure.h"
++#include <exception>
++#include <typeinfo>
+ // Windows host: memory, threads, time, files, the game window (F11 / Alt+Enter fullscreen), XInput + keyboard,
+ // XAudio2, the Vulkan loader and win32 surface, crash handler, hardware watchpoints (NX_WATCH) and main().
+ #include <algorithm>
+@@ -22,6 +25,9 @@
  
  #include "kernel.h"
  #include "platform.h"
@@ -10029,7 +10202,7 @@
  
  namespace nx {
  HWND g_window = nullptr;
-@@ -33,15 +36,20 @@
+@@ -33,15 +39,20 @@
  // ---- memory ---------------------------------------------------------------------------------------------------
  
  bool reserve(uint64_t addr, uint64_t size) {
@@ -10051,7 +10224,17 @@
  
  // ---- threads and time -----------------------------------------------------------------------------------------
  
-@@ -63,7 +71,7 @@
+@@ -53,7 +64,8 @@
+ static DWORD WINAPI thread_entry(void* p) {
+     ThreadStart s = *static_cast<ThreadStart*>(p);
+     delete static_cast<ThreadStart*>(p);
+-    s.fn(s.arg);
++    try { s.fn(s.arg); }
++    catch (...) { report_current_exception(); }
+     return 0;
+ }
+ 
+@@ -63,7 +75,7 @@
  }
  
  void exit_thread() { ExitThread(0); }
@@ -10060,7 +10243,7 @@
  void sleep_ns(int64_t ns) { std::this_thread::sleep_for(std::chrono::nanoseconds(ns)); }
  void yield() { SwitchToThread(); }
  void set_thread_name(const char*) {}
-@@ -78,6 +86,7 @@
+@@ -78,6 +90,7 @@
      const char* v = std::getenv(env.c_str());
      return v ? v : "";
  }
@@ -10068,7 +10251,7 @@
  int64_t current_thread_id() { return int64_t(GetCurrentThreadId()); }
  bool profile(const int64_t*, const uint64_t* const*, size_t, int, const std::string&) { return false; }
  
-@@ -148,9 +157,10 @@
+@@ -148,9 +161,10 @@
  
  static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM w, LPARAM l) {
      switch (msg) {
@@ -10081,7 +10264,7 @@
          case WM_KEYDOWN:
              if (w == VK_F11) toggle_fullscreen(h);
              break;
-@@ -188,10 +198,11 @@
+@@ -188,10 +202,11 @@
      int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2, y = (sh - h) / 2;
      // NX_HEADLESS: created hidden (the surface still needs a window), never brought to the front.
      const DWORD style = headless() ? (kWindowed & ~WS_VISIBLE) : kWindowed;
@@ -10095,15 +10278,60 @@
      *ready = true;
      MSG m;
      while (GetMessageW(&m, nullptr, 0, 0) > 0) {
-@@ -462,7 +473,7 @@
+@@ -392,7 +407,7 @@
+     if (e->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP || !g_watch) return EXCEPTION_CONTINUE_SEARCH;
+     nx::log("WATCH: %llx written (now %llx) at %s.exe+%llx (tools/symbolize.py)", (unsigned long long)g_watch,
+             (unsigned long long)nx::ld<uint64_t>(g_watch), nx::game::kInfo.id, (unsigned long long)exe_va(e->ExceptionRecord->ExceptionAddress));
+-    dump_guest(nx::current_cpu());
++    if(auto* cpu=nx::try_current_cpu())dump_guest(*cpu);else nx::log("CRASH: no guest CPU on this host thread");
+     static int hits = 0;
+     if (++hits >= 30) e->ContextRecord->Dr7 = 0;
+     return EXCEPTION_CONTINUE_EXECUTION;
+@@ -440,8 +455,9 @@
+     nx::log("CRASH: exception %08lx at %s (tools/symbolize.py for the exe), data address %llx", r->ExceptionCode,
+             host_where(uint64_t(r->ExceptionAddress)).c_str(), (unsigned long long)info);
+     host_backtrace(*e->ContextRecord);
+-    dump_guest(nx::current_cpu());
++    if(auto* cpu=nx::try_current_cpu())dump_guest(*cpu);else nx::log("CRASH: no guest CPU on this host thread");
+     nx::log_recent_files();
++    nx::log("CRASH: diagnostic report complete");
+     return EXCEPTION_EXECUTE_HANDLER;
+ }
+ 
+@@ -462,9 +478,31 @@
      return EXCEPTION_CONTINUE_SEARCH;
  }
  
 -int main() {
++namespace nx::plat {
++[[noreturn]] void report_current_exception() {
++    const auto failure=std::current_exception();
++    try { if(failure)std::rethrow_exception(failure); }
++    catch(const nx::LongJmp& jump) {
++        nx::fatal("unhandled native thread longjmp buffer=%llx",(unsigned long long)jump.buf);
++    }
++    catch(const std::exception& error) {
++        nx::log("CRASH: unhandled C++ exception on thread %lu, type=%s: %s",GetCurrentThreadId(),typeid(error).name(),error.what());
++        CONTEXT context{};RtlCaptureContext(&context);host_backtrace(context);
++        if(auto* cpu=nx::try_current_cpu())dump_guest(*cpu);else nx::log("CRASH: no guest CPU on this host thread");
++        nx::fatal("unhandled native C++ exception: %s",error.what());
++    }
++    catch(...) { nx::fatal("unhandled non-standard native thread exception"); }
++    nx::fatal("native thread termination without an active exception");
++}
++void install_failure_handlers() {
++    std::set_terminate(report_current_exception);
++    SetUnhandledExceptionFilter(crash_handler);
++}
++}
++
 +int platform_entry() {
      nx::plat::start_memory_guard();  // before anything can grow: a leak must never freeze the machine (memguard_win.cpp)
-     SetUnhandledExceptionFilter(crash_handler);
+-    SetUnhandledExceptionFilter(crash_handler);
++    nx::plat::install_failure_handlers();
      if (const char* t = std::getenv("NX_THROW_TRACE"); t && *t == '1') AddVectoredExceptionHandler(1, throw_tracer);
+     if (const char* w = std::getenv("NX_WATCH")) {
+         g_watch = std::strtoull(w, nullptr, 16);
 --- /dev/null
 +++ b/runtime/src/romfs_image.h
 @@ -0,0 +1,101 @@
@@ -12674,7 +12902,12 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,380 @@
+@@ -0,0 +1,452 @@
++#if defined(_WIN32)
++#include <windows.h>
++#include "native_failure.h"
++#endif
++#include <thread>
 +#include <chrono>
 +#include <map>
 +#include <set>
@@ -12727,6 +12960,20 @@
 +#include "native_counter_sync_probe.h"
 +#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
++#if defined(_WIN32)
++ if(argc==2&&(std::string_view(argv[1])=="--throw-native-thread"||std::string_view(argv[1])=="--throw-std-thread"||std::string_view(argv[1])=="--seh-no-guest")) {
++     SetErrorMode(3);nx::plat::install_failure_handlers();
++     if(std::string_view(argv[1])=="--seh-no-guest")RaiseException(0xe0425a11u,EXCEPTION_NONCONTINUABLE,0,nullptr);
++     else if(std::string_view(argv[1])=="--throw-native-thread")
++         nx::plat::start_thread([](void*){throw std::invalid_argument("authored native thread failure");},nullptr,1024*1024);
++     else {
++         if(_putenv_s("NX_REPLAY_THREAD","1"))return 3;
++         nx::nvn::worker_run([]{throw std::runtime_error("authored std thread failure");});
++     }
++     nx::plat::sleep_ns(5000000000ll);return 2;
++ }
++#endif
++
 + if(argc==2&&std::string_view(argv[1])=="--counter-sync")return native_counter_sync_probe();
 + if(argc==2&&std::string_view(argv[1])=="--zero-cutoff"){
 +  if(_putenv_s("NX_ZERO_DRAWS","1")||_putenv_s("NX_ZERO_DRAWS_UNTIL_FRAME","1"))throw std::runtime_error("zero cutoff setup failed");
@@ -12986,6 +13233,59 @@
 + for(auto descriptor:{descriptor_a,descriptor_b}) {
 +     bool retired=false;try{(void)width(descriptor);}catch(const std::invalid_argument&){retired=true;}check(retired);
 + }
++ }
++ // A positive fallback for an object born after the mark must survive its
++ // finalization and eviction from the small per-replay lookup cache.
++ for(bool recreate:{false,true}) {
++     const auto owner=nx::kernel_alloc(256,16);
++     const auto bucket=((owner>>4)^(owner>>14))&1023;
++     const uint64_t collision=0xd100000000000000ull|(bucket<<4);
++     nx::nvn::make<nx::nvn::Texture>(collision);
++     {
++         std::lock_guard gpu_lock(nx::nvn::gpu_lock());nx::nvn::ReplayScope replay(nx::nvn::current_epoch());
++         check(nx::nvn::get<nx::nvn::Texture>(owner)==nullptr); // Never pin a miss.
++         auto publish=[&](uint32_t width) {
++             auto fresh=std::make_unique<nx::nvn::Texture>();fresh->target=1;fresh->format=0x25;
++             fresh->width=width;fresh->height=4;fresh->depth=fresh->levels=fresh->samples=1;
++             std::lock_guard registry(nx::nvn::objects_lock());
++             nx::nvn::note_replaced(owner);nx::nvn::publish_locked(owner,std::move(fresh));
++         };
++         std::thread publisher([&]{publish(4);});publisher.join();
++         auto* before=nx::nvn::get<nx::nvn::Texture>(owner);check(before&&before->width==4);
++         {
++             auto command=nx::nvn::frame_begin(false);auto* image=nx::nvn::image_of(owner);check(image!=nullptr);
++             nx::nvn::transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
++             VkClearColorValue red{{1,0,0,1}};VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
++             nx::vk::p_vkCmdClearColorImage(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&red,1,&range);
++             image->rendered=true;nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++         }
++         std::thread retirer([&] {
++             nx::CPU args{};args.x[0]=owner;nx::hle_lookup("nvnTextureFinalize")(args);
++             if(recreate)publish(2);
++         });retirer.join();
++         {std::shared_lock registry(nx::nvn::objects_lock());check(nx::nvn::objects().contains(owner)==recreate);}
++         check(nx::nvn::get<nx::nvn::Texture>(collision)!=nullptr);
++         auto* after=nx::nvn::get<nx::nvn::Texture>(owner);
++         std::cout<<"native postmark replay recreate="<<recreate<<" selected-incarnation-stable="<<(after==before)<<std::endl;
++         check(after==before);
++         auto command=nx::nvn::frame_begin(false);nx::nvn::ImageShape shape{};shape.dim=1;shape.component=nx::nvn::ScalarType::Float;
++         VkImageLayout layout{};check(nx::nvn::sampled_view(command,owner,shape,nullptr,&layout,true)!=VK_NULL_HANDLE);
++         auto* image=nx::nvn::ensure_contents(command,owner);check(image&&image->rendered);
++         auto readback=nx::nvn::upload_alloc(64,16);nx::nvn::transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
++         VkBufferImageCopy region{};region.bufferOffset=readback.offset;region.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};region.imageExtent={4,4,1};
++         nx::vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,readback.buffer,1,&region);
++         VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
++         barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=readback.buffer;barrier.offset=readback.offset;barrier.size=64;
++         nx::vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);
++         nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++         bool red=true;for(unsigned i=0;i<16;++i){uint32_t pixel;std::memcpy(&pixel,readback.ptr+4*i,4);red&=pixel==0xff0000ffu;}check(red);
++     }
++     auto* current=nx::nvn::get<nx::nvn::Texture>(owner);check(recreate?(current&&current->width==2):current==nullptr);
++     {
++         std::lock_guard gpu_lock(nx::nvn::gpu_lock());nx::nvn::ReplayScope next(nx::nvn::current_epoch());
++         auto* current=nx::nvn::get<nx::nvn::Texture>(owner);check(recreate?(current&&current->width==2):current==nullptr);
++     }
++     nx::nvn::destroy(owner);nx::nvn::destroy(collision);
 + }
 + const auto volume_key=nx::kernel_alloc(256,16),volume_data=nx::kernel_alloc(256,16),volume_region=nx::kernel_alloc(32,16);nx::vm_set(volume_data,256,nx::kMemHeap,3);nx::vm_set(volume_region,32,nx::kMemHeap,3);
 + auto& volume=nx::nvn::make<nx::nvn::Texture>(volume_key);volume.target=2;volume.width=volume.height=volume.depth=4;volume.levels=1;volume.format=0x25;volume.samples=0;

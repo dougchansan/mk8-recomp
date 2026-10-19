@@ -1,7 +1,7 @@
 # Native performance work
 
 Earlier builds reached native stadium rendering and the player starting grid.
-R176 has not reached verified driving or playable performance. No release or
+R179 has not reached verified driving or playable performance. No release or
 download is available.
 
 ## Measurements and changes
@@ -20,6 +20,13 @@ all thread caches; concurrent mutations disable cache admission. Failures and
 object liveness are not cached. Permission revocation, host backing removal and
 restoration, cross-page spans and changes from another thread have regressions.
 Future host mapping/protection changes must participate in this invalidation.
+
+R179 also reuses validation throughout the exact intersection of the guest-VM
+and Windows regions whose uniform permissions/protection were checked. Its
+default still invalidates on every tracked mutation; it never expands beyond
+either region boundary. Texture comparison uses a shared registry lock, avoiding
+unnecessary generation changes. A regression verifies that read-only comparison
+does not invalidate the registry and still observes changed values.
 
 One same-executable comparison of title frames 121–180 gives:
 
@@ -63,6 +70,9 @@ measured medians of 20.339 versus 34.107 ns/call on one thread and 283.345 versu
 | `NX_GPU_CLOCK=submitted` | Force the existing submitted-query clock for comparison |
 | `NX_SPAN_CACHE=0` | Force uncached guest/host span validation for comparison |
 | `NX_FULL_QUERY_RESET=1` | Reset entire query pools on reuse for comparison |
+| `NX_SPAN_RANGE_CACHE=0` | Retain only exact-start span reuse, disabling checked-region reuse |
+| `NX_CPU_CALL_PROFILE=1` | Sample indirect compiled/HLE calls every 4093 calls and rank inclusive thread CPU cycles |
+| `NX_SVC_PROFILE=1` | Existing marked-thread SVC wall profiling, extended with CPU-cycle totals |
 
 Other diagnostics remain opt-in and can be omitted from timing runs. Profiling is
 off by default. Synchronous log behavior remains the default. Forced process
@@ -75,6 +85,20 @@ overlap. Scopes enter the reporting window when they finish. Counters are collec
 independently, so concurrent window boundaries are approximate. Do not sum all
 inclusive numbers as a frame-time total. Use profiling-disabled controls to check
 measurement overhead.
+
+The CPU-call profile is per thread, bounded to 4096 targets per window, with
+dropped samples reported. Its cycle totals are inclusive and sampled, not CPU
+percentages. SVC profiling retains its 30-microsecond filter and marked-thread
+scope. Both use [thread CPU cycles](https://learn.microsoft.com/en-us/windows/win32/api/realtimeapiset/nf-realtimeapiset-querythreadcycletime)
+on Windows and report successful CPU samples explicitly; cycles must not be
+converted into nanoseconds. These profiles are off by default.
+
+The latest R179 async flight reaches the native player grid before the preserved
+arena check. Course windows report 8.3–9.9 FPS, host replay 5.10–7.42 ms and fence
+wait 14.21–15.14 ms per frame. Earlier runs used different scene/timing conditions,
+so these numbers are not a controlled course-speedup ratio. The failure requests
+512 bytes at offset 65264 in a 65536-byte pool, exceeding its extent by 240 bytes.
+The allocator contract remains under investigation; countdown/driving are open.
 
 The calibrated clock uses only the Vulkan DEVICE domain. It preserves the same
 units and epoch as command timestamps, performs no CPU-clock extrapolation, and

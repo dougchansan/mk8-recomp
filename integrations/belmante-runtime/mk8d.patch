@@ -1246,7 +1246,15 @@
  // A small Horizon kernel: handles, threads, synchronization (mutex/condvar/address arbitration), events,
  // memory and GetInfo. Services (IPC) live in ipc.cpp.
  #include <algorithm>
-@@ -43,6 +44,11 @@
+@@ -18,6 +19,7 @@
+ 
+ #include "kernel_state.h"
+ #include "platform.h"
++#include "native_cpu_cycles.h"
+ 
+ namespace nx {
+ 
+@@ -43,6 +45,11 @@
  
  using namespace kstate;
  
@@ -1258,7 +1266,7 @@
  uint32_t handle_add(std::shared_ptr<KObject> o) {
      std::lock_guard lk(g_k);
      uint32_t h = g_next_handle++;
-@@ -53,6 +59,7 @@
+@@ -53,6 +60,7 @@
  std::shared_ptr<KObject> handle_get(uint32_t h) {
      std::lock_guard lk(g_k);
      if (h == kPseudoCurrentThread && t_self) return t_self->self.lock();
@@ -1266,7 +1274,7 @@
      auto it = g_handles.find(h);
      return it == g_handles.end() ? nullptr : it->second;
  }
-@@ -337,7 +344,8 @@
+@@ -337,7 +345,8 @@
      };
      auto until = std::chrono::steady_clock::now() + std::chrono::nanoseconds(timeout < 0 ? 0 : timeout);
      KThread* self = t_self;
@@ -1276,7 +1284,7 @@
      g_sync_waiters.push_back(self);
      struct Leave {
          KThread* t;
-@@ -350,11 +358,12 @@
+@@ -350,11 +359,12 @@
              objs[i]->consume();
              return 0;
          }
@@ -1290,7 +1298,7 @@
          if (timeout < 0)
              self->cv.wait(lk);
          else if (self->cv.wait_until(lk, until) == std::cv_status::timeout && ready() < 0)
-@@ -587,7 +596,8 @@
+@@ -587,7 +597,8 @@
          case 0x19: {  // CancelSynchronization(thread handle)
              auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[0])));
              std::lock_guard lk(g_k);
@@ -1300,7 +1308,7 @@
              notify_all();
              break;
          }
-@@ -616,9 +626,13 @@
+@@ -616,9 +627,13 @@
          case 0x22:  // SendSyncRequestWithUserBuffer(buf, size, handle)
              rc = ipc_request(c, uint32_t(c.x[2]), c.x[0], c.x[1]);
              break;
@@ -1317,7 +1325,7 @@
          case 0x25: {  // GetThreadId(handle) -> id
              auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[1])));
              c.x[1] = t ? t->id : 0;
-@@ -678,7 +692,7 @@
+@@ -678,7 +693,7 @@
              rc = unmap_transfer_memory(uint32_t(c.x[0]), c.x[1], c.x[2]);
              break;
          default:
@@ -1326,14 +1334,61 @@
                  (unsigned long long)c.x[0], (unsigned long long)c.x[1], (unsigned long long)c.x[2]);
              rc = 0;
      }
-@@ -720,6 +734,7 @@
+@@ -691,7 +706,8 @@
+ namespace {
+ thread_local int t_svc_role = 0;  // 1 game main, 2 the thread that presents
+ std::mutex g_svc_lock;
+-std::map<std::tuple<int, uint32_t, uint64_t>, std::pair<uint64_t, uint64_t>> g_svc_prof;  // (role, svc, pc) -> (ns, calls)
++struct SvcCost { uint64_t wall_ns=0,calls=0,cycles=0,cpu_samples=0; };
++std::map<std::tuple<int, uint32_t, uint64_t>, SvcCost> g_svc_prof;
+ bool svc_profile_on() {
+     static const bool on = std::getenv("NX_SVC_PROFILE") != nullptr;
+     return on;
+@@ -706,28 +722,40 @@
+     std::vector<std::pair<uint64_t, std::tuple<int, uint32_t, uint64_t>>> v;
+     uint64_t total = 0;
+     for (auto& [k, val] : g_svc_prof)
+-        if (std::get<0>(k) == role) v.push_back({val.first, k}), total += val.first;
++        if (std::get<0>(k) == role) v.push_back({val.wall_ns, k}), total += val.wall_ns;
+     std::sort(v.rbegin(), v.rend());
+     log("svc profile: role %d thread blocked %.2f ms per frame in calls over 30 us (over %llu frames)", role,
+         double(total) / 1e6 / double(frames), (unsigned long long)frames);
+     for (size_t i = 0; i < v.size() && i < 8; i++) {
+         auto& val = g_svc_prof[v[i].second];
+-        log("svc profile: role %d: %.2f ms/frame, %.1f calls/frame: svc %#x from %s", role, double(val.first) / 1e6 / double(frames),
+-            double(val.second) / double(frames), std::get<1>(v[i].second), describe(std::get<2>(v[i].second)).c_str());
++        log("svc profile: role %d: %.2f ms/frame, %.1f calls/frame: svc %#x from %s", role, double(val.wall_ns) / 1e6 / double(frames),
++            double(val.calls) / double(frames), std::get<1>(v[i].second), describe(std::get<2>(v[i].second)).c_str());
++    }
++    v.clear();
++    for(const auto& [key,value]:g_svc_prof)if(std::get<0>(key)==role&&value.cpu_samples)v.push_back({value.cycles,key});
++    std::sort(v.rbegin(),v.rend());
++    for(size_t k=0;k<v.size()&&k<8;++k){const auto& key=v[k].second;const auto& value=g_svc_prof.at(key);
++        log("svc CPU profile: role=%d svc=%x pc=%llx cycles=%llu cpu_samples=%llu wall_ms=%.3f",
++            role,std::get<1>(key),(unsigned long long)std::get<2>(key),(unsigned long long)value.cycles,
++            (unsigned long long)value.cpu_samples,double(value.wall_ns)/1e6);
+     }
+     for (auto it = g_svc_prof.begin(); it != g_svc_prof.end();)
+         it = std::get<0>(it->first) == role ? g_svc_prof.erase(it) : std::next(it);
  }
  
  void svc(CPU& c, uint32_t imm, uint64_t pc) {
 +    mk8_focus_gate();
      if (!t_svc_role || !svc_profile_on()) return svc_impl(c, imm, pc);
++    uint64_t before_cycles=0;const bool before_valid=read_thread_cycles(before_cycles);
      uint64_t t0 = plat::monotonic_ns();
      svc_impl(c, imm, pc);
+     uint64_t dt = plat::monotonic_ns() - t0;
++    uint64_t after_cycles=0;const bool cycles_valid=read_thread_cycles(after_cycles)&&before_valid&&after_cycles>=before_cycles;
+     if (dt >= 30000) {
+         std::lock_guard lk(g_svc_lock);
+         auto& e = g_svc_prof[{t_svc_role, imm, pc}];
+-        e.first += dt, e.second++;
++        e.wall_ns += dt, e.calls++;
++        if(cycles_valid){e.cycles+=after_cycles-before_cycles;++e.cpu_samples;}
+     }
+ }
+ 
 --- a/runtime/src/kernel.h
 +++ b/runtime/src/kernel.h
 @@ -15,6 +15,12 @@
@@ -1382,15 +1437,62 @@
  #include <cstdio>
  #include <fstream>
  #include <mutex>
-@@ -11,6 +13,7 @@
+@@ -11,6 +13,8 @@
  #include <nx/runtime.h>
  
  #include "platform.h"
 +#include "mk8_focus_policy.h"
++#include "native_cpu_cycles.h"
  
  namespace nx {
  
-@@ -44,6 +47,7 @@
+@@ -39,11 +43,53 @@
+ 
+ thread_local const char* t_missing_name = nullptr;
+ 
++struct CallCost { uint64_t samples{}, cycles{}, cpu_samples{}, wall_ns{}; };
++thread_local std::unordered_map<uint64_t,CallCost> call_costs;
++thread_local uint32_t call_sample_count = 0;
++thread_local uint64_t call_report_frame = 0, call_samples_dropped = 0;
++class CallProfile {
++    uint64_t target{}, started{}, cycles{};
++    bool cpu_valid = false;
++public:
++    explicit CallProfile(uint64_t address) : target(address) {
++        static const bool on = [] { const auto* e=std::getenv("NX_CPU_CALL_PROFILE");return e&&e[0]=='1'; }();
++        if (!on || ++call_sample_count != 4093) return;
++        call_sample_count=0;
++        cpu_valid=read_thread_cycles(cycles);
++        started=perf::now();
++    }
++    ~CallProfile() {
++        if (!started) return;
++        const auto wall=perf::now()-started;
++        uint64_t after=0;const bool valid=read_thread_cycles(after)&&cpu_valid&&after>=cycles;
++        auto found=call_costs.find(target);
++        if(found==call_costs.end()&&call_costs.size()>=4096)++call_samples_dropped;
++        else{
++            auto& cost=call_costs[target];++cost.samples;cost.wall_ns+=wall;
++            if(valid){cost.cycles+=after-cycles;++cost.cpu_samples;}
++        }
++        const auto frame=g_frame.load(std::memory_order_relaxed);
++        if(frame-call_report_frame<120)return;
++        call_report_frame=frame;
++        std::vector<std::pair<uint64_t,CallCost>> ranked(call_costs.begin(),call_costs.end());
++        std::sort(ranked.begin(),ranked.end(),[](const auto& a,const auto& b){return a.second.cycles>b.second.cycles;});
++        log("native CPU calls: tid=%llu frame=%llu stride=4093 targets=%zu dropped=%llu inclusive sampled cycles; no time conversion",
++            (unsigned long long)profile_thread_id(),(unsigned long long)frame,ranked.size(),(unsigned long long)call_samples_dropped);
++        for(size_t k=0;k<ranked.size()&&k<8;++k){const auto& [address,c]=ranked[k];
++            log("native CPU call: tid=%llu target=%llx samples=%llu cpu_samples=%llu cycles=%llu wall_ms=%.3f",
++                (unsigned long long)profile_thread_id(),(unsigned long long)address,(unsigned long long)c.samples,
++                (unsigned long long)c.cpu_samples,(unsigned long long)c.cycles,double(c.wall_ns)/1e6);
++        }
++        call_costs.clear();call_samples_dropped=0;
++    }
++};
++
+ }  // namespace
+ 
  // ---- logging --------------------------------------------------------------------------------------------------
  
  void log(const char* fmt, ...) {
@@ -1398,7 +1500,7 @@
      char buf[2048];
      va_list ap;
      va_start(ap, fmt);
-@@ -62,11 +66,20 @@
+@@ -62,11 +108,20 @@
          std::remove((file + ".prev").c_str());
          std::rename(file.c_str(), (file + ".prev").c_str());
          g_log_file = std::fopen(file.c_str(), "w");
@@ -1422,7 +1524,7 @@
      }
  }
  
-@@ -91,8 +104,8 @@
+@@ -91,8 +146,8 @@
  
  static void missing_stub(CPU& c) {
      // Name comes from the thunk that dispatched here.
@@ -1433,7 +1535,7 @@
  }
  
  uint64_t hle_address_or(const char* name, HleFn fallback) {
-@@ -160,7 +173,13 @@
+@@ -160,7 +215,14 @@
  FastModule g_fast[4];
  size_t g_fast_count = 0;
  
@@ -1443,11 +1545,12 @@
 +}
 +
  void call(CPU& c, uint64_t t) {
++    CallProfile call_profile(t);
 +    mk8_focus_gate();
      for (size_t k = 0; k < g_fast_count; k++) {
          const FastModule& m = g_fast[k];
          uint64_t off = t - m.base;
-@@ -174,7 +193,25 @@
+@@ -174,7 +236,25 @@
                  backtrace(c);
                  fatal("call into the middle of a function: %s (lr %s)", describe(t).c_str(), describe(c.x[30]).c_str());
              }
@@ -1473,7 +1576,7 @@
              return;
          }
      }
-@@ -270,8 +307,8 @@
+@@ -270,8 +350,8 @@
              }
              if (!target && !s.imported) target = lm.base + s.value;
              if (!target) {
@@ -1937,6 +2040,37 @@
 +    const auto end=std::find(field.begin(),field.end(),uint8_t(0));
 +    if(end==field.begin()||end==field.end()||!std::all_of(field.begin(),end,[](uint8_t value){return value>=0x20&&value<=0x7e;}))throw std::invalid_argument("NACP display version");
 +    std::array<char,16> result{};std::copy(field.begin(),end,result.begin());return result;
++}
++}
+--- /dev/null
++++ b/runtime/src/native_cpu_cycles.h
+@@ -0,0 +1,28 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++#ifdef _WIN32
++#include <windows.h>
++#endif
++namespace nx {
++// CPU cycles consumed by this thread, including kernel execution. These are
++// not elapsed-time units and must never be converted to nanoseconds.
++inline bool read_thread_cycles(uint64_t& value) {
++#ifdef _WIN32
++    ULONG64 cycles = 0;
++    const bool valid = QueryThreadCycleTime(GetCurrentThread(), &cycles) != 0;
++    value = cycles;
++    return valid;
++#else
++    value = 0;
++    return false;
++#endif
++}
++inline uint64_t profile_thread_id() {
++#ifdef _WIN32
++    return GetCurrentThreadId();
++#else
++    return 0;
++#endif
 +}
 +}
 --- /dev/null
@@ -7151,7 +7285,7 @@
          std::memset(u.ptr, 0, padded);
 --- a/runtime/src/nvn/nvn_device.cpp
 +++ b/runtime/src/nvn/nvn_device.cpp
-@@ -1,129 +1,99 @@
+@@ -1,129 +1,116 @@
 -// NVN device (docs/NVN.md, phases N2-N3). Values come from what the game checks and from the SDK's own NVN driver
 -// (recompiled in sdk; NX_NVN_REAL=1 records where each of its procs lives, see nvn_trace.cpp).
 -#include <map>
@@ -7173,11 +7307,14 @@
 +namespace {
 +std::atomic<uint64_t> current_device=0;
 +struct Device final:Object{std::atomic<uint32_t> origin=0;std::atomic<bool> ready=false;VkDevice backend=VK_NULL_HANDLE;};
-+bool uncached_span_valid(uint64_t address,uint64_t bytes,uint32_t permissions){
++struct SpanBounds{uint64_t begin=0,end=0;};
++bool uncached_span_valid(uint64_t address,uint64_t bytes,uint32_t permissions,SpanBounds* bounds=nullptr){
 + if(!address||address>=(1ull<<39)||bytes>(1ull<<39)-address)return false;
 + for(uint64_t cursor=address;cursor<address+bytes;){auto v=vm_query(cursor);if(cursor<v.addr||cursor-v.addr>=v.size||(v.perm&permissions)!=permissions)return false;MEMORY_BASIC_INFORMATION info{};if(!VirtualQuery(reinterpret_cast<void*>(cursor),&info,sizeof(info))||info.State!=MEM_COMMIT||(info.Protect&(PAGE_GUARD|PAGE_NOACCESS)))return false;
 +  if((permissions&2)&&!(info.Protect&(PAGE_READWRITE|PAGE_WRITECOPY|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY)))return false;
-+  const auto end=std::min<uint64_t>(v.addr+v.size,reinterpret_cast<uint64_t>(info.BaseAddress)+info.RegionSize);if(end<=cursor)return false;cursor=std::min(end,address+bytes);
++  const auto end=std::min<uint64_t>(v.addr+v.size,reinterpret_cast<uint64_t>(info.BaseAddress)+info.RegionSize);if(end<=cursor)return false;
++  if(bounds&&cursor==address)*bounds={std::max<uint64_t>(v.addr,reinterpret_cast<uint64_t>(info.BaseAddress)),end};
++  cursor=std::min(end,address+bytes);
 + }return true;
 +}
 +bool span_valid(uint64_t address,uint64_t bytes,uint32_t permissions){
@@ -7186,14 +7323,28 @@
 + if(!address||address>=(1ull<<39)||bytes>(1ull<<39)-address)return false;
 + struct Entry{uint64_t epoch=0,address=0,bytes=0;uint32_t permissions=0;};
 + static thread_local Entry entries[64];
++ static const bool range_cache=[] {const auto* e=std::getenv("NX_SPAN_RANGE_CACHE");return !e||e[0]!='0';}();
++ static thread_local Entry regions[16];
++ static thread_local uint32_t next_region=0;
 + auto& entry=entries[((address>>4)^(address>>14))&63];
 + const auto epoch=memory_epoch::stable();
++ if(range_cache&&epoch){
++  for(const auto& region:regions)
++   if(region.epoch==epoch&&address>=region.address&&address-region.address<=region.bytes&&
++      bytes<=region.bytes-(address-region.address)&&(region.permissions&permissions)==permissions&&memory_epoch::stable()==epoch)return true;
++ }
 + if(epoch&&entry.epoch==epoch&&entry.address==address&&bytes<=entry.bytes&&
 +    (entry.permissions&permissions)==permissions&&memory_epoch::stable()==epoch)return true;
-+ const bool valid=uncached_span_valid(address,bytes,permissions);
-+ // Store successful exact-start spans only. Any map or host backing mutation
++ SpanBounds bounds;
++ const bool valid=uncached_span_valid(address,bytes,permissions,range_cache?&bounds:nullptr);
++ // Store successful answers only. Any map or host backing mutation
 + // invalidates all thread caches; failed checks and in-flight mutations do not cache.
-+ if(valid&&epoch&&memory_epoch::stable()==epoch)entry={epoch,address,bytes,permissions};
++ if(valid&&epoch&&memory_epoch::stable()==epoch){
++  entry={epoch,address,bytes,permissions};
++  // VM permissions and Win32 protection are uniform throughout this exact
++  // intersection. Never extend an answer beyond either reported region.
++  if(range_cache&&bounds.end>bounds.begin)regions[next_region++&15]={epoch,bounds.begin,bounds.end-bounds.begin,permissions};
++ }
 + return valid;
 +}
 +}
@@ -7877,7 +8028,7 @@
  }
  
 +void TextureCompare(CPU& c){
-+ std::lock_guard guard(objects_lock());const auto a=objects().find(c.x[0]),b=objects().find(c.x[1]);const auto* x=a==objects().end()?nullptr:dynamic_cast<Texture*>(a->second.get());const auto* y=b==objects().end()?nullptr:dynamic_cast<Texture*>(b->second.get());if(!x||!y){if(!native_guest_span(c.x[0],0x55,1)||!native_guest_span(c.x[1],0x55,1))fatal("texture comparison descriptor is unreadable");c.x[0]=sdk53_texture_descriptors_equal({reinterpret_cast<const uint8_t*>(c.x[0]),0x55},{reinterpret_cast<const uint8_t*>(c.x[1]),0x55});return;}
++ std::shared_lock guard(objects_lock());const auto a=objects().find(c.x[0]),b=objects().find(c.x[1]);const auto* x=a==objects().end()?nullptr:dynamic_cast<Texture*>(a->second.get());const auto* y=b==objects().end()?nullptr:dynamic_cast<Texture*>(b->second.get());if(!x||!y){if(!native_guest_span(c.x[0],0x55,1)||!native_guest_span(c.x[1],0x55,1))fatal("texture comparison descriptor is unreadable");c.x[0]=sdk53_texture_descriptors_equal({reinterpret_cast<const uint8_t*>(c.x[0]),0x55},{reinterpret_cast<const uint8_t*>(c.x[1]),0x55});return;}
 + c.x[0]=std::tie(x->pool,x->offset,x->target,x->format,x->flags,x->levels,x->samples,x->width,x->height,x->depth,x->depth_stencil_mode)==std::tie(y->pool,y->offset,y->target,y->format,y->flags,y->levels,y->samples,y->width,y->height,y->depth,y->depth_stencil_mode)&&std::memcmp(x->swizzle,y->swizzle,4)==0;
 +}
 +
@@ -11235,7 +11386,7 @@
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/loader_symbol_test.cpp
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,48 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +// Exercise real module relocation and indirect dispatch with an authored module image.
 +#include <nx/runtime.h>
@@ -11245,6 +11396,7 @@
 +#include <fstream>
 +#include <iostream>
 +#include <stdexcept>
++#include <cstdlib>
 +namespace {alignas(4096) std::array<uint8_t,4096> memory{};struct FatalExit{};}
 +namespace nx {
 +void mk8_focus_gate(){}
@@ -11276,6 +11428,10 @@
 + check(slot(128)==0);check(slot(136)==0);check(slot(144)==0);check(slot(176)==8);
 + check(slot(152)!=0);check(slot(160)!=0);check(slot(168)==module.base+4);
 + nx::CPU c{};nx::call(c,slot(160));check(c.x[0]==77);nx::call(c,slot(168));check(c.x[0]==99);
++ if(std::getenv("NX_CPU_CALL_PROFILE")){
++  for(unsigned count=0;count<4093*8;++count){if(count==4093*7)nx::g_frame=120;nx::call(c,slot(168));}
++  check(c.x[0]==99);
++ }
 + bool rejected=false;try{nx::call(c,slot(152));}catch(const FatalExit&){rejected=true;}check(rejected);
 + std::cout<<"loader_symbols checks="<<checks<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
@@ -12213,7 +12369,7 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,264 @@
+@@ -0,0 +1,265 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -12252,6 +12408,7 @@
 +#include "native_single_layer_array_sample_probe.h"
 +#include "native_counter_probe.h"
 +#include "native_span_cache_probe.h"
++#include "native_texture_compare_read_probe.h"
 +#include "native_conditional_probe.h"
 +#include "native_point_probe.h"
 +#include "native_depth_contract_probe.h"
@@ -12275,7 +12432,7 @@
 + if(gpu){if(_putenv_s("NX_PIPELINED","1")||_putenv_s("NX_SNAP_RAW","1"))throw std::runtime_error("fixture pipeline/raw snapshot mode setup failed");}
 + unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("native device assertion "+std::to_string(n));};
 + for(const char* name:{"_ZN2nv20SetGraphicsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_","_ZN2nv28SetGraphicsDevtoolsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_"}){auto setter=nx::hle_lookup(name);check(setter!=nullptr);nx::CPU invalid_allocator{};bool rejected=false;try{setter(invalid_allocator);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
-+ check(nx::find_symbol("nnMain")==0);nx::memory_init();native_span_cache_probe(check);native_wait_cancellation_probe(check); {const auto mii_output=nx::kernel_alloc(6*sizeof(nx::mii::CharInfoElement),16);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);uint32_t creator_key=0;nx::IpcCtx mii_open{};mii_open.cmd=0;mii_open.in=reinterpret_cast<uint8_t*>(&creator_key);mii_open.in_size=4;auto mii_manager=nx::make_service("mii:u");check(mii_manager&&mii_manager->handle(mii_open)==0&&mii_open.out_objects.size()==1);auto database=mii_open.out_objects[0];for(uint32_t sources:{0u,1u,2u,3u}){nx::IpcCtx query{};query.cmd=2;query.in=reinterpret_cast<const uint8_t*>(&sources);query.in_size=4;check(database->handle(query)==0);uint32_t count=99;std::memcpy(&count,query.out.data(),4);check(count==((sources&2)?6u:0u));}uint32_t defaults_source=2;nx::IpcCtx list{};list.cmd=3;list.in=reinterpret_cast<const uint8_t*>(&defaults_source);list.in_size=4;list.b.push_back({mii_output,6*sizeof(nx::mii::CharInfoElement)});std::memset(reinterpret_cast<void*>(mii_output),0xcd,6*sizeof(nx::mii::CharInfoElement));check(database->handle(list)==0);check(nx::ld<uint8_t>(mii_output)==0xcd);check(list.validate_reply&&list.validate_reply());check(bool(list.commit_reply));list.commit_reply();nx::mii::CharInfoElement first{};std::memcpy(&first,reinterpret_cast<void*>(mii_output),sizeof first);check(first.source==1&&first.info.Verify()==nx::mii::ValidationResult::NoErrors);nx::IpcCtx revoked=list;revoked.out.clear();revoked.commit_reply={};revoked.validate_reply={};check(database->handle(revoked)==0);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,1);check(!revoked.validate_reply());nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);nx::IpcCtx short_list{};short_list.cmd=3;short_list.in=reinterpret_cast<const uint8_t*>(&defaults_source);short_list.in_size=4;short_list.b.push_back({mii_output,sizeof(nx::mii::CharInfoElement)});check(database->handle(short_list)==0x47e);uint32_t invalid_source=4;nx::IpcCtx invalid_mii{};invalid_mii.cmd=2;invalid_mii.in=reinterpret_cast<const uint8_t*>(&invalid_source);invalid_mii.in_size=4;check(database->handle(invalid_mii)==0xe401);}
++ check(nx::find_symbol("nnMain")==0);nx::memory_init();native_span_cache_probe(check);native_texture_compare_read_probe(check);native_wait_cancellation_probe(check); {const auto mii_output=nx::kernel_alloc(6*sizeof(nx::mii::CharInfoElement),16);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);uint32_t creator_key=0;nx::IpcCtx mii_open{};mii_open.cmd=0;mii_open.in=reinterpret_cast<uint8_t*>(&creator_key);mii_open.in_size=4;auto mii_manager=nx::make_service("mii:u");check(mii_manager&&mii_manager->handle(mii_open)==0&&mii_open.out_objects.size()==1);auto database=mii_open.out_objects[0];for(uint32_t sources:{0u,1u,2u,3u}){nx::IpcCtx query{};query.cmd=2;query.in=reinterpret_cast<const uint8_t*>(&sources);query.in_size=4;check(database->handle(query)==0);uint32_t count=99;std::memcpy(&count,query.out.data(),4);check(count==((sources&2)?6u:0u));}uint32_t defaults_source=2;nx::IpcCtx list{};list.cmd=3;list.in=reinterpret_cast<const uint8_t*>(&defaults_source);list.in_size=4;list.b.push_back({mii_output,6*sizeof(nx::mii::CharInfoElement)});std::memset(reinterpret_cast<void*>(mii_output),0xcd,6*sizeof(nx::mii::CharInfoElement));check(database->handle(list)==0);check(nx::ld<uint8_t>(mii_output)==0xcd);check(list.validate_reply&&list.validate_reply());check(bool(list.commit_reply));list.commit_reply();nx::mii::CharInfoElement first{};std::memcpy(&first,reinterpret_cast<void*>(mii_output),sizeof first);check(first.source==1&&first.info.Verify()==nx::mii::ValidationResult::NoErrors);nx::IpcCtx revoked=list;revoked.out.clear();revoked.commit_reply={};revoked.validate_reply={};check(database->handle(revoked)==0);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,1);check(!revoked.validate_reply());nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);nx::IpcCtx short_list{};short_list.cmd=3;short_list.in=reinterpret_cast<const uint8_t*>(&defaults_source);short_list.in_size=4;short_list.b.push_back({mii_output,sizeof(nx::mii::CharInfoElement)});check(database->handle(short_list)==0x47e);uint32_t invalid_source=4;nx::IpcCtx invalid_mii{};invalid_mii.cmd=2;invalid_mii.in=reinterpret_cast<const uint8_t*>(&invalid_source);invalid_mii.in_size=4;check(database->handle(invalid_mii)==0xe401);}
 +const auto device=nx::kernel_alloc(7008,16);
 + check(!nx::nvn::initialize_native_device(device,0));
 + nx::vm_set(device,7008,nx::kMemHeap,3); // Authored fixture explicitly admits its storage to the guest-visible bus.
@@ -12963,9 +13120,9 @@
 + std::thread revoke([&]{vm_set(memory,4096,kMemHeap,1);});revoke.join();check(!valid(32,16,3));
 + vm_set(memory,4096,kMemHeap,3);check(valid(32,16,3));
 + decommit(memory,4096);check(!valid(32,16,3));check(commit(memory,4096));check(valid(32,16,3));
-+ vm_set(memory+4096,4096,kMemHeap,1);check(!valid(4096-8,16,3));check(valid(4096-8,16,1));
++ vm_set(memory+4096,4096,kMemHeap,1);check(valid(32,16,3));check(!valid(4096-8,16,3));check(valid(4096-8,16,1));
 + vm_set(memory,8192,kMemHeap,3);check(valid(4096-8,16,3));check(valid(4096-8,16,3));
-+ decommit(memory+4096,4096);check(!valid(4096-8,16,3));check(commit(memory+4096,4096));check(valid(4096-8,16,3));
++ decommit(memory+4096,4096);check(valid(32,16,3));check(!valid(4096+32,16,3));check(!valid(4096-8,16,3));check(commit(memory+4096,4096));check(valid(4096-8,16,3));
 + vm_set(memory,8192,kMemFree,0);decommit(memory,8192);check(!valid(32,16,3));
 +}
 --- /dev/null
@@ -12976,6 +13133,28 @@
 +#include "nvn/native_texture_clear_view.h"
 +#include <iostream>
 +int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool v){++checks;if(!v)throw std::runtime_error("texture clear assertion");};std::array<int32_t,6> region={0,0,1,4,4,1};auto range=native_texture_clear_range(4,4,1,2,0,0,0,0,region,15);check(range.level==0&&range.base_layer==1&&range.layers==1);for(unsigned mode=0;mode<5;++mode){auto bad=region;auto mask=15u;if(mode==0)bad[0]=1;if(mode==1)bad[3]=2;if(mode==2)bad[2]=-1;if(mode==3)bad[5]=2;if(mode==4)mask=7;bool rejected=false;try{native_texture_clear_range(4,4,1,2,0,0,0,0,bad,mask);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}region={0,0,0,4,4,1};range=native_texture_clear_range(8,8,2,1,1,1,0,1,region,15);check(range.level==1&&range.base_layer==0);float zero[4]={};check(native_texture_clear_view_compatible(0x38,0x25,zero));check(native_texture_clear_view_compatible(0x25,0x38,zero));float middle[4]={0.25f,0.5f,0.75f,1};check(!native_texture_clear_view_compatible(0x38,0x25,middle));check(native_texture_clear_view_compatible(0x25,0x25,middle));check(!native_texture_clear_view_compatible(0x38,0x34,zero));std::cout<<"texture clear range checks="<<checks<<" PASS\n";}
+--- /dev/null
++++ b/tests/native_texture_compare_read_probe.h
+@@ -0,0 +1,19 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/nvn.h"
++template<class Check> void native_texture_compare_read_probe(Check check){
++ using namespace nx;using namespace nx::nvn;
++ const auto first=kernel_alloc(256,16),second=kernel_alloc(256,16);
++ vm_set(first,256,kMemHeap,3);vm_set(second,256,kMemHeap,3);
++ auto& a=make<Texture>(first);auto& b=make<Texture>(second);
++ a.width=b.width=4;a.height=b.height=4;a.format=b.format=0x25;
++ const auto compare=hle_lookup("nvnTextureCompare");check(compare!=nullptr);
++ auto run=[&](bool expected){
++  const auto generation=objects_lock().generation.load();CPU c{};c.x[0]=first;c.x[1]=second;compare(c);
++  check(bool(c.x[0])==expected);
++  if(objects_lock().generation.load()!=generation)throw std::runtime_error("read-only native texture comparison changed object generation");
++  check(true);
++ };
++ run(true);b.width=8;run(false);b.width=4;run(true);
++ destroy(first);destroy(second);
++}
 --- /dev/null
 +++ b/tests/native_texture_layers_test.cpp
 @@ -0,0 +1,5 @@

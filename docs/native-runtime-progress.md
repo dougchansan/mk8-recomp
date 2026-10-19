@@ -4,13 +4,35 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R176, reconstructing 182 generic adapted files.
-All 40 component suites and the 1,820-check native GPU fixture pass, plus a
+The current source recipe is R179, reconstructing 184 generic adapted files.
+All 40 component suites and the 1,830-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
+
+R179 enables reuse across the checked intersection of guest-VM and Windows
+memory regions, with the same mutation invalidation as the earlier exact-span
+cache. Cross-page permission/backing regressions pass with caching enabled and
+disabled. CPU samples identify sampler/texture descriptor comparisons among the
+costly host calls. The optional CPU-call and SVC profiles report thread CPU cycles
+separately from wall time; cycles are not converted into elapsed time.
+
+Read-only texture comparison now takes the registry's shared lock. The previous
+exclusive lock invalidated object caches despite changing no object. A new
+authored regression fails on that invalidation before the correction, then
+passes while observing fresh descriptor changes and unchanged registry generation.
+
+The R179 native async run reaches the actual player grid in 124 seconds before
+the arena failure, with source, executable, saved input and foreground unchanged.
+Its course windows report 8.3–9.9 FPS, replay 5.10–7.42 ms and fence 14.21–15.14 ms
+per frame. These are diagnostic windows, not a matched performance comparison
+against prior course runs. Countdown and driving remain unverified.
+The bounds failure now records a 64 KiB pool, offset 0xfef0 and requested 0x200 bytes:
+the requested span exceeds the pool by 240 bytes. The original wrapper passes
+max(remaining,512) to AddCommandMemory. Investigation of the allocator contract
+continues; the bounds check is preserved.
 
 R172 adds opt-in aggregate replay timings, buffered routine logs with immediate
 fatal flushing, and a switch to disable per-frame stall tracing while retaining

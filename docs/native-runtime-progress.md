@@ -4,13 +4,35 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R159, reconstructing 165 generic adapted files.
-All 38 component suites and the 930-check native GPU fixture pass, plus a
-separate 19-check synchronous-submission regression. A production
+The current source recipe is R161, reconstructing 170 generic adapted files.
+All 38 component suites and the 1,262-check native GPU fixture pass, plus a
+separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
+
+R161 replaces the inherited forced-on conditional-render handler with GPU
+predicates. The original SDK maps API modes 0/1 to equal/not-equal rendering.
+An authored compute kernel compares the two 64-bit counter values while ignoring
+timestamp words, using the latest GPU-written buffer ranges. Vulkan conditional
+rendering gates the original draw calls. Conditional clears use explicit gated
+attachment operations because load-op and transfer clears ignore the predicate.
+Explicit enable/disable overrides also affect clears. Hardware support, source
+bounds, readable permissions and contiguous virtual mappings are checked.
+
+Native regressions verify positive and suppressed pixels/sample counts, high-word
+differences, stale CPU shadows, a real counter-to-predicate-to-counter chain,
+color/alpha-only/depth clears and explicit overrides. All 38 component suites,
+1,262 native GPU checks and 300 synchronous checks pass. The synchronous fixture
+uses its own transfer setup/readback resources and the real gpu_submit clear path.
+
+R159 passes the previous array-texture rejection and closes naturally after
+1,897.125 seconds on the next guard: point-primitive rendering needs a point-size
+shader profile. Source, executable and saved profile stay unchanged; foreground
+changes during this run. Corrected captures show populated, distinct HDR cubemap
+faces and populated eye/skin textures. Model diffuse lighting and a native race
+image remain unverified. R161 retains the point guard pending its implementation.
 
 R156 closes naturally after 1,668.812 seconds with source, executable, saved
 profile and foreground unchanged. It reaches the race-loading screen, then
@@ -25,8 +47,8 @@ selected the mip but used base dimensions. Authored regressions verify exact
 pixels, dimensions and file lengths for all six faces at two mip levels through
 both paths. Earlier HDR reports are preserved with explicit errata; they do not
 prove six-face HDR contents. The old code fails the new profile and capture
-regressions. R159 passes all 38 component suites, 930 native GPU checks and the
-separate 19-check synchronous probe. Its game validation is in progress.
+regressions. R159 passed all 38 component suites, 930 native GPU checks and the
+separate 19-check synchronous probe before the later conditional implementation.
 
 R151 passes the race UI shader and reaches a new missing API,
 `nvnCommandBufferResetCounter`, with an actual samples-passed counter request.
@@ -44,8 +66,8 @@ including its late graphics part. Both pipelined and synchronous paths are wired
 the dedicated synchronous regression reproduces the previous unbound-context
 failure and passes after the fix. The inspected hardware has a 10 ns GPU tick,
 64 timestamp bits, shaderInt64 and precise occlusion support. Counter types
-0, 1 and 16 are supported; other statistics and conditional-culling semantics
-remain open. The original-game run is validating the new module.
+0, 1 and 16 are supported; other statistics remain open. The new conditional
+module has component GPU evidence; its original-game behavior is unverified.
 
 R150 corrects a second color defect: the original RGB565 cup icons store red in
 the low five bits, while the old Vulkan mapping used the high five bits. An
@@ -89,7 +111,7 @@ missing pixel stage. All four missing UI stages translate and pass module
 creation, bringing the private cache to 7,243. R150 closes naturally after
 1,743.813 seconds with source, executable, saved-input profile and foreground
 unchanged. R151 then reaches the original samples-passed reset request.
-R159 is testing the later sampler fix and corrected lighting captures. No native race image or playable result is claimed.
+R159 passes the sampler fix before reaching the point-primitive guard. No native race image or playable result is claimed.
 
 The native buffer-to-texture operation now validates active recording, real source
 pools, copied SDK texture descriptors and bounded copy regions. Actual Vulkan

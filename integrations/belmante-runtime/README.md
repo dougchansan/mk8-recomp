@@ -6,16 +6,20 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 38 CPU/component suites and a 930-check native
-GPU fixture on an RX 9070 XT, plus 19 checks through the synchronous submission
-entry point. R159 reconstructs 165 generic adapted files. Native sample counts
-and GPU-clock reports replace host placeholders; regressions verify accumulation,
+Windows integration now passes 38 CPU/component suites and a 1,262-check native
+GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
+entry point. R161 reconstructs 170 generic adapted files. Native sample counts
+and GPU-clock reports replace host placeholders. GPU comparisons replace the
+inherited forced-on conditional renderer, including explicit gated clears and
+original counter-to-predicate chains; regressions verify accumulation,
 resets, query retirement and both submission paths. Its
 RGB565 correction and bounded BC3 integer block views pass authored GPU encoding,
 face/mip readback and compressed-sampling regressions. Integer fragment outputs
 are compiled offline and checked against actual render-target types. The original
 game run confirms corrected cup colors and colored lighting cubemaps. Diffuse
-lighting remains too dark and race rendering is unverified. A real one-layer
+lighting remains too dark and race rendering is unverified. The latest original
+game run passes the array-texture rejection, then stops on point-size support.
+That guard remains pending implementation. A real one-layer
 2D-array sampling regression covers the latest race-loading rejection. Raw and
 converted snapshot regressions verify all six faces at two mip levels; earlier
 HDR face reports read only face zero and carry explicit errata. Optional uniform

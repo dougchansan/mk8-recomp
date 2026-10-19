@@ -5469,6 +5469,58 @@
 +}
 +}
 --- /dev/null
++++ b/runtime/src/nvn/native_conditional.h
+@@ -0,0 +1,9 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn_vk.h"
++namespace nx::nvn {
++bool native_conditional_target_valid(uint64_t address);
++void native_conditional_prepare(VkCommandBuffer command, uint64_t address, uint32_t mode);
++void native_conditional_begin(VkCommandBuffer command);
++void native_conditional_end(VkCommandBuffer command);
++}
+--- /dev/null
++++ b/runtime/src/nvn/native_conditional_shader.h
+@@ -0,0 +1,37 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Authored GPU comparison of two counter values; timestamp words are ignored.
++#pragma once
++#include <cstdint>
++namespace nx::nvn {
++inline constexpr uint32_t native_conditional_spv[] = {
++    0x07230203u,0x00010000u,0x00000000u,0x00000028u,0x00000000u,0x00020011u,0x00000001u,0x0003000eu,
++    0x00000000u,0x00000001u,0x0005000fu,0x00000005u,0x00000001u,0x6e69616du,0x00000000u,0x00060010u,
++    0x00000001u,0x00000011u,0x00000001u,0x00000001u,0x00000001u,0x00040047u,0x00000002u,0x00000006u,
++    0x00000004u,0x00030047u,0x00000003u,0x00000003u,0x00050048u,0x00000003u,0x00000000u,0x00000023u,
++    0x00000000u,0x00030047u,0x00000004u,0x00000002u,0x00050048u,0x00000004u,0x00000000u,0x00000023u,
++    0x00000000u,0x00040047u,0x00000005u,0x00000022u,0x00000000u,0x00040047u,0x00000005u,0x00000021u,
++    0x00000000u,0x00040047u,0x00000006u,0x00000022u,0x00000000u,0x00040047u,0x00000006u,0x00000021u,
++    0x00000001u,0x00020013u,0x00000007u,0x00030021u,0x00000008u,0x00000007u,0x00020014u,0x00000009u,
++    0x00040015u,0x0000000au,0x00000020u,0x00000000u,0x0004002bu,0x0000000au,0x0000000bu,0x00000000u,
++    0x0004002bu,0x0000000au,0x0000000cu,0x00000001u,0x0004002bu,0x0000000au,0x0000000du,0x00000002u,
++    0x0004002bu,0x0000000au,0x0000000eu,0x00000004u,0x0004002bu,0x0000000au,0x0000000fu,0x00000005u,
++    0x0003001du,0x00000002u,0x0000000au,0x0003001eu,0x00000003u,0x00000002u,0x00040020u,0x00000010u,
++    0x00000002u,0x00000003u,0x00040020u,0x00000011u,0x00000002u,0x0000000au,0x0003001eu,0x00000004u,
++    0x0000000au,0x00040020u,0x00000012u,0x00000009u,0x00000004u,0x00040020u,0x00000013u,0x00000009u,
++    0x0000000au,0x0004003bu,0x00000010u,0x00000005u,0x00000002u,0x0004003bu,0x00000010u,0x00000006u,
++    0x00000002u,0x0004003bu,0x00000012u,0x00000014u,0x00000009u,0x00050036u,0x00000007u,0x00000001u,
++    0x00000000u,0x00000008u,0x000200f8u,0x00000015u,0x00060041u,0x00000011u,0x00000016u,0x00000006u,
++    0x0000000bu,0x0000000bu,0x0004003du,0x0000000au,0x00000017u,0x00000016u,0x00060041u,0x00000011u,
++    0x00000018u,0x00000006u,0x0000000bu,0x0000000cu,0x0004003du,0x0000000au,0x00000019u,0x00000018u,
++    0x00060041u,0x00000011u,0x0000001au,0x00000006u,0x0000000bu,0x0000000eu,0x0004003du,0x0000000au,
++    0x0000001bu,0x0000001au,0x00060041u,0x00000011u,0x0000001cu,0x00000006u,0x0000000bu,0x0000000fu,
++    0x0004003du,0x0000000au,0x0000001du,0x0000001cu,0x000500aau,0x00000009u,0x0000001eu,0x00000017u,
++    0x0000001bu,0x000500aau,0x00000009u,0x0000001fu,0x00000019u,0x0000001du,0x000500a7u,0x00000009u,
++    0x00000020u,0x0000001eu,0x0000001fu,0x000400a8u,0x00000009u,0x00000021u,0x00000020u,0x00050041u,
++    0x00000013u,0x00000022u,0x00000014u,0x0000000bu,0x0004003du,0x0000000au,0x00000023u,0x00000022u,
++    0x000500aau,0x00000009u,0x00000024u,0x00000023u,0x0000000bu,0x000600a9u,0x00000009u,0x00000025u,
++    0x00000024u,0x00000020u,0x00000021u,0x000600a9u,0x0000000au,0x00000026u,0x00000025u,0x0000000cu,
++    0x0000000bu,0x00060041u,0x00000011u,0x00000027u,0x00000005u,0x0000000bu,0x0000000du,0x0003003eu,
++    0x00000027u,0x00000026u,0x000100fdu,0x00010038u,
++};
++}
+--- /dev/null
 +++ b/runtime/src/nvn/native_counter_clock.h
 @@ -0,0 +1,32 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -5570,9 +5622,11 @@
 +}
 --- /dev/null
 +++ b/runtime/src/nvn/native_counters.cpp
-@@ -0,0 +1,247 @@
+@@ -0,0 +1,300 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "native_counters.h"
++#include "native_conditional.h"
++#include "native_conditional_shader.h"
 +#include "native_counter_shaders.h"
 +#include "native_device.h"
 +#include "native_guest_span.h"
@@ -5597,7 +5651,9 @@
 +struct Counters {
 +    std::array<Slot,slots_count> slots;
 +    VkBuffer total=VK_NULL_HANDLE;VkDeviceMemory memory=VK_NULL_HANDLE;
-+    Kernel sum,clock;
++    Kernel sum,clock,conditional;
++    VkCommandBuffer conditional_prepared=VK_NULL_HANDLE;
++    bool conditional_active=false;
 +    VkQueryPool current_query=VK_NULL_HANDLE;VkCommandPool current_pool=VK_NULL_HANDLE;
 +    VkCommandBuffer current_command=VK_NULL_HANDLE;VkFence current_fence=VK_NULL_HANDLE;
 +    NativeCounterRatio ratio{};
@@ -5639,8 +5695,9 @@
 +    counters.ratio=native_counter_ratio(properties.limits.timestampPeriod);
 +    counters.sum=kernel(native_counter_sum_spv,sizeof(native_counter_sum_spv),2,4);
 +    counters.clock=kernel(native_counter_clock_spv,sizeof(native_counter_clock_spv),1,16);
-+    VkBufferCreateInfo buffer{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};buffer.size=8;
++    VkBufferCreateInfo buffer{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};buffer.size=16;
 +    buffer.usage=VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT;
++    if(vk_conditional_rendering())buffer.usage|=VK_BUFFER_USAGE_CONDITIONAL_RENDERING_BIT_EXT;
 +    require(p_vkCreateBuffer(vk_device(),&buffer,nullptr,&counters.total),"total buffer");
 +    VkMemoryRequirements requirements{};p_vkGetBufferMemoryRequirements(vk_device(),counters.total,&requirements);
 +    VkMemoryAllocateInfo allocation{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};allocation.allocationSize=requirements.size;
@@ -5710,8 +5767,9 @@
 +}
 +bool native_counter_target_valid(uint64_t address) {return target(address)!=nullptr;}
 +void native_counter_frame_begin(uint32_t index,VkCommandBuffer command) {
++    if(counters.conditional_active)throw std::runtime_error("native conditional scope crossed frames");
 +    if(index>=slots_count||counters.active!=invalid_query)throw std::runtime_error("native counter frame lifecycle mismatch");
-+    counters.slot=index;counters.command=command;
++    counters.slot=index;counters.command=command;counters.conditional_prepared=VK_NULL_HANDLE;
 +    auto& slot=counters.slots[index];
 +    if(slot.pending_count)throw std::runtime_error("native counter results escaped their command buffer");
 +    slot.next_sample=slot.next_timestamp=0;slot.reports=false;
@@ -5720,12 +5778,15 @@
 +    if(counters.enabled)pool(command,slot.samples,VK_QUERY_TYPE_OCCLUSION);
 +}
 +void native_counter_part_begin(VkCommandBuffer command) {
++    if(counters.conditional_active)throw std::runtime_error("native conditional scope crossed frame parts");
++    counters.conditional_prepared=VK_NULL_HANDLE;
 +    if(counters.active!=invalid_query)throw std::runtime_error("native counter query crossed command buffers");
 +    counters.command=command;
 +}
 +void native_counter_part_end(VkCommandBuffer command) {
 +    if(counters.command!=command)return;
 +    if(counters.active!=invalid_query)throw std::runtime_error("native counter draw query was not ended");
++    if(counters.conditional_active)throw std::runtime_error("native conditional scope crossed command buffers");
 +    resolve(command);
 +}
 +bool native_counter_requires_wait() {return counters.slot<slots_count&&counters.slots[counters.slot].reports;}
@@ -5806,13 +5867,57 @@
 +    uint64_t ticks=0;require(p_vkGetQueryPoolResults(vk_device(),counters.current_query,0,1,sizeof ticks,&ticks,sizeof ticks,VK_QUERY_RESULT_64_BIT),"current clock result");
 +    return native_counter_timestamp_ns(native_gpu_counter_ticks(ticks,counters.ratio));
 +}
++bool native_conditional_target_valid(uint64_t address) {
++    if(!address||(address&15))return false;
++    uint64_t offset=0;auto* pool=pool_at_gpu(address,&offset);
++    if(!pool||offset>pool->size||24>pool->size-offset)return false;
++    if(pool->memory&&pool->memory>UINT64_MAX-offset)return false;
++    const auto host=pool_host(*pool,offset);
++    if(!host||host>UINT64_MAX-23||!native_guest_span(host,24,1))return false;
++    if(!pool->memory)
++        for(uint64_t byte=1;byte<24;++byte)
++            if(pool_host(*pool,offset+byte)!=host+byte)return false;
++    return true;
++}
++void native_conditional_prepare(VkCommandBuffer command,uint64_t address,uint32_t mode) {
++    if(mode>1||!native_conditional_target_valid(address)||replay::written_separate())
++        throw std::invalid_argument("unsupported native conditional render range or mode");
++    if(!vk_conditional_rendering())throw std::runtime_error("native conditional rendering feature unavailable");
++    initialize();context(command);
++    if(counters.conditional_active)throw std::runtime_error("native conditional rendering cannot nest");
++    draw_end_rendering(command,2);
++    if(!counters.conditional.pipeline)counters.conditional=kernel(native_conditional_spv,sizeof(native_conditional_spv),2,4);
++    uint64_t offset=0;auto* pool=pool_at_gpu(address,&offset);
++    const auto host=reinterpret_cast<const uint8_t*>(pool_host(*pool,offset));
++    const auto source=replay::read_upload(command,host,24,24,256);
++    const VkDescriptorBufferInfo input{source.buffer,source.offset,24},output{counters.total,0,16};
++    barrier(command,input,VK_ACCESS_MEMORY_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
++    barrier(command,output,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT,VK_ACCESS_SHADER_WRITE_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
++    const VkDescriptorBufferInfo bindings[]={output,input};dispatch(command,counters.conditional,bindings,2,&mode,sizeof mode);
++    barrier(command,{counters.total,8,4},VK_ACCESS_SHADER_WRITE_BIT,VK_ACCESS_CONDITIONAL_RENDERING_READ_BIT_EXT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_CONDITIONAL_RENDERING_BIT_EXT);
++    counters.conditional_prepared=command;
++}
++void native_conditional_begin(VkCommandBuffer command) {
++    if(!pass_open()||counters.conditional_active||counters.conditional_prepared!=command)
++        throw std::runtime_error("native conditional rendering scope mismatch");
++    VkConditionalRenderingBeginInfoEXT info{VK_STRUCTURE_TYPE_CONDITIONAL_RENDERING_BEGIN_INFO_EXT};
++    info.buffer=counters.total;info.offset=8;
++    p_vkCmdBeginConditionalRenderingEXT(command,&info);
++    counters.conditional_active=true;
++}
++void native_conditional_end(VkCommandBuffer command) {
++    if(!counters.conditional_active||counters.conditional_prepared!=command)
++        throw std::runtime_error("native conditional rendering end mismatch");
++    p_vkCmdEndConditionalRenderingEXT(command);
++    counters.conditional_active=false;counters.conditional_prepared=VK_NULL_HANDLE;
++}
 +void native_counter_release() {
 +    if(!vk_device())return;
 +    for(auto& slot:counters.slots){if(slot.samples)p_vkDestroyQueryPool(vk_device(),slot.samples,nullptr);if(slot.timestamps)p_vkDestroyQueryPool(vk_device(),slot.timestamps,nullptr);}
 +    if(counters.current_fence)p_vkDestroyFence(vk_device(),counters.current_fence,nullptr);
 +    if(counters.current_query)p_vkDestroyQueryPool(vk_device(),counters.current_query,nullptr);
 +    if(counters.current_pool)p_vkDestroyCommandPool(vk_device(),counters.current_pool,nullptr);
-+    destroy_kernel(counters.sum);destroy_kernel(counters.clock);
++    destroy_kernel(counters.sum);destroy_kernel(counters.clock);destroy_kernel(counters.conditional);
 +    if(counters.total)p_vkDestroyBuffer(vk_device(),counters.total,nullptr);
 +    if(counters.memory)p_vkFreeMemory(vk_device(),counters.memory,nullptr);
 +    counters={};
@@ -6075,7 +6180,7 @@
      // The CPU wrote the texture's memory (nvnMemoryPoolFlushMappedRange over it, e.g. a glyph cache): upload again.
      std::atomic<bool> dirty{false};
      // What of the memory the CPU wrote, as bytes from `memory` ([lo, hi); UINT64_MAX / 0: nothing known yet). Merged by
-@@ -305,16 +308,20 @@
+@@ -305,17 +308,22 @@
  // objects (blend, depth/stencil, vertex layouts, ...) are decoded when recorded, through the SDK driver's getters,
  // and kept in the list's blobs: the game may reuse its structs right after the call.
  
@@ -6095,9 +6200,11 @@
          BindDeferred,  // mask: 0 textures, 1 images, 2 uniform buffers, 3 storage buffers; a[0] the guest array
 +        SetLineWidth, SetPointSize, ClearTexture, FenceSync, CopyBufferToTexture,
          BindMultisampleState,  // n: alpha to coverage enabled (nvn_state.cpp)
++        SetRenderEnableConditional,  // n: equal/not-equal; a[0]: two counter records
      } op;
      uint32_t n = 0, mask = 0;
-@@ -375,6 +382,7 @@
+     uint64_t a[9] = {};  // textures (render targets: colors then depth), handles, GPU addresses, sizes, ...
+@@ -375,6 +383,7 @@
      uint16_t format[9] = {};  // the views' NVN formats (0: the texture's own)
  };
  
@@ -6105,6 +6212,117 @@
  std::shared_ptr<CmdList> command_list(uint64_t handle);  // a recorded handle's commands (nvn_cmd.cpp)
  std::string explain_handle(uint64_t handle);             // why a handle has no list (NX_CMD_DROPS=1: what dropped it)
  void command_memory_released(uint64_t gpu, uint64_t size);  // a pool finalized: the lists recorded in it go
+--- a/runtime/src/nvn/nvn_binds.cpp
++++ b/runtime/src/nvn/nvn_binds.cpp
+@@ -15,6 +15,8 @@
+ #include <cstring>
+ 
+ #include "nvn.h"
++#include "native_conditional.h"
++#include <stdexcept>
+ 
+ namespace nx::nvn {
+ 
+@@ -108,13 +110,13 @@
+ 
+ void SetRasterizerDiscard(CPU& c) {
+     Cmd cmd{Cmd::SetRasterizerDiscard};
+-    cmd.n = uint32_t(c.x[1] & 1);
++    cmd.n = uint32_t((c.x[1] & 0xff) != 0);
+     record(c.x[0], cmd);
+ }
+ 
+ void SetRenderEnable(CPU& c) {
+     Cmd cmd{Cmd::SetRenderEnable};
+-    cmd.n = uint32_t(c.x[1] & 1);
++    cmd.n = uint32_t((c.x[1] & 0xff) != 0);
+     record(c.x[0], cmd);
+     static std::atomic<uint64_t> counts[2];
+     uint64_t n = ++counts[cmd.n];
+@@ -122,13 +124,19 @@
+         log("nvn: SetRenderEnable(%u) x%llu", cmd.n, (unsigned long long)n);
+ }
+ 
+-// SetRenderEnableConditional(cmd, NVNconditionalRenderMode, NVNbufferAddress): rendering on or off from values the
+-// GPU wrote (occlusion results). Treated as "on": drawing what might have been culled is only extra work, while
+-// staying off after a SetRenderEnable(false) dropped whole passes.
++// SDK53 modes 0/1 select equal/not-equal; other modes emit no command.
+ void SetRenderEnableConditional(CPU& c) {
+-    Cmd cmd{Cmd::SetRenderEnable};
+-    cmd.n = 1;
+-    record(c.x[0], cmd);
++    const auto mode = uint32_t(c.x[1]);
++    if (mode > 1) return;
++    if (!native_conditional_target_valid(c.x[2]))
++        throw std::invalid_argument("native conditional render requires two readable counter records");
++    Cmd cmd{Cmd::SetRenderEnableConditional};
++    cmd.n = mode;
++    cmd.a[0] = c.x[2];
++    record(c.x[0], cmd);
++    static std::atomic<uint32_t> traced=0;
++    if(traced.fetch_add(1,std::memory_order_relaxed)<8)
++        log("nvn: native conditional render mode=%u address=%llx",mode,(unsigned long long)c.x[2]);
+ }
+ 
+ // BindImage(cmd, stage, index, NVNimageHandle), BindImages[Deferred](cmd, stage, first, count, const NVNimageHandle*)
+--- a/runtime/src/nvn/nvn_clears.cpp
++++ b/runtime/src/nvn/nvn_clears.cpp
+@@ -16,6 +16,8 @@
+ #include <string>
+ 
+ #include "nvn_draw_state.h"
++#include "native_conditional.h"
++#include <stdexcept>
+ #include "nvn_ultrawide.h"
+ 
+ namespace nx::nvn {
+@@ -199,6 +201,7 @@
+ // targets: most of the ~25 ms per frame of GPU time "outside passes" (docs/nvn/DEBUG.md #31). Depth and stencil
+ // clears honour the call's masks.
+ void draw_clear(VkCommandBuffer cb, const Targets& t, const Cmd& c) {
++    if (!replay::g_state.render_enable) return;
+     bool color = c.op == Cmd::ClearColor;
+     uint64_t guest = color ? (c.n < 8 ? t.colors[c.n] : 0) : t.depth;
+     GpuImage* img = guest ? image_of(guest) : nullptr;
+@@ -241,6 +244,38 @@
+         rect.offset.x || rect.offset.y || rect.extent.width < full.width || rect.extent.height < full.height;
+     bool masked = color && !no_mask && (c.mask & 0xF) != 0xF;
+     g_scissored += scissored, g_masked += masked;
++    if (replay::g_state.conditional_address) {
++        // Load-op and transfer clears ignore Vulkan conditional rendering. Use an
++        // explicit clear in a pass containing only this attachment, at its full extent.
++        native_conditional_prepare(cb, replay::g_state.conditional_address, replay::g_state.conditional_mode);
++        Targets single{};
++        if (color) {
++            single.color_count = 1;
++            single.colors[0] = guest;
++            single.views.level[0] = t.views.level[c.n];
++            single.views.layer[0] = t.views.layer[c.n];
++            single.views.format[0] = t.views.format[c.n];
++            a.colorAttachment = 0;
++        } else {
++            single.depth = guest;
++            single.views.level[8] = t.views.level[8];
++            single.views.layer[8] = t.views.layer[8];
++            single.views.format[8] = t.views.format[8];
++        }
++        pass_begin(cb, single);
++        native_conditional_begin(cb);
++        if (masked) {
++            if (!mask_clear(cb, single, 0, c.mask & 0xf, c.f, rect))
++                throw std::invalid_argument("native conditional masked clear unsupported for this format");
++        } else {
++            VkClearRect region{rect, 0, 1};
++            p_vkCmdClearAttachments(cb, 1, &a, 1, &region);
++        }
++        native_conditional_end(cb);
++        pass_mark_written(color ? 1u : 1u << 8);
++        draw_end_rendering(cb, 3);
++        return;
++    }
+     if (!transfer && !eager && !scissored && !masked && !pass_open_on(t)) {
+         VkExtent2D e = targets_extent(t);
+         if (full.width <= e.width && full.height <= e.height) {  // the pass covers it: a loadOp can clear it
 --- a/runtime/src/nvn/nvn_cmd.cpp
 +++ b/runtime/src/nvn/nvn_cmd.cpp
 @@ -10,15 +10,26 @@
@@ -6764,7 +6982,7 @@
 +NX_HLE("nvnDeviceGetWindowOriginMode",nx::nvn::DeviceGetOrigin);
 --- a/runtime/src/nvn/nvn_draw.cpp
 +++ b/runtime/src/nvn/nvn_draw.cpp
-@@ -11,11 +11,16 @@
+@@ -11,11 +11,18 @@
  #include <cstring>
  #include <set>
  
@@ -6775,13 +6993,15 @@
  #include "platform.h"
 +#include "native_bc3_block_view.h"
 +#include "native_counters.h"
++#include "native_conditional.h"
++#include "native_debug_buffer_snapshot.h"
  
  namespace nx::nvn {
 +VkPhysicalDevice vk_physical();
  
  using namespace nx::vk;
  
-@@ -150,8 +155,18 @@
+@@ -150,8 +157,18 @@
          colors[k].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
          colors[k].loadOp = fresh >> k & 1 ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
          colors[k].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -6802,7 +7022,7 @@
      }
      GpuImage* dimg = t.depth ? image_of(t.depth) : nullptr;
      g_pass_images[8] = dimg;
-@@ -207,20 +222,27 @@
+@@ -207,20 +224,27 @@
      if (shaders)
          for (const ShaderInfo* s : *shaders)
              if (s->stage == ShaderStage::Compute) cs = s;
@@ -6833,7 +7053,7 @@
      draw_end_rendering(cb, 2);
      gather_textures(stages);
      build_sets(cb, stages, layout);
-@@ -256,6 +278,7 @@
+@@ -256,6 +280,7 @@
  }
  
  bool draw(VkCommandBuffer cb, const Targets& t, uint32_t mode, bool indexed, const Cmd& c) {
@@ -6841,21 +7061,56 @@
      g_stats.total++;
      if (g_state.rasterizer_discard || !g_state.render_enable) return false;  // nothing reaches the targets
      const auto* shaders = program_shaders(g_state.program);
-@@ -502,13 +525,17 @@
+@@ -365,6 +390,30 @@
+         return false;
+     }
+     check_vertex_ranges(vs, fs, indexed, c, in);  // NX_CHECK_VERTS (nvn_written.cpp)
++    { // Optional actual GPU-bound vertex/index evidence; never substitute CPU shadows.
++        static const char* watched=std::getenv("NX_DUMP_DRAW_INPUTS");
++        static std::set<std::string> captured;
++        static uint32_t serial=0;
++        const std::string key=vs->hash+":"+(fs?fs->hash:std::string());
++        if(watched&&fs&&std::strstr(watched,fs->hash.c_str())&&serial<64&&captured.insert(key).second) {
++            auto snapshot=[&](const Upload& source,uint64_t bytes,int stream,uint32_t stride) {
++                const uint64_t size=std::min<uint64_t>(bytes,0x10000)&~3ull;
++                if(!size||serial>=64)return;
++                const uint64_t tag=0xe000000000000000ull+serial++;
++                const bool copied=debug_buffer_snapshot(cb,{source.buffer,source.offset,size},tag);
++                log("input-capture vs=%s fs=%s draw=%llu stream=%d stride=%u index-type=%u bytes=%llu captured-bytes=%llu tag=%llx captured=%u",
++                    vs->hash.c_str(),fs->hash.c_str(),(unsigned long long)g_stats.total,stream,stride,unsigned(in.index_type),
++                    (unsigned long long)bytes,(unsigned long long)size,(unsigned long long)tag,unsigned(copied));
++            };
++            for(uint32_t stream=0;stream<15;++stream)
++                if((in.used>>stream)&1)snapshot(in.vertex[stream],g_state.vertex_buffers[stream].size,
++                    int(stream),stream<g_state.streams.size()?g_state.streams[stream].stride:0);
++            if(indexed)snapshot(in.index,uint64_t(uint32_t(c.i[0]))*(in.index_type==VK_INDEX_TYPE_UINT32?4u:2u),-1,0);
++        }
++    }
++
++    if (g_state.conditional_address)
++        native_conditional_prepare(cb, g_state.conditional_address, g_state.conditional_mode);
+     if (!g_rendering) {
+         if (gpu_profile_on()) {
+             GpuImage* img = t.color_count && t.colors[0] ? image_of(t.colors[0]) : nullptr;
+@@ -502,13 +551,21 @@
              p_vkCmdBindIndexBuffer(cb, in.index.buffer, in.index.offset, in.index_type);
              g_bound.has_index = true, g_bound.index = in.index, g_bound.index_type = in.index_type, g_state_set++;
          }
++        if (g_state.conditional_address) native_conditional_begin(cb);
 +        const auto counter=native_counter_draw_begin(cb);
          bool q = zero_draws_on() && zero_draws_begin(cb, vs->hash + " " + (fs ? fs->hash : std::string("-")));
          p_vkCmdDrawIndexed(cb, count, uint32_t(std::max(1, c.i[3])), 0, c.i[1], uint32_t(c.i[2]));
          if (q) zero_draws_end(cb);
 +        native_counter_draw_end(cb,counter);
++        if (g_state.conditional_address) native_conditional_end(cb);
      } else {
++        if (g_state.conditional_address) native_conditional_begin(cb);
 +        const auto counter=native_counter_draw_begin(cb);
          bool q = zero_draws_on() && zero_draws_begin(cb, vs->hash + " " + (fs ? fs->hash : std::string("-")));
          p_vkCmdDraw(cb, uint32_t(c.i[1]), uint32_t(std::max(1, c.i[3])), uint32_t(c.i[0]), uint32_t(c.i[2]));
          if (q) zero_draws_end(cb);
 +        native_counter_draw_end(cb,counter);
++        if (g_state.conditional_address) native_conditional_end(cb);
      }
      g_stats.done++;
      g_pass_written |= ((1u << t.color_count) - 1) | (g_state.depth.depth_write || g_state.depth.stencil_test ? 1u << 8 : 0);
@@ -6869,7 +7124,24 @@
  
  namespace nx::nvn {
  
-@@ -118,20 +119,8 @@
+@@ -25,7 +26,15 @@
+             if (c.i[0] >= 0 && c.i[0] < kStages && c.i[1] >= 0 && c.i[1] < 16) s.images[c.i[0]][c.i[1]] = c.a[0];
+             break;
+         case Cmd::DispatchCompute: dispatch_call(cb, c); break;
+-        case Cmd::SetRenderEnable: s.render_enable = c.n != 0; break;
++        case Cmd::SetRenderEnable:
++            s.render_enable = c.n != 0;
++            s.conditional_address = 0;
++            break;
++        case Cmd::SetRenderEnableConditional:
++            s.render_enable = true;
++            s.conditional_address = c.a[0];
++            s.conditional_mode = c.n;
++            break;
+         case Cmd::SetScissor:
+             std::memcpy(s.scissor, c.i, sizeof s.scissor), s.has_scissor = true;
+             break;
+@@ -118,20 +127,8 @@
                  }
              break;
          }
@@ -6894,8 +7166,12 @@
          default: raster_command(c); break;
 --- a/runtime/src/nvn/nvn_draw_state.h
 +++ b/runtime/src/nvn/nvn_draw_state.h
-@@ -33,6 +33,7 @@
+@@ -31,8 +31,11 @@
+     float blend_color[4] = {};
+     int32_t viewport[4] = {}, scissor[4] = {};
      bool rasterizer_discard = false, render_enable = true;  // SetRasterizerDiscard / SetRenderEnable: draws skipped
++    uint64_t conditional_address = 0;
++    uint32_t conditional_mode = 0;
      bool has_viewport = false, has_scissor = false;
      float depth_near = 0, depth_far = 1;
 +    float point_size = 1;
@@ -8365,7 +8641,43 @@
  
  #include <nx/game.h>
  
-@@ -396,6 +398,7 @@
+@@ -52,6 +54,7 @@
+ VkFormat g_sc_format = VK_FORMAT_B8G8R8A8_UNORM;
+ VkSemaphore g_acquired = VK_NULL_HANDLE, g_rendered = VK_NULL_HANDLE;
+ VkBool32 g_depth_clip_control = VK_FALSE;
++VkBool32 g_conditional_rendering = VK_FALSE;
+ bool g_integrated = false;
+ bool g_require_sg32 = false;  // compute pipelines are made with a required subgroup size of 32 (Maxwell's warp)  // the chosen GPU is an integrated one (unified memory, the GPU is the long side)
+ VkPhysicalDeviceFeatures g_features{};  // the core features enabled (vk_features())
+@@ -183,6 +186,7 @@
+     VkPhysicalDeviceVulkan13Features f13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+     VkPhysicalDeviceIndexTypeUint8FeaturesEXT fu8{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT};
+     VkPhysicalDeviceDepthClipControlFeaturesEXT fclip{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT};
++    VkPhysicalDeviceConditionalRenderingFeaturesEXT fconditional{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CONDITIONAL_RENDERING_FEATURES_EXT};
+     struct {  // VkPhysicalDevicePortabilitySubsetFeaturesKHR, without its header (beta extensions)
+         VkStructureType sType = VkStructureType(1000163000);
+         void* pNext = nullptr;
+@@ -197,6 +201,10 @@
+     if (has_extension(dext, "VK_EXT_depth_clip_control")) {
+         dexts.push_back("VK_EXT_depth_clip_control");
+         *tail = &fclip, tail = &fclip.pNext;
++    }
++    if (has_extension(dext, "VK_EXT_conditional_rendering")) {
++        dexts.push_back("VK_EXT_conditional_rendering");
++        *tail = &fconditional, tail = &fconditional.pNext;
+     }
+     if (has_extension(dext, "VK_KHR_portability_subset")) {
+         dexts.push_back("VK_KHR_portability_subset");
+@@ -217,6 +225,8 @@
+             g_require_sg32 ? "pinned to 32" : "left to the driver");
+     }
+     g_depth_clip_control = fclip.depthClipControl;
++    g_conditional_rendering = fconditional.conditionalRendering;
++    log("nvn/vk: conditional rendering feature %u", g_conditional_rendering);
+     g_features = features.features;
+     // NX_ASTC_DECODE=1|linear|srgb: the CPU decoder even where the GPU has ASTC (to compare the two on one GPU).
+     set_astc_native(g_features.textureCompressionASTC_LDR);
+@@ -396,11 +406,13 @@
  }  // namespace
  
  std::recursive_mutex& gpu_lock() { return g_gpu; }
@@ -8373,7 +8685,13 @@
  VkDevice vk_device() { return g_device; }
  VkPhysicalDevice vk_physical() { return g_physical; }
  VkQueue vk_queue() { return g_queue; }
-@@ -479,7 +482,9 @@
+ uint32_t vk_queue_family() { return g_family; }
+ bool vk_depth_clip_control() { return g_depth_clip_control; }
++bool vk_conditional_rendering() { return g_conditional_rendering && vk::p_vkCmdBeginConditionalRenderingEXT && vk::p_vkCmdEndConditionalRenderingEXT; }
+ const VkPhysicalDeviceFeatures& vk_features() { return g_features; }
+ bool gpu_is_integrated() { return g_integrated; }
+ bool gpu_require_subgroup32() { return g_require_sg32; }
+@@ -479,7 +491,9 @@
      p_vkResetCommandBuffer(g_cb, 0);
      VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
      bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -8384,7 +8702,7 @@
  }
  
  // Where the submitting thread's time goes, logged with the draw stats, per presented frame: the replay (recording
-@@ -491,6 +496,7 @@
+@@ -491,6 +505,7 @@
  
  void end_and_wait(VkSemaphore wait, VkSemaphore signal) {
      uint64_t t0 = plat::monotonic_ns();
@@ -8392,7 +8710,7 @@
      p_vkEndCommandBuffer(g_cb);
      VkPipelineStageFlags stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
      VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-@@ -638,6 +644,7 @@
+@@ -638,6 +653,7 @@
  }
  
  void gpu_present(uint64_t texture, const int32_t* crop) {
@@ -8410,7 +8728,7 @@
      uint64_t rendered_at = 0;      // the pass-end serial of the last pass that rendered into it (nvn_draw.cpp, G4)    // views may use another format (MUTABLE_FORMAT; nvn_image.cpp, ubwc_flags)
      // An R8 texture always read as (1, 1, 1, R) (a glyph cache): stored as RGBA8 (255, 255, 255, R) and sampled
      // without swizzle. MoltenVK returned alpha 0 for that view swizzle on a 2D-array view, so all text was invisible.
-@@ -35,6 +36,8 @@
+@@ -35,8 +36,11 @@
      bool uw = false;          // NX_ULTRAWIDE: a widened render target (nvn_ultrawide.cpp)
  };
  
@@ -8418,8 +8736,11 @@
 +bool initialize_backend();
  VkDevice vk_device();
  bool vk_depth_clip_control();
++bool vk_conditional_rendering();
  // The core features the device was created with (all the GPU has): depthClamp, depthBiasClamp, depthBounds, ...
-@@ -225,6 +228,8 @@
+ const VkPhysicalDeviceFeatures& vk_features();
+ bool gpu_require_subgroup32();  // compute pipelines pin the subgroup size to 32 (nvn_pipeline.cpp)
+@@ -225,6 +229,8 @@
  std::shared_ptr<CmdList> submit_command_list(uint64_t handle);  // command_list(), once per handle per submit
  void submit_lists_reset();  // at each submit's start (draw_begin_submit)
  
@@ -10577,6 +10898,248 @@
 +#include <stdexcept>
 +int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("compute profile assertion");};check(native_compute_group_valid({32,1,1},{32,1,1},0));check(!native_compute_group_valid({32,1,1},{64,1,1},0));check(!native_compute_group_valid({0,1,1},{0,1,1},0));check(!native_compute_group_valid({1024,2,1},{1024,2,1},0));check(!native_compute_group_valid({1,1,65},{1,1,65},0));check(!native_compute_group_valid({32,1,1},{32,1,1},3));check(!native_compute_group_valid({32,1,1},{32,1,1},65540));check(native_compute_buffer_extent_valid(16,32,48,64));check(!native_compute_buffer_extent_valid(49,1,48,64));check(!native_compute_buffer_extent_valid(16,33,48,64));check(!native_compute_buffer_extent_valid(0,0,48,64));check(!native_compute_buffer_extent_valid(0,65,128,64));check(!native_compute_buffer_extent_valid(UINT64_MAX,2,UINT64_MAX,64));std::cout<<"compute profile checks="<<checks<<" PASS\n";}
 --- /dev/null
++++ b/tests/native_conditional_probe.h
+@@ -0,0 +1,239 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/native_conditional.h"
++#include "nvn/native_counters.h"
++#include "nvn/nvn_draw_state.h"
++#include <array>
++#include <cstring>
++#include <stdexcept>
++
++namespace nx::nvn {
++void gpu_submit(const std::vector<std::shared_ptr<CmdList>>&, std::shared_ptr<const DeferredValues>);
++VkQueue vk_queue();
++uint32_t vk_queue_family();
++}
++
++template<class Check> void native_conditional_probe(uint64_t device, Check check, bool synchronous_only = false) {
++    using namespace nx;
++    using namespace nx::nvn;
++    check(vk_conditional_rendering());
++    auto alloc = [](uint64_t size) {
++        const auto address = kernel_alloc(size, 4096);
++        vm_set(address, size, kMemHeap, 3);
++        return address;
++    };
++    const auto memory = alloc(4096), pool_key = alloc(256), command_key = alloc(256), control = alloc(4096);
++    const auto texture_key = alloc(256), depth_key = alloc(256);
++    auto& pool = make<MemoryPool>(pool_key);
++    pool.memory = memory; pool.size = 4096; pool.gpu = gpu_alloc(4096); pool_register(&pool);
++    auto& texture = make<Texture>(texture_key);
++    texture.target = 1; texture.width = texture.height = 4; texture.depth = texture.levels = 1; texture.format = 0x25;
++    auto& depth = make<Texture>(depth_key);
++    depth.target = 1; depth.width = depth.height = 4; depth.depth = depth.levels = 1; depth.format = 0x34;
++    Targets targets{}; targets.color_count = 1; targets.colors[0] = texture_key;
++    CPU api{};
++    auto call = [&](const char* name) { auto function = hle_lookup(name); check(function != nullptr); function(api); };
++    api.x[0] = command_key; api.x[1] = device; call("nvnCommandBufferInitialize"); check(api.x[0] == 1);
++    api.x[0] = command_key; api.x[1] = pool_key; api.x[2] = 0; api.x[3] = 4096; call("nvnCommandBufferAddCommandMemory");
++    api.x[0] = command_key; api.x[1] = control; api.x[2] = 4096; call("nvnCommandBufferAddControlMemory");
++    auto record = [&](bool conditional, uint32_t mode, uint64_t address) {
++        api.x[0] = command_key; call("nvnCommandBufferBeginRecording");
++        api.x[0] = command_key; api.x[1] = mode; api.x[2] = address;
++        call(conditional ? "nvnCommandBufferSetRenderEnableConditional" : "nvnCommandBufferSetRenderEnable");
++        api.x[0] = command_key; call("nvnCommandBufferEndRecording");
++        auto list = command_list(api.x[0]); check(bool(list)); return list;
++    };
++    const auto equal = record(true, 0, pool.gpu), unequal = record(true, 1, pool.gpu);
++    check(equal->cmds.size() == 1 && equal->cmds[0].op == Cmd::SetRenderEnableConditional && equal->cmds[0].n == 0 && equal->cmds[0].a[0] == pool.gpu);
++    check(unequal->cmds.size() == 1 && unequal->cmds[0].n == 1);
++    check(record(true, 2, 0)->cmds.empty()); // Original SDK ignores unknown modes.
++    const auto off = record(false, 0, 0), on = record(false, 2, 0);
++    check(on->cmds.size() == 1 && on->cmds[0].n == 1); // SDK tests the whole low byte.
++    for (auto address : {uint64_t(0), pool.gpu + 8, pool.gpu + 4080, uint64_t(0x12340)})
++        check(!native_conditional_target_valid(address));
++    vm_set(memory, 4096, kMemHeap, 1); check(native_conditional_target_valid(pool.gpu)); vm_set(memory, 4096, kMemHeap, 3);
++    vm_set(memory, 4096, kMemHeap, 0); check(!native_conditional_target_valid(pool.gpu)); vm_set(memory, 4096, kMemHeap, 3);
++    {
++        const auto virtual_key=alloc(256);
++        auto& virtual_pool=make<MemoryPool>(virtual_key);
++        virtual_pool.size=4096;virtual_pool.gpu=gpu_alloc(4096);pool_register(&virtual_pool);
++        virtual_pool.mappings[0]={pool_key,0,16};
++        check(!native_conditional_target_valid(virtual_pool.gpu));
++        virtual_pool.mappings[16]={pool_key,16,16};
++        check(native_conditional_target_valid(virtual_pool.gpu));
++        virtual_pool.mappings[16]={pool_key,64,16};
++        check(!native_conditional_target_valid(virtual_pool.gpu));
++        pool_unregister(&virtual_pool);destroy(virtual_key);
++    }
++    auto execute = [&](VkCommandBuffer command, const std::shared_ptr<CmdList>& list) {
++        Targets ignored{}; replay_list(command, ignored, *list, 0);
++    };
++    auto initialize_blue = [&](VkCommandBuffer command, GpuImage& image) {
++        transition(command, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
++        VkClearColorValue blue{}; blue.float32[2] = blue.float32[3] = 1;
++        VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
++        vk::p_vkCmdClearColorImage(command, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &blue, 1, &range);
++        image.rendered = true;
++    };
++    // Synchronous gpu_submit does not initialize the pipelined frame ring. The
++    // fixture's setup/readback transfers therefore own their command pool and fence.
++    VkCommandPool transfer_pool=VK_NULL_HANDLE;VkCommandBuffer transfer_command=VK_NULL_HANDLE;
++    VkFence transfer_fence=VK_NULL_HANDLE;VkBuffer transfer_buffer=VK_NULL_HANDLE;
++    VkDeviceMemory transfer_memory=VK_NULL_HANDLE;uint8_t* transfer_pointer=nullptr;
++    if(synchronous_only) {
++        VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
++        pool_info.flags=VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;pool_info.queueFamilyIndex=vk_queue_family();
++        check(vk::p_vkCreateCommandPool(vk_device(),&pool_info,nullptr,&transfer_pool)==VK_SUCCESS);
++        VkCommandBufferAllocateInfo allocate{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
++        allocate.commandPool=transfer_pool;allocate.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY;allocate.commandBufferCount=1;
++        check(vk::p_vkAllocateCommandBuffers(vk_device(),&allocate,&transfer_command)==VK_SUCCESS);
++        VkFenceCreateInfo fence{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
++        check(vk::p_vkCreateFence(vk_device(),&fence,nullptr,&transfer_fence)==VK_SUCCESS);
++        VkBufferCreateInfo buffer{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};buffer.size=64;buffer.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT;
++        check(vk::p_vkCreateBuffer(vk_device(),&buffer,nullptr,&transfer_buffer)==VK_SUCCESS);
++        VkMemoryRequirements requirements{};vk::p_vkGetBufferMemoryRequirements(vk_device(),transfer_buffer,&requirements);
++        VkMemoryAllocateInfo memory_info{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};memory_info.allocationSize=requirements.size;
++        memory_info.memoryTypeIndex=memory_type(requirements.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
++        check(vk::p_vkAllocateMemory(vk_device(),&memory_info,nullptr,&transfer_memory)==VK_SUCCESS);
++        check(vk::p_vkBindBufferMemory(vk_device(),transfer_buffer,transfer_memory,0)==VK_SUCCESS);
++        void* mapped=nullptr;check(vk::p_vkMapMemory(vk_device(),transfer_memory,0,VK_WHOLE_SIZE,0,&mapped)==VK_SUCCESS);
++        transfer_pointer=static_cast<uint8_t*>(mapped);
++    }
++    auto begin_transfer=[&] {
++        if(!synchronous_only){auto command=frame_begin(false);clears_begin_submit();replay::written_reset();replay::dedup_reset();return command;}
++        check(vk::p_vkResetCommandPool(vk_device(),transfer_pool,0)==VK_SUCCESS);
++        VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};begin.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
++        check(vk::p_vkBeginCommandBuffer(transfer_command,&begin)==VK_SUCCESS);return transfer_command;
++    };
++    auto end_transfer=[&](VkCommandBuffer command) {
++        if(!synchronous_only){frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);return;}
++        check(vk::p_vkEndCommandBuffer(command)==VK_SUCCESS);
++        check(vk::p_vkResetFences(vk_device(),1,&transfer_fence)==VK_SUCCESS);
++        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};submit.commandBufferCount=1;submit.pCommandBuffers=&command;
++        check(vk::p_vkQueueSubmit(vk_queue(),1,&submit,transfer_fence)==VK_SUCCESS);
++        check(vk::p_vkWaitForFences(vk_device(),1,&transfer_fence,VK_TRUE,5000000000ull)==VK_SUCCESS);
++    };
++    auto copy_image = [&](VkCommandBuffer command, GpuImage& image) {
++        const auto result = synchronous_only ? Upload{transfer_buffer,0,transfer_pointer} : upload_alloc(64, 16);
++        std::memset(result.ptr,0xcd,64);
++        transition(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
++        VkBufferImageCopy copy{}; copy.bufferOffset = result.offset;
++        copy.imageSubresource = {image.aspect, 0, 0, 1}; copy.imageExtent = {4, 4, 1};
++        vk::p_vkCmdCopyImageToBuffer(command, image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, result.buffer, 1, &copy);
++        VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
++        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
++        barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++        barrier.buffer = result.buffer; barrier.offset = result.offset; barrier.size = 64;
++        vk::p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &barrier, 0, nullptr);
++        return result;
++    };
++    struct Case { uint32_t mode; uint64_t first, second; bool enabled; };
++    constexpr Case cases[] = {{0,0,0,true}, {0,7,8,false}, {1,7,8,true}, {1,7,7,false},
++        {0,7,0x100000007ull,false}, {1,7,0x100000007ull,true}, {0,0x100000007ull,0x100000007ull,true}};
++    if(!synchronous_only) for (const auto& test : cases) {
++        std::lock_guard lock(gpu_lock());
++        auto command = frame_begin(false); clears_begin_submit(); replay::written_reset(); replay::dedup_reset();
++        st<uint64_t>(memory, 77); st<uint64_t>(memory + 16, 88); // Deliberately stale CPU values.
++        const auto source = replay::written_bind(command, reinterpret_cast<const uint8_t*>(memory), 32, 32);
++        const uint64_t records[] = {test.first, 0x123456789ull, test.second, 0x987654321ull};
++        vk::p_vkCmdUpdateBuffer(command, source.buffer, source.offset, sizeof records, records);
++        auto* image = image_of(texture_key); check(image != nullptr); initialize_blue(command, *image);
++        execute(command, test.mode ? unequal : equal);
++        native_counter_reset(command, 1);
++        native_conditional_prepare(command, replay::g_state.conditional_address, replay::g_state.conditional_mode);
++        pass_begin(command, targets); native_conditional_begin(command);
++        if (&test == &cases[0]) {
++            bool rejected=false;try{native_conditional_begin(command);}catch(const std::runtime_error&){rejected=true;}check(rejected);
++            rejected=false;try{native_conditional_end(VK_NULL_HANDLE);}catch(const std::runtime_error&){rejected=true;}check(rejected);
++        }
++        const auto query = native_counter_draw_begin(command);
++        const float red[] = {1,0,0,1}; check(mask_clear(command, targets, 0, 15, red, {{0,0},{4,4}}));
++        native_counter_draw_end(command, query); native_conditional_end(command);
++        pass_mark_written(1); draw_end_rendering(command);
++        native_counter_report(command, 1, pool.gpu + 64);
++        const auto pixels = copy_image(command, *image);
++        frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, draw_take_write_backs(), false);
++        check(ld<uint64_t>(memory + 64) == (test.enabled ? 16 : 0));
++        for (unsigned index = 0; index < 16; ++index) {
++            uint32_t pixel; std::memcpy(&pixel, pixels.ptr + index * 4, 4);
++            check(pixel == (test.enabled ? 0xff0000ffu : 0xffff0000u));
++        }
++    }
++    // Real native counter reports feed later predicates in the same command buffer.
++    if(!synchronous_only) {
++        std::lock_guard lock(gpu_lock());
++        auto command = frame_begin(false); clears_begin_submit(); replay::written_reset(); replay::dedup_reset();
++        st<uint64_t>(memory, 77); st<uint64_t>(memory + 16, 88);
++        auto* image = image_of(texture_key); initialize_blue(command, *image);
++        native_counter_reset(command, 1);
++        native_counter_report(command, 1, pool.gpu);
++        native_counter_report(command, 1, pool.gpu + 16);
++        execute(command, equal);
++        for (unsigned index = 0; index < 2; ++index) {
++            native_conditional_prepare(command, pool.gpu, 0);
++            pass_begin(command, targets); native_conditional_begin(command);
++            const auto query = native_counter_draw_begin(command);
++            const float colour[] = {index ? 0.0f : 1.0f, index ? 1.0f : 0.0f, 0, 1};
++            check(mask_clear(command, targets, 0, 15, colour, {{0,0},{4,4}}));
++            native_counter_draw_end(command, query); native_conditional_end(command);
++            pass_mark_written(1); draw_end_rendering(command);
++            native_counter_report(command, 1, pool.gpu + 16);
++        }
++        native_counter_report(command, 1, pool.gpu + 64);
++        const auto pixels = copy_image(command, *image);
++        frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, draw_take_write_backs(), false);
++        check(ld<uint64_t>(memory) == 0 && ld<uint64_t>(memory + 16) == 16 && ld<uint64_t>(memory + 64) == 16);
++        for (unsigned index = 0; index < 16; ++index) {
++            uint32_t pixel; std::memcpy(&pixel, pixels.ptr + index * 4, 4); check(pixel == 0xff0000ffu);
++        }
++    }
++    // Exercise the real submission entry and replayed clear path, including
++    // conditional-to-explicit overrides. A timestamp report forces complete retirement.
++    for (unsigned variant = 0; variant < 8; ++variant) {
++        const bool depth_clear = variant >= 6, masked = variant == 2 || variant == 3;
++        const bool enabled = variant == 0 || variant == 2 || variant == 5 || variant == 6;
++        {
++            std::lock_guard lock(gpu_lock());
++            auto command = begin_transfer();
++            if (depth_clear) {
++                auto* image = image_of(depth_key); check(image && image->format == VK_FORMAT_D32_SFLOAT);
++                transition(command, *image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
++                VkClearDepthStencilValue initial{0.25f, 0}; VkImageSubresourceRange range{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
++                vk::p_vkCmdClearDepthStencilImage(command, image->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &initial, 1, &range);
++                image->rendered = true;
++            } else initialize_blue(command, *image_of(texture_key));
++            end_transfer(command);
++        }
++        st<uint64_t>(memory, 7); st<uint64_t>(memory + 8, 11);
++        st<uint64_t>(memory + 16, enabled ? 7 : 8); st<uint64_t>(memory + 24, 22);
++        auto list = std::make_shared<CmdList>();
++        Cmd target{Cmd::SetRenderTargets}; target.n = depth_clear ? 0 : 1;
++        target.a[0] = depth_clear ? 0 : texture_key; target.a[8] = depth_clear ? depth_key : 0;
++        list->cmds.push_back(target); list->cmds.push_back(equal->cmds[0]);
++        if (variant == 4 || variant == 5) list->cmds.push_back((variant == 4 ? off : on)->cmds[0]);
++        Cmd clear{depth_clear ? Cmd::ClearDepthStencil : Cmd::ClearColor}; clear.n = 0; clear.mask = masked ? 8 : (depth_clear ? 1 : 15);
++        clear.f[0] = depth_clear ? 0.75f : 1.0f; clear.f[3] = masked ? 0.0f : 1.0f;
++        list->cmds.push_back(clear); Cmd timestamp{Cmd::ReportCounter}; timestamp.n = 16; timestamp.a[0] = pool.gpu + 64; list->cmds.push_back(timestamp);
++        gpu_submit({list}, nullptr);
++        check(ld<uint64_t>(memory + 72) > 0);
++        std::lock_guard lock(gpu_lock()); auto command = begin_transfer();
++        const auto pixels = copy_image(command, *image_of(depth_clear ? depth_key : texture_key));
++        end_transfer(command);
++        for (unsigned index = 0; index < 16; ++index) {
++            uint32_t actual; std::memcpy(&actual, pixels.ptr + index * 4, 4);
++            const uint32_t expected = depth_clear ? (enabled ? 0x3f400000u : 0x3e800000u) :
++                (!enabled ? 0xffff0000u : masked ? 0x00ff0000u : 0xff0000ffu);
++            check(actual == expected);
++        }
++    }
++    if(synchronous_only) {
++        vk::p_vkUnmapMemory(vk_device(),transfer_memory);
++        vk::p_vkDestroyBuffer(vk_device(),transfer_buffer,nullptr);
++        vk::p_vkFreeMemory(vk_device(),transfer_memory,nullptr);
++        vk::p_vkDestroyFence(vk_device(),transfer_fence,nullptr);
++        vk::p_vkDestroyCommandPool(vk_device(),transfer_pool,nullptr);
++    }
++    replay::g_state = {};
++    api.x[0] = command_key; call("nvnCommandBufferFinalize");
++    api.x[0] = pool_key; call("nvnMemoryPoolFinalize"); destroy(texture_key); destroy(depth_key);
++}
+--- /dev/null
 +++ b/tests/native_control_metadata_test.cpp
 @@ -0,0 +1,6 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -10719,10 +11282,11 @@
 +}
 --- /dev/null
 +++ b/tests/native_counter_sync_probe.h
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,35 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include "nvn/native_counters.h"
++#include "native_conditional_probe.h"
 +#include "nvn/native_device.h"
 +#include <iostream>
 +namespace nx::nvn {void gpu_submit(const std::vector<std::shared_ptr<CmdList>>&,std::shared_ptr<const DeferredValues>);}
@@ -10750,12 +11314,13 @@
 +    check(ld<uint64_t>(memory+8)>0&&ld<uint64_t>(memory+40)>=ld<uint64_t>(memory+8));
 +    const auto first=ld<uint64_t>(memory+40);gpu_submit({list},nullptr);check(ld<uint64_t>(memory+40)>first);
 +    api.x[0]=command_key;call("nvnCommandBufferFinalize");api.x[0]=pool_key;call("nvnMemoryPoolFinalize");
++    native_conditional_probe(device,check,true);
 +    finalize_native_device(device);check(!native_device_alive(device));
 +    std::cout<<"native counter sync checks="<<checks<<" guest_modules=0 PASS\n";return 0;
 +}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,248 @@
+@@ -0,0 +1,250 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -10793,6 +11358,7 @@
 +#include "native_uniform_snapshot_probe.h"
 +#include "native_single_layer_array_sample_probe.h"
 +#include "native_counter_probe.h"
++#include "native_conditional_probe.h"
 +#include "native_counter_sync_probe.h"
 +#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
@@ -11001,6 +11567,7 @@
 + native_uniform_snapshot_probe(check);
 + native_image_snapshot_subresource_probe(check);
 + native_counter_probe(device,check);
++ native_conditional_probe(device,check);
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

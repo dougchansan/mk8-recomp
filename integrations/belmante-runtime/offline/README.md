@@ -41,7 +41,7 @@ The runtime checks output types against integer render targets. The two inspecte
 texture-compression stages use mask 1 for native integer BC3 block views.
 These are explicit specialization assumptions. Translation and driver
 module creation do not prove draw-state compatibility, pipeline validity,
-rendering equivalence or gameplay. The local cache contains 7,239 pretranslated graphics/compute stages from the inspected
+rendering equivalence or gameplay. The local cache contains 7,243 pretranslated graphics/compute stages from the inspected
 asset set, with Vulkan module acceptance. This is not full-game shader coverage;
 startup passes application display-version metadata and continues into further RaceCommon assets. Game-linked inputs, SPIR-V and
 builds stay private. Missing required translations remain fatal in the runtime.

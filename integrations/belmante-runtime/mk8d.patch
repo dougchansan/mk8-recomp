@@ -5458,6 +5458,17 @@
 +}
 +}
 --- /dev/null
++++ b/runtime/src/nvn/native_debug_buffer_snapshot.h
+@@ -0,0 +1,8 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn_vk.h"
++
++namespace nx::nvn {
++// Diagnostic only: copy a checked, bound GPU buffer into fence-retired readback.
++bool debug_buffer_snapshot(VkCommandBuffer command, const VkDescriptorBufferInfo& source, uint64_t tag);
++}
+--- /dev/null
 +++ b/runtime/src/nvn/native_device.h
 @@ -0,0 +1,8 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -6024,7 +6035,60 @@
  }  // namespace nx::nvn
 --- a/runtime/src/nvn/nvn_debug.cpp
 +++ b/runtime/src/nvn/nvn_debug.cpp
-@@ -514,6 +514,18 @@
+@@ -12,6 +12,7 @@
+ #include <vector>
+ 
+ #include "nvn_vk.h"
++#include "native_debug_buffer_snapshot.h"
+ #include "platform.h"
+ 
+ namespace nx::nvn {
+@@ -498,7 +499,44 @@
+ 
+ bool debug_snapshots_pending() { return !g_snaps.empty(); }
+ 
++bool debug_buffer_snapshot(VkCommandBuffer command, const VkDescriptorBufferInfo& source, uint64_t tag) {
++    if (!command || !source.buffer || !source.range || source.range > 0x10000 ||
++        (source.offset & 3) || (source.range & 3) || source.offset > UINT64_MAX - source.range) return false;
++    Snap snap;
++    snap.w = uint32_t(source.range / 4);
++    snap.h = 1;
++    snap.draw = tag;
++    snap.raw_format = VK_FORMAT_R32_UINT;
++    if (!make_scratch(snap.s, snap.w, snap.h)) {
++        snap.s.destroy(vk_device());
++        return false;
++    }
++    draw_end_rendering(command, 6);
++    VkBufferMemoryBarrier before{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
++    before.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
++    before.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
++    before.srcQueueFamilyIndex = before.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++    before.buffer = source.buffer;
++    before.offset = source.offset;
++    before.size = source.range;
++    p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
++        0, 0, nullptr, 1, &before, 0, nullptr);
++    const VkBufferCopy copy{source.offset, 0, source.range};
++    p_vkCmdCopyBuffer(command, source.buffer, snap.s.buffer, 1, &copy);
++    VkBufferMemoryBarrier after{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
++    after.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
++    after.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
++    after.srcQueueFamilyIndex = after.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++    after.buffer = snap.s.buffer;
++    after.size = source.range;
++    p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
++        0, 0, nullptr, 1, &after, 0, nullptr);
++    g_snaps.push_back(snap);
++    return true;
++}
++
+ void debug_snapshots_write() {  // after the submit's fence
++    if (!g_snaps.empty()) plat::make_dirs(plat::data_root() + "/frames");
+     for (Snap& snap : g_snaps) {
+         void* p = nullptr;
+         if (snap.raw_format == VK_FORMAT_R16G16B16A16_SFLOAT &&
+@@ -514,6 +552,18 @@
              }
              log("snapshot %llx: %ux%u rgba16f, %llu NaN, %llu Inf of %llu values, largest finite %g", (unsigned long long)snap.draw, snap.w,
                  snap.h, (unsigned long long)nan, (unsigned long long)inf, (unsigned long long)n, big);
@@ -6342,6 +6406,26 @@
      // Command-buffer rasterizer state (nvn_raster.cpp), per face 0 front, 1 back. NVN's defaults: masks 0xFF, ref 0.
      uint8_t stencil_ref[2] = {0, 0}, stencil_compare_mask[2] = {0xFF, 0xFF}, stencil_write_mask[2] = {0xFF, 0xFF};
      float bias_factor = 0, bias_units = 0, bias_clamp = 0;  // SetPolygonOffsetClamp
+--- a/runtime/src/nvn/nvn_draw_trace.cpp
++++ b/runtime/src/nvn/nvn_draw_trace.cpp
+@@ -227,7 +227,7 @@
+             if (img && img->rendered && watch.find('+') != std::string::npos) s += explain_texture_slot(handles[k]);
+         }
+         for (int n = 0; n < 18; n++)
+-            if (const Range& r = g_state.uniforms[4][n]; r.address && r.size)
++            if (const Range& r = g_state.uniforms[1][n]; r.address && r.size)
+                 if (const uint8_t* p = guest_bytes(r.address)) {
+                     char b[64];
+                     std::snprintf(b, sizeof b, " c%d=%llx:%08x", n, (unsigned long long)r.address,
+@@ -243,7 +243,7 @@
+     g_sig.keys[k]++;
+     // Uniform blocks of the vertex and fragment stages: all zeros, or rewritten between their first use in the frame
+     // and its present (a block caught while the game rewrites it).
+-    for (int st : {0, 4})
++    for (int st : {0, 1})
+         for (int n = 0; n < 18; n++)
+             if (const Range& r = g_state.uniforms[st][n]; r.address && r.size >= 16 && !g_sig.blocks.count(r.address))
+                 if (const uint8_t* p = guest_bytes(r.address)) {
 --- a/runtime/src/nvn/nvn_format.cpp
 +++ b/runtime/src/nvn/nvn_format.cpp
 @@ -43,7 +43,7 @@
@@ -7320,10 +7404,14 @@
  NX_HLE("nvnSamplerGetMinMagFilter", GetMinMagFilter);
 --- a/runtime/src/nvn/nvn_sets.cpp
 +++ b/runtime/src/nvn/nvn_sets.cpp
-@@ -9,6 +9,11 @@
+@@ -7,8 +7,15 @@
+ #include <cstring>
+ #include <memory>
  #include <string>
++#include <map>
  
  #include "nvn_draw_state.h"
++#include "native_debug_buffer_snapshot.h"
 +#include "native_sampled_profile.h"
 +#include "native_compute_profile.h"
 +#include "native_graphics_buffer_profile.h"
@@ -7332,7 +7420,7 @@
  #include "nvn_ultrawide.h"
  
  namespace nx::nvn::replay {
-@@ -451,6 +456,33 @@
+@@ -451,6 +458,33 @@
          return s->stage == ShaderStage::Compute &&
                 (all_write_backs() || (b.binding < 64 && written_storage_bindings(s) >> b.binding & 1));
      };
@@ -7366,7 +7454,38 @@
      // The written ranges first (nvn_written.cpp): two bindings of one dispatch that meet get one copy, and bindings
      // that read what the dispatch writes see it, as on the GPU.
      for (const ShaderInfo* s : shaders)
-@@ -543,7 +575,7 @@
+@@ -522,6 +556,30 @@
+                 }
+                 default: info = buffer_of(cb, nullptr, 0x1000, 16, false, false); break;
+             }
++            // Capture the actual bound GPU allocation before dynamic offsets are
++            // split out. A CPU shadow may be stale after an earlier GPU write.
++            static const std::string selection = [] {
++                const char* value = std::getenv("NX_DUMP_FS_UNIFORMS");
++                return std::string(value ? value : "");
++            }();
++            if (!selection.empty() && s->stage == ShaderStage::Fragment &&
++                selection.find(s->hash) != std::string::npos &&
++                b.nvn.source == NvnSource::UniformBlock && b.nvn.index >= 0 && b.nvn.index < 18) {
++                static std::map<std::string, std::vector<uint64_t>> captured_draws;
++                static uint64_t sequence = 0;
++                auto& draws = captured_draws[s->hash];
++                if (draws.size() < 2 && std::find(draws.begin(), draws.end(), g_stats.done) == draws.end())
++                    draws.push_back(g_stats.done);
++                if (sequence < 32 && std::find(draws.begin(), draws.end(), g_stats.done) != draws.end()) {
++                    const auto tag = 0xd000000000000000ull | ++sequence;
++                    const auto& bound = g_state.uniforms[st][b.nvn.index];
++                    const bool captured = debug_buffer_snapshot(cb, info, tag);
++                    log("uniform-capture shader=%s draw=%llu stage=%u bank=%u source-gpu=%llx source-bytes=%llu descriptor-bytes=%llu tag=%llx captured=%u",
++                        s->hash.c_str(), (unsigned long long)g_stats.done, unsigned(st), unsigned(b.nvn.index + 3),
++                        (unsigned long long)bound.address, (unsigned long long)bound.size,
++                        (unsigned long long)info.range, (unsigned long long)tag, unsigned(captured));
++                }
++            }
+             VkDescriptorType type = VkDescriptorType(b.type);
+             if (b.set == 0 && b.binding < 64 && layout.dynamic >> b.binding & 1) {  // the offset goes with the bind
+                 d.dynamic |= 1ull << b.binding, d.dynamic_offset[b.binding] = uint32_t(info.offset);
+@@ -543,7 +601,7 @@
          const ResolvedTexture r = k < t.resolved.size() ? t.resolved[k] : ResolvedTexture{};
          VkDescriptorImageInfo ii{};
          ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -7375,7 +7494,7 @@
                                   : dummy_view(cb, b->image);
          ii.sampler = r.vk_sampler ? r.vk_sampler : sampler_for(r.sampler, b->image.depth);
          images.push_back(ii);
-@@ -657,6 +689,22 @@
+@@ -657,6 +715,22 @@
              else
                  texture = 0;
          }
@@ -9801,7 +9920,7 @@
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,239 @@
+@@ -0,0 +1,241 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -9836,6 +9955,7 @@
 +#include "native_gpu_volume_probe.h"
 +#include "native_rgb565_probe.h"
 +#include "native_bc3_block_probe.h"
++#include "native_uniform_snapshot_probe.h"
 +#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
 +#ifdef _WIN32
@@ -10038,6 +10158,7 @@
 + native_bc3_block_probe(check);
 + native_small_r11_probe(check);
 + native_buffer_texture_probe(device,check);
++ native_uniform_snapshot_probe(check);
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
@@ -10241,6 +10362,42 @@
 +#include <array>
 +#include <iostream>
 +int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("touch policy assertion");};nx::NativeTouchPolicy p;std::array<uint8_t,nx::NativeTouchPolicy::StateBytes> state{};check(p.states(state,1)==0);p.initialize();check(p.states(state,0)==0);check(p.states(state,1)==1);uint64_t sample=0;std::memcpy(&sample,state.data(),8);check(sample==1);for(size_t i=8;i<state.size();++i)check(state[i]==0);check(p.states(state,16)==1);std::memcpy(&sample,state.data(),8);check(sample==2);bool bad=false;try{p.states(std::span<uint8_t>(state).first(4),1);}catch(const std::invalid_argument&){bad=true;}check(bad);std::cout<<"native_touch_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/native_uniform_snapshot_probe.h
+@@ -0,0 +1,33 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/native_debug_buffer_snapshot.h"
++#include "platform.h"
++#include <array>
++#include <cstdio>
++#include <cstring>
++
++template<class Check> void native_uniform_snapshot_probe(Check check) {
++    using namespace nx;
++    using namespace nx::nvn;
++    std::lock_guard lock(gpu_lock());
++    const auto command = frame_begin(false);
++    const auto source = upload_alloc(96, 16);
++    std::memset(source.ptr, 0xa5, 96);
++    vk::p_vkCmdFillBuffer(command, source.buffer, source.offset, 96, 0x11223344);
++    VkDescriptorBufferInfo descriptor{source.buffer, source.offset + 16, 32};
++    check(!debug_buffer_snapshot(VK_NULL_HANDLE, descriptor, 0xdfff0001));
++    check(!debug_buffer_snapshot(command, {VK_NULL_HANDLE, 0, 4}, 0xdfff0001));
++    check(!debug_buffer_snapshot(command, {source.buffer, source.offset + 2, 32}, 0xdfff0001));
++    check(!debug_buffer_snapshot(command, {source.buffer, source.offset, 0x10004}, 0xdfff0001));
++    check(debug_buffer_snapshot(command, descriptor, 0xdfff0001));
++    frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, true);
++    debug_snapshots_write();
++    FILE* file = plat::fopen_utf8(plat::data_root() + "/frames/00000_dfff0001.raw", "rb");
++    check(file != nullptr);
++    std::array<uint32_t, 11> words{};
++    check(std::fread(words.data(), sizeof(uint32_t), words.size(), file) == words.size());
++    check(std::fgetc(file) == EOF);
++    check(std::fclose(file) == 0);
++    check(words[0] == 8 && words[1] == 1 && words[2] == VK_FORMAT_R32_UINT);
++    for (unsigned index = 3; index < words.size(); ++index) check(words[index] == 0x11223344);
++}
 --- /dev/null
 +++ b/tests/native_volume_profile_test.cpp
 @@ -0,0 +1,5 @@

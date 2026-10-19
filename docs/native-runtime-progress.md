@@ -4,8 +4,8 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R150, reconstructing 150 generic adapted files.
-All 37 component suites and the 635-check native GPU fixture pass. A production
+The current source recipe is R151, reconstructing 153 generic adapted files.
+All 37 component suites and the 653-check native GPU fixture pass. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
@@ -24,17 +24,35 @@ faces at two mip levels, read back every compressed block and sample the result.
 The two texture-compression pixel stages are rebuilt offline with explicit
 unsigned outputs; incompatible fragment-output/target types stop execution.
 All 88 runtime objects were rebuilt, and static analysis of the five changed
-implementation files reports no diagnostics. The original-game lighting result
-and race rendering still require validation.
+implementation files reports no diagnostics. The original-game capture now shows
+colored compressed cubemaps and visible kart specular highlights. All 36 captured
+HDR faces contain nonzero RGB without NaNs or infinities, and all 36 compressed
+face readbacks contain color. Mario's face and diffuse lighting remain too dark.
+The cup screen directly verifies the RGB565 correction: the mushroom is red,
+the rims are gold and stars are yellow. Race rendering remains unverified.
 
-The latest R148 run passes the previous course particle shader and stops at a
+R151 adds an optional, bounded capture of the actual GPU-bound uniform ranges
+before dynamic offsets are split out. It copies data on the GPU and writes it
+only after the submission fence. An authored regression initializes the CPU
+shadow, overwrites the source on the GPU and verifies the captured offset/range
+contains the GPU result. Fragment uniform diagnostics now use NVN stage 1.
+The two diagnostic files analyze cleanly; the descriptor-set file retains a cache
+warning reproduced on its unchanged parent function. No new warning is attributed
+to the capture path.
+
+An R148 run passes the previous course particle shader and stops at a
 missing stadium-flag stage. A wider inventory extracts 2,283 map-object stages;
 all 2,053 missing stages now translate, including seven fixed control prefixes
 whose complete source records are retained privately. Along with the other
 Mushroom Cup models and effects, the private cache now holds 7,239 stages.
 AMD accepts all 2,055 newly staged modules, including two integer-output
 replacements. This is module acceptance, without pipeline or gameplay credit.
-The R150 game run is testing the updated native renderer and cache.
+The R150 run passes that stage and reaches the race item-box UI before another
+missing pixel stage. All four missing UI stages translate and pass module
+creation, bringing the private cache to 7,243. R150 closes naturally after
+1,743.813 seconds with source, executable, saved-input profile and foreground
+unchanged. R151 is testing this cache with earlier menu input and the bounded
+uniform capture. No native race image or playable result is claimed.
 
 The native buffer-to-texture operation now validates active recording, real source
 pools, copied SDK texture descriptors and bounded copy regions. Actual Vulkan

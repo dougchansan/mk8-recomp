@@ -26,6 +26,23 @@ thread using 9.625 CPU seconds (about 94% of one core); the identified replay
 thread uses 0.625 CPU seconds (about 6%). This records CPU consumption, not a
 function-level or GPU critical-path diagnosis. Call-level profiling is next.
 
+R188's longer profiled flight reaches all 7,200 target frames without a fatal
+error and is intentionally stopped after 1,527.4 seconds. Source, executable,
+saved input and foreground remain unchanged. Across 87 reported 60-frame course
+windows ending between frames 2,039 and 7,199, median focus time is an estimated
+47.87 ms/frame, presentation exclusive time 16.80 ms/frame, draw exclusive time
+11.33 ms/frame and logging 0.032 ms/frame. These regions overlap/nest and the focus
+figure is sampled; do not add them into a CPU percentage or critical-path total.
+
+R189 adds opt-in target-recording, texture-identity and SDK-view-read regions.
+It also drops one redundant window query: `GetWindowThreadProcessId` returns
+zero for an invalid handle, so the preceding `IsWindow` is unnecessary. Live
+ownership/generation and visibility checks remain on every gate. Five alternating
+benchmark pairs give single-thread medians 18.41 versus 20.204 ns/call and
+16-thread medians 246.06 versus 267.856 ns/call. This reduces the authored gate
+cost by about 8–9%; a game-frame speedup remains unmeasured. See the
+[Windows API return contract](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowthreadprocessid).
+
 The old code forced a zero instance count to one. GPU readback reproduces the
 unintended pixel for both indexed and non-indexed draws. The corrected replay
 skips zero counts/instances before resource resolution, retaining positive-draw
@@ -100,7 +117,7 @@ measured medians of 20.339 versus 34.107 ns/call on one thread and 283.345 versu
 
 | Variable | Behavior |
 | --- | --- |
-| `NX_NATIVE_PERF=1` | Aggregate host timings for replay, draws, compute, textures, descriptors, pipelines, uploads, state, clears, copies, list lookup, presentation, clock reads, focus and logging |
+| `NX_NATIVE_PERF=1` | Aggregate host timings for replay, draws, compute, textures, descriptors, pipelines, uploads, state, clears, copies, list lookup, presentation, clock reads, focus, logging, target recording, texture identity and SDK view reads |
 | `NX_BUFFERED_LOG=1` | Buffer routine file logging, flushing on subsequent writes at least every 250 ms; fatal messages flush immediately |
 | `NX_LOG_STDERR=0` | Suppress duplicate routine stderr messages; fatal stderr remains enabled |
 | `NX_TRACE_NVN_CALLS=1` | Enable routine command-callback, scratch-reservation and device-property messages |

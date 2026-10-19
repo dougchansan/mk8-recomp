@@ -4,7 +4,7 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R188, reconstructing 189 generic adapted files.
+The current source recipe is R189, reconstructing 189 generic adapted files.
 All 40 component suites and the 1,902-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
@@ -35,6 +35,18 @@ A transient glider frame has severe brightness clipping around the kart/lights;
 normal kart/glider colour returns in the next sampled frame. This is an observed
 visual candidate, not a proven backend defect without an expected-game reference.
 No full visual-correctness claim follows from this progress.
+
+R189 removes the redundant `IsWindow` call before the ownership query, whose
+Windows API contract already rejects invalid handles. The gate still queries
+live ownership/generation, visibility and iconic state on every enabled call,
+including hidden-window parking and reentrant notifications. Five alternating
+authored benchmark pairs measure medians of 18.41 versus 20.204 ns/call and
+246.06 versus 267.856 ns/call with 16 threads. This is not a measured race speedup.
+New opt-in target-recording, texture-identity and SDK-view-read scopes will isolate
+the costly render-target samples. All 89 runtime objects rebuild after this
+profiling-header change; static CPU archives remain pinned. The 40 suites,
+1,902 GPU checks and 300-check sync/cutoff regressions pass; actual phase profiling
+is the next experiment.
 
 R188 makes repeated command-callback, scratch-reservation and device-property
 messages opt-in with `NX_TRACE_NVN_CALLS=1`. R187 emitted 808,139 identical

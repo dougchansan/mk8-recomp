@@ -8,7 +8,7 @@ no game code, assets or generated modules. No release or download is available.
 
 Windows integration now passes 40 CPU/component suites and a 1,902-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R188 reconstructs 189 generic adapted files. Native sample counts
+entry point. R189 reconstructs 189 generic adapted files. Native sample counts
 and GPU-clock reports replace host placeholders. GPU comparisons replace the
 inherited forced-on conditional renderer, including explicit gated clears and
 original counter-to-predicate chains; regressions verify accumulation,

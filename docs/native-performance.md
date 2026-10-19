@@ -1,7 +1,8 @@
 # Native performance work
 
 Earlier builds reached native stadium rendering and the player starting grid.
-R179 has not reached verified driving or playable performance. No release or
+R182 reaches native countdown and initial scripted driving, with a later shader
+binding failure. Playable performance and complete gameplay remain unverified. No release or
 download is available.
 
 ## Measurements and changes
@@ -93,12 +94,18 @@ scope. Both use [thread CPU cycles](https://learn.microsoft.com/en-us/windows/wi
 on Windows and report successful CPU samples explicitly; cycles must not be
 converted into nanoseconds. These profiles are off by default.
 
-The latest R179 async flight reaches the native player grid before the preserved
+The earlier R179 async flight reaches the native player grid before the preserved
 arena check. Course windows report 8.3–9.9 FPS, host replay 5.10–7.42 ms and fence
 wait 14.21–15.14 ms per frame. Earlier runs used different scene/timing conditions,
 so these numbers are not a controlled course-speedup ratio. The failure requests
 512 bytes at offset 65264 in a 65536-byte pool, exceeding its extent by 240 bytes.
-The allocator contract remains under investigation; countdown/driving are open.
+R182 handles this exact advertised-minimum case by exposing only the physically
+backed tail as native recording capacity. The original wrapper's available 112
+bytes are rounded to 512 for the call while 272 physically remain. All consumed
+ranges stay inside the pool. Negative regressions retain rejection of end-of-pool,
+arbitrary oversize and exhausted-tail recordings. It now reaches countdown and
+scripted driving through the first bend, then stops on a cubemap/2D particle
+binding mismatch. Complete race and playable performance are still open.
 
 The calibrated clock uses only the Vulkan DEVICE domain. It preserves the same
 units and epoch as command timestamps, performs no CPU-clock extrapolation, and

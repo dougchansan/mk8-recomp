@@ -4,13 +4,31 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R179, reconstructing 184 generic adapted files.
-All 40 component suites and the 1,830-check native GPU fixture pass, plus a
+The current source recipe is R182, reconstructing 185 generic adapted files.
+All 40 component suites and the 1,850-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
+
+R182 passes the former starting-grid arena stop and reaches the original native
+countdown, green lights and scripted player movement. Root review verifies Mario
+past the starting line and through the first right bend, with live lap/minimap
+and position changes from 12th to 6th. The 670.5-second run then closes naturally
+on a strict particle-shader binding check: cubemap shader 214cd855f507c7b3 resolves
+a 1024x1024 RGBA16F 2D texture at slot 10. Source, executable, saved input and foreground
+remain unchanged. No complete race, audible output, physical controller or
+playable-performance claim is established; no release/download is available.
+
+The old arena failure was an advertised-minimum mismatch. The original wrapper
+has 112 bytes in its suballocation but passes max(remaining,512); its physical
+pool tail has 272 bytes. The native recorder now admits only that physically
+backed capacity for the exact 512-byte minimum-window case. Size/free queries,
+recording-capacity checks and handle ranges stay bounded by the pool. A new
+authored regression fails on the old guard, then records all four commands with
+bounded used/free accounting. Separate negative children still reject an empty
+tail, an arbitrary oversized 513-byte request and recording past backed capacity.
 
 R179 enables reuse across the checked intersection of guest-VM and Windows
 memory regions, with the same mutation invalidation as the earlier exact-span
@@ -24,7 +42,7 @@ exclusive lock invalidated object caches despite changing no object. A new
 authored regression fails on that invalidation before the correction, then
 passes while observing fresh descriptor changes and unchanged registry generation.
 
-The R179 native async run reaches the actual player grid in 124 seconds before
+The earlier R179 native async run reaches the actual player grid in 124 seconds before
 the arena failure, with source, executable, saved input and foreground unchanged.
 Its course windows report 8.3–9.9 FPS, replay 5.10–7.42 ms and fence 14.21–15.14 ms
 per frame. These are diagnostic windows, not a matched performance comparison

@@ -6854,7 +6854,7 @@
      make<CommandBuffer>(c.x[0]);
      c.x[0] = 1;
  }
-@@ -145,12 +192,20 @@
+@@ -145,13 +192,42 @@
      if (auto* cb = get<CommandBuffer>(c.x[0])) {
          std::lock_guard lk(cb->lock);
          cb->recording = std::make_shared<CmdList>();
@@ -6865,17 +6865,40 @@
  void AddCommandMemory(CPU& c) {  // (cmd, const NVNmemoryPool*, ptrdiff_t offset, size_t size)
      if (auto* cb = get<CommandBuffer>(c.x[0])) {
          std::lock_guard lk(cb->lock);
+-        cb->command_size = c.x[3];
 +        if(!cb->recording->cmds.empty())fatal("native multi-arena recording is not integrated");
 +        const auto* pool=get<MemoryPool>(c.x[1]);
-+        if(!pool||c.x[2]>pool->size||c.x[3]>pool->size-c.x[2])
++        const auto backed=pool&&c.x[2]<=pool->size?pool->size-c.x[2]:0;
++        // The original wrapper advertises at least512 bytes even for a smaller
++        // final suballocation. Our native recorder uses only the backed tail;
++        // size/free queries and ensure_capacity expose/enforce that actual limit.
++        const bool padded_minimum=pool&&backed&&c.x[3]==512&&c.x[3]>backed;
++        if(!pool||c.x[2]>pool->size||(c.x[3]>backed&&!padded_minimum)){
++            const auto owner=c.x[19];
++            if(native_guest_span(owner,0x158,1))
++                log("native arena caller x19=%llx pool=%llx offset=%llx aux=%llx available=%x control=%llx control-size=%x control-used=%x cb=%llx backing=%llx flags=%x",
++                    (unsigned long long)owner,(unsigned long long)ld<uint64_t>(owner+8),(unsigned long long)ld<uint64_t>(owner+0x10),
++                    (unsigned long long)ld<uint64_t>(owner+0x18),ld<uint32_t>(owner+0x20),(unsigned long long)ld<uint64_t>(owner+0x38),
++                    ld<uint32_t>(owner+0x148),ld<uint32_t>(owner+0x14c),(unsigned long long)ld<uint64_t>(owner+0x150),
++                    (unsigned long long)(pool?pool->memory:0),pool?pool->flags:0);
++            uint64_t fp=c.x[29];
++            for(unsigned depth=0;depth<10&&fp&&!(fp&7)&&native_guest_span(fp,16,1);++depth){
++                const auto next=ld<uint64_t>(fp),lr=ld<uint64_t>(fp+8);
++                log("native arena caller depth=%u fp=%llx lr=%s",depth,(unsigned long long)fp,describe(lr).c_str());
++                if(next<=fp)break;fp=next;
++            }
 +            fatal("native command arena exceeds memory pool: cb=%llx pool=%llx offset=%llx bytes=%llx live=%u pool-bytes=%llx pool-gpu=%llx base=%llx arena-bytes=%llx callback-active=%u lr=%s",
 +                (unsigned long long)c.x[0],(unsigned long long)c.x[1],(unsigned long long)c.x[2],(unsigned long long)c.x[3],
 +                unsigned(pool!=nullptr),(unsigned long long)(pool?pool->size:0),(unsigned long long)(pool?pool->gpu:0),
 +                (unsigned long long)cb->command_base,(unsigned long long)cb->command_size,unsigned(cb->callback_active),describe(c.x[30]).c_str());
-         cb->command_size = c.x[3];
++        }
++        cb->command_size = padded_minimum?backed:c.x[3];
++        if(padded_minimum){static std::atomic<uint64_t> reported=0;if(reported.fetch_add(1,std::memory_order_relaxed)<16)
++            log("native command arena: advertised minimum512, bounded tail=%llu offset=%llx",(unsigned long long)backed,(unsigned long long)c.x[2]);}
          cb->command_base = 0;
          cb->command_memory = command_memory_address(c.x[1], c.x[2]);
-@@ -161,6 +216,8 @@
+         cb->command_pool = c.x[1];
+@@ -161,6 +237,8 @@
  void AddControlMemory(CPU& c) {  // (cmd, void* memory, size_t size)
      if (auto* cb = get<CommandBuffer>(c.x[0])) {
          std::lock_guard lk(cb->lock);
@@ -6884,7 +6907,7 @@
          cb->control_size = c.x[2];
          cb->control_base = 0;
      }
-@@ -193,6 +250,7 @@
+@@ -193,6 +271,7 @@
  }
  
  void CommandBufferEndRecording(CPU& c) {  // NVNcommandHandle
@@ -6892,7 +6915,7 @@
      std::shared_ptr<CmdList> list = std::make_shared<CmdList>();
      uint64_t start = 0, end = 0, pool = 0;
      const uint64_t cb_guest = c.x[0];
-@@ -204,7 +262,7 @@
+@@ -204,7 +283,7 @@
          cb->command_base = used(cb->command_size, cb->command_base, n, kCommandBytes);
          end = std::max(cb->command_memory + cb->command_base, start + 1);
          cb->control_base = used(cb->control_size, cb->control_base, n, kControlBytes);
@@ -6901,7 +6924,7 @@
      }
      list->epoch = current_epoch();
      g_ends++;
-@@ -303,10 +361,24 @@
+@@ -303,10 +382,24 @@
  
  void SetRenderTargets(CPU& c) {
      Cmd cmd{Cmd::SetRenderTargets};
@@ -6929,7 +6952,7 @@
      // The views pick the level and layer rendered to (a bloom chain renders each mip of one texture in turn).
      TargetViews tv;
      for (uint32_t k = 0; k < n && c.x[3]; k++) {
-@@ -341,6 +413,34 @@
+@@ -341,6 +434,34 @@
      static std::atomic<int> logged{0};
      if ((cmd.i[3] < 0 || cmd.i[2] < 0) && logged++ < 10)
          log("nvn: SetViewport with a negative size: %d %d %d %d", cmd.i[0], cmd.i[1], cmd.i[2], cmd.i[3]);
@@ -6964,7 +6987,7 @@
  }
  
  void SetScissor(CPU& c) {
-@@ -371,6 +471,7 @@
+@@ -371,6 +492,7 @@
          g_no_cb++;
          return;
      }
@@ -6972,7 +6995,7 @@
      std::lock_guard lk(cb->lock);
      if (blob) {
          cmd.blob = uint32_t(cb->recording->blobs.size());
-@@ -381,6 +482,8 @@
+@@ -381,6 +503,8 @@
  }
  
  // A handle's list for the traces, without marking it used (which would keep it from being dropped).
@@ -6981,7 +7004,7 @@
  std::shared_ptr<CmdList> peek_list(uint64_t handle) {
      std::lock_guard lk(g_handles_lock);
      auto it = g_handles.find(handle);
-@@ -507,6 +610,9 @@
+@@ -507,6 +631,9 @@
  NX_HLE("nvnCommandBufferClearDepthStencil", ClearDepthStencil);
  NX_HLE("nvnCommandBufferSetViewport", SetViewport);
  NX_HLE("nvnCommandBufferSetScissor", SetScissor);
@@ -6991,7 +7014,7 @@
  NX_HLE("nvnCommandBufferCallCommands", CallCommands);
  NX_HLE("nvnCommandBufferAddCommandMemory", AddCommandMemory);
  NX_HLE("nvnCommandBufferAddControlMemory", AddControlMemory);
-@@ -518,3 +624,10 @@
+@@ -518,3 +645,10 @@
  NX_HLE("nvnCommandBufferGetControlMemoryFree", (memory_query<false, 2>));
  
  }  // namespace nx::nvn
@@ -11765,6 +11788,38 @@
 + }
 +}
 --- /dev/null
++++ b/tests/native_command_tail_probe.h
+@@ -0,0 +1,29 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/nvn_draw_state.h"
++#include <cstdlib>
++#include <cstring>
++template<class Check> void native_command_tail_probe(uint64_t device,Check check){
++ using namespace nx;using namespace nx::nvn;
++ auto alloc=[](uint64_t bytes){const auto p=kernel_alloc(bytes,4096);vm_set(p,bytes,kMemHeap,3);return p;};
++ const auto memory=alloc(65536),pool_key=alloc(256),command=alloc(256),control=alloc(4096);
++ auto& pool=make<MemoryPool>(pool_key);pool.memory=memory;pool.size=65536;pool.gpu=gpu_alloc(pool.size);pool_register(&pool);
++ CPU c{};auto call=[&](const char* name){const auto fn=hle_lookup(name);check(fn!=nullptr);fn(c);};
++ c.x[0]=command;c.x[1]=device;call("nvnCommandBufferInitialize");check(c.x[0]==1);
++ c.x[0]=command;c.x[1]=control;c.x[2]=4096;call("nvnCommandBufferAddControlMemory");
++ // The original wrapper rounds its available112 bytes up to512. The physical
++ // pool tail in the observed call is272 bytes. Only that backed tail is usable.
++ const auto* bad=std::getenv("NX_ARENA_TAIL_BAD");
++ c.x[0]=command;c.x[1]=pool_key;c.x[2]=bad&&std::strcmp(bad,"end")==0?65536:bad&&std::strcmp(bad,"exhaust")==0?65520:0xfef0;
++ c.x[3]=bad&&std::strcmp(bad,"large")==0?513:512;call("nvnCommandBufferAddCommandMemory");
++ const uint64_t capacity=bad&&std::strcmp(bad,"exhaust")==0?16:272;
++ c.x[0]=command;call("nvnCommandBufferGetCommandMemorySize");check(c.x[0]==capacity);
++ c.x[0]=command;call("nvnCommandBufferBeginRecording");
++ for(unsigned index=0;index<4;++index){c.x[0]=command;c.x[1]=0;c.v[0].f32[0]=0;c.v[1].f32[0]=0;c.v[2].f32[0]=4;c.v[3].f32[0]=4;call("nvnCommandBufferSetViewport");}
++ c.x[0]=command;call("nvnCommandBufferEndRecording");const auto handle=c.x[0];check(handle!=0);
++ const auto list=command_list(handle);check(list&&list->cmds.size()==4);
++ c.x[0]=command;call("nvnCommandBufferGetCommandMemoryUsed");const auto used=c.x[0];check(used>0&&used<=capacity);
++ c.x[0]=command;call("nvnCommandBufferGetCommandMemoryFree");check(c.x[0]+used==capacity);
++ c.x[0]=command;call("nvnCommandBufferFinalize");
++ c.x[0]=pool_key;call("nvnMemoryPoolFinalize");
++}
+--- /dev/null
 +++ b/tests/native_compute_profile_test.cpp
 @@ -0,0 +1,5 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -12369,7 +12424,7 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,265 @@
+@@ -0,0 +1,267 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -12409,6 +12464,7 @@
 +#include "native_counter_probe.h"
 +#include "native_span_cache_probe.h"
 +#include "native_texture_compare_read_probe.h"
++#include "native_command_tail_probe.h"
 +#include "native_conditional_probe.h"
 +#include "native_point_probe.h"
 +#include "native_depth_contract_probe.h"
@@ -12628,6 +12684,7 @@
 + native_uniform_snapshot_probe(check);
 + native_image_snapshot_subresource_probe(check);
 + native_full_hd_hdr_snapshot_probe(check);
++ native_command_tail_probe(device,check);
 + native_counter_probe(device,check);
 + native_conditional_probe(device,check);
 + native_point_probe(device,check);

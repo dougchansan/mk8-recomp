@@ -43,6 +43,22 @@ benchmark pairs give single-thread medians 18.41 versus 20.204 ns/call and
 cost by about 8–9%; a game-frame speedup remains unmeasured. See the
 [Windows API return contract](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowthreadprocessid).
 
+The completed R189 phase probe reaches its 2,700-frame target without a fatal
+error after 471.4 seconds, with source/executable/save/foreground unchanged.
+Across 15 reported 60-frame course windows ending at frames 1,859–2,699, median
+texture-identity admission is 315.509 ms/frame, versus 0.265 ms/frame for original
+SDK view reads. Target recording is 313.466 ms/frame inclusive and 1.034 ms/frame
+exclusive: descriptor resolution dominates that path. These are elapsed scope
+timings; do not sum nested or cross-thread values.
+
+A private, component-verified experiment narrows the search using the existing
+memory-pool index while retaining fresh full-descriptor checks and snapshot
+fallback. It preserves all title pixels on the same executable, but the course
+still spends 304.608 ms/frame in identity resolution across its 15 measured
+windows. Pool narrowing alone has not resolved the main bottleneck. The next
+probe records whether expensive results come from pool candidates or retained
+resources reached through the full registry. No course-speedup claim is made.
+
 The old code forced a zero instance count to one. GPU readback reproduces the
 unintended pixel for both indexed and non-indexed draws. The corrected replay
 skips zero counts/instances before resource resolution, retaining positive-draw

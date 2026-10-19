@@ -1,6 +1,6 @@
 # Native runtime progress
 
-Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
+Updated 2026-10-19. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
 
 ## Belmante runtime adoption
 
@@ -45,8 +45,13 @@ authored benchmark pairs measure medians of 18.41 versus 20.204 ns/call and
 New opt-in target-recording, texture-identity and SDK-view-read scopes will isolate
 the costly render-target samples. All 89 runtime objects rebuild after this
 profiling-header change; static CPU archives remain pinned. The 40 suites,
-1,902 GPU checks and 300-check sync/cutoff regressions pass; actual phase profiling
-is the next experiment.
+1,902 GPU checks and 300-check sync/cutoff regressions pass. Its actual 2,700-frame
+phase flight closes without a fatal error after 471.4 seconds. Fifteen course
+windows identify median texture-identity admission at 315.509 ms/frame, versus
+0.265 ms/frame for SDK view reads. A private pool-index experiment preserves title
+pixels and passes 1,916 GPU checks, but leaves 304.608 ms/frame in course identity
+resolution. It has not resolved the bottleneck; bounded lookup-route tracing is
+next. See [performance evidence](native-performance.md).
 
 R188 makes repeated command-callback, scratch-reservation and device-property
 messages opt-in with `NX_TRACE_NVN_CALLS=1`. R187 emitted 808,139 identical

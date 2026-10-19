@@ -16,7 +16,7 @@ remain open; no release/tag/download is available.
 
 Windows integration now passes 40 CPU/component suites and a 1,950-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R201 reconstructs 192 generic adapted files. Native sample counts
+entry point. R202 reconstructs 192 generic adapted files. Native sample counts
 and GPU-clock reports replace host placeholders. GPU comparisons replace the
 inherited forced-on conditional renderer, including explicit gated clears and
 original counter-to-predicate chains; regressions verify accumulation,
@@ -33,6 +33,12 @@ complete native lap with a clear 2/3 HUD at frame 6,420. A transient glider flas
 needs reference comparison; broader race/cup coverage, full-speed performance and full
 gameplay stability remain open.
 R188 makes repeated routine NVN messages opt-in with `NX_TRACE_NVN_CALLS=1`.
+R202 also verifies real XAudio2 processing silently with zero source-voice gain
+(`NX_MUTED_AUDIO_DEVICE=1` plus `NX_MUTE=1`), including original game PCM and actual
+completion callbacks. Default mute/headless behavior is preserved. The generated
+10-second stereo capture is private; listening and full-race device coverage
+remain separate gates. Optional pipeline-2/chunk-150 mode hits the memory guard
+and is not promoted; the verified race configuration is async 2 / pipeline 0.
 R201 keeps the first positive post-mark texture incarnation stable through one
 replay, including after finalization/cache eviction; misses and later replays
 retain their current-state behavior. Authored native-view/red-pixel regressions

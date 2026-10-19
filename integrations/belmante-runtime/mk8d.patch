@@ -431,7 +431,21 @@
          const int32_t* l = ch(0);
          const int32_t* r = inputs > 1 ? ch(1) : l;
          // Six channels without the sdk's own downmix (FL FR FC LFE RL RR): fold them to stereo here.
-@@ -418,7 +411,7 @@
+@@ -395,7 +388,12 @@
+     o.held.push_back(k);
+     if (o.priming && o.held.size() < kPrime) return;
+     o.priming = false;
+-    for (int h : o.held) plat::audio_submit(o.blocks[h], sizeof pcm, o.blocks[h]);
++    for (int h : o.held) {
++        if(!plat::audio_submit(o.blocks[h],sizeof pcm,o.blocks[h])) {
++            o.free.push_back(h); // No device callback follows a rejected submission.
++            o.dropped++;
++        }
++    }
+     o.held.clear();
+ }
+ 
+@@ -418,7 +416,7 @@
              std::memcpy(saved, c.x, sizeof saved);
              c.x[0] = impl;
              std::lock_guard lk(g_render_system);
@@ -440,7 +454,7 @@
              last_rc = c.x[0];
              std::memcpy(c.x, saved, sizeof saved);
              std::lock_guard pk(g_pace_lock);  // counted under the render lock (AudioRenderSystemUpdate)
-@@ -470,16 +463,21 @@
+@@ -470,16 +468,21 @@
      uint64_t rc = c.x[0];
      uint64_t impl = rc == 0 ? find_renderer(handle) : 0;
      log("audio: renderer opened (result %llx), impl %llx", (unsigned long long)rc, (unsigned long long)impl);
@@ -10278,7 +10292,117 @@
      *ready = true;
      MSG m;
      while (GetMessageW(&m, nullptr, 0, 0) > 0) {
-@@ -392,7 +407,7 @@
+@@ -278,12 +293,15 @@
+ namespace {
+ 
+ std::atomic<uint32_t> g_queued{0};
++std::atomic<uint64_t> g_audio_submitted{0},g_audio_completed{0};
++std::atomic<HRESULT> g_audio_error{S_OK};
+ AudioDone g_done = nullptr;
+ 
+ struct Voice : IXAudio2VoiceCallback {
+     void STDMETHODCALLTYPE OnBufferEnd(void* ctx) noexcept override {
+         auto* p = static_cast<std::pair<void*, std::vector<uint8_t>>*>(ctx);
+         g_queued--;
++        g_audio_completed.fetch_add(1,std::memory_order_relaxed);
+         g_done(p->first);
+         delete p;
+     }
+@@ -292,7 +310,7 @@
+     void STDMETHODCALLTYPE OnStreamEnd() noexcept override {}
+     void STDMETHODCALLTYPE OnBufferStart(void*) noexcept override {}
+     void STDMETHODCALLTYPE OnLoopEnd(void*) noexcept override {}
+-    void STDMETHODCALLTYPE OnVoiceError(void*, HRESULT) noexcept override {}
++    void STDMETHODCALLTYPE OnVoiceError(void*, HRESULT error) noexcept override {g_audio_error.store(error,std::memory_order_release);}
+ };
+ 
+ IXAudio2* g_xa = nullptr;
+@@ -302,35 +320,58 @@
+ }  // namespace
+ 
+ bool audio_open(AudioDone done) {
+-    g_done = done;
+-    // Headless test runs (and NX_MUTE=1) are silent: no device, the callers pace themselves with a timer.
+-    if (headless() || std::getenv("NX_MUTE")) return false;
+-    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+-    if (FAILED(XAudio2Create(&g_xa, 0, XAUDIO2_DEFAULT_PROCESSOR))) return false;
+-    IXAudio2MasteringVoice* master = nullptr;
+-    if (FAILED(g_xa->CreateMasteringVoice(&master))) return false;
+-    WAVEFORMATEX wf{};
+-    wf.wFormatTag = WAVE_FORMAT_PCM;
+-    wf.nChannels = 2;
+-    wf.nSamplesPerSec = 48000;
+-    wf.wBitsPerSample = 16;
+-    wf.nBlockAlign = 4;
+-    wf.nAvgBytesPerSec = 48000 * 4;
+-    if (FAILED(g_xa->CreateSourceVoice(&g_voice, &wf, 0, 2.0f, &g_callback))) return false;
+-    g_voice->Start();
++    if(!done)return false;
++    if(g_voice)return done==g_done;
++    const auto* silent=std::getenv("NX_MUTED_AUDIO_DEVICE");
++    const bool muted_device=silent&&silent[0]=='1';
++    // Preserve ordinary muted/headless runs; the explicit device test remains silent.
++    if(headless()||(std::getenv("NX_MUTE")&&!muted_device))return false;
++    CoInitializeEx(nullptr,COINIT_MULTITHREADED);
++    IXAudio2* engine=nullptr;IXAudio2MasteringVoice* master=nullptr;IXAudio2SourceVoice* voice=nullptr;
++    auto fail=[&](const char* operation,HRESULT error) {
++        log("audio: XAudio2 %s failed HRESULT=%08lx",operation,static_cast<unsigned long>(error));
++        if(voice)voice->DestroyVoice();if(master)master->DestroyVoice();if(engine)engine->Release();
++        return false;
++    };
++    HRESULT result=XAudio2Create(&engine,0,XAUDIO2_DEFAULT_PROCESSOR);
++    if(FAILED(result))return fail("create",result);
++    result=engine->CreateMasteringVoice(&master);
++    if(FAILED(result))return fail("mastering voice",result);
++    WAVEFORMATEX format{};format.wFormatTag=WAVE_FORMAT_PCM;format.nChannels=2;format.nSamplesPerSec=48000;
++    format.wBitsPerSample=16;format.nBlockAlign=4;format.nAvgBytesPerSec=48000*4;
++    result=engine->CreateSourceVoice(&voice,&format,0,2.0f,&g_callback);
++    if(FAILED(result))return fail("source voice",result);
++    if(muted_device) {
++        result=voice->SetVolume(0.0f);
++        if(FAILED(result))return fail("silent volume",result);
++    }
++    float gain=1.0f;voice->GetVolume(&gain);
++    if(muted_device&&gain!=0.0f)return fail("silent volume verification",E_FAIL);
++    g_audio_error.store(S_OK,std::memory_order_release);
++    result=voice->Start();if(FAILED(result))return fail("start",result);
++    g_done=done;g_xa=engine;g_voice=voice;
++    log("audio: native XAudio2 device opened 48000Hz stereo s16, voice gain=%.3f muted-device=%u",gain,unsigned(muted_device));
+     return true;
+ }
+ 
+-bool audio_submit(const void* data, size_t bytes, void* ctx) {
+-    if (!g_voice) return false;
+-    auto* p = new std::pair<void*, std::vector<uint8_t>>(
+-        ctx, std::vector<uint8_t>(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + bytes));
+-    XAUDIO2_BUFFER xb{};
+-    xb.AudioBytes = UINT32(bytes);
+-    xb.pAudioData = p->second.data();
+-    xb.pContext = p;
+-    g_queued++;
+-    g_voice->SubmitSourceBuffer(&xb);
++bool audio_submit(const void* data,size_t bytes,void* ctx) {
++    if(!g_voice||!data||!bytes||(bytes%4)||bytes>XAUDIO2_MAX_BUFFER_BYTES)return false;
++    const auto error=g_audio_error.load(std::memory_order_acquire);
++    if(FAILED(error)){log("audio: XAudio2 voice error HRESULT=%08lx",static_cast<unsigned long>(error));return false;}
++    auto* packet=new std::pair<void*,std::vector<uint8_t>>(
++        ctx,std::vector<uint8_t>(static_cast<const uint8_t*>(data),static_cast<const uint8_t*>(data)+bytes));
++    XAUDIO2_BUFFER buffer{};buffer.AudioBytes=UINT32(bytes);buffer.pAudioData=packet->second.data();buffer.pContext=packet;
++    g_queued.fetch_add(1,std::memory_order_relaxed);
++    const auto result=g_voice->SubmitSourceBuffer(&buffer);
++    if(FAILED(result)) {
++        g_queued.fetch_sub(1,std::memory_order_relaxed);delete packet;
++        log("audio: XAudio2 submit failed HRESULT=%08lx",static_cast<unsigned long>(result));
++        return false;
++    }
++    const auto submitted=g_audio_submitted.fetch_add(1,std::memory_order_relaxed)+1;
++    if(submitted==1||submitted%2000==0)
++        log("audio: native XAudio2 submitted=%llu completed=%llu queued=%u",
++            (unsigned long long)submitted,(unsigned long long)g_audio_completed.load(std::memory_order_relaxed),g_queued.load());
+     return true;
+ }
+ 
+@@ -392,7 +433,7 @@
      if (e->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP || !g_watch) return EXCEPTION_CONTINUE_SEARCH;
      nx::log("WATCH: %llx written (now %llx) at %s.exe+%llx (tools/symbolize.py)", (unsigned long long)g_watch,
              (unsigned long long)nx::ld<uint64_t>(g_watch), nx::game::kInfo.id, (unsigned long long)exe_va(e->ExceptionRecord->ExceptionAddress));
@@ -10287,7 +10411,7 @@
      static int hits = 0;
      if (++hits >= 30) e->ContextRecord->Dr7 = 0;
      return EXCEPTION_CONTINUE_EXECUTION;
-@@ -440,8 +455,9 @@
+@@ -440,8 +481,9 @@
      nx::log("CRASH: exception %08lx at %s (tools/symbolize.py for the exe), data address %llx", r->ExceptionCode,
              host_where(uint64_t(r->ExceptionAddress)).c_str(), (unsigned long long)info);
      host_backtrace(*e->ContextRecord);
@@ -10298,7 +10422,7 @@
      return EXCEPTION_EXECUTE_HANDLER;
  }
  
-@@ -462,9 +478,31 @@
+@@ -462,9 +504,31 @@
      return EXCEPTION_CONTINUE_SEARCH;
  }
  
@@ -12902,7 +13026,7 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,452 @@
+@@ -0,0 +1,487 @@
 +#if defined(_WIN32)
 +#include <windows.h>
 +#include "native_failure.h"
@@ -12932,6 +13056,15 @@
 +#include <cstdlib>
 +#include <string_view>
 +namespace {
++std::atomic<uint32_t> audio_probe_count{0},audio_probe_mask{0};
++std::atomic<bool> audio_probe_bad{false};
++void authored_audio_done(void* context) noexcept {
++    const auto id=reinterpret_cast<uintptr_t>(context);
++    if(id<1||id>4){audio_probe_bad=true;return;}
++    if(audio_probe_mask.fetch_or(1u<<id)&(1u<<id))audio_probe_bad=true;
++    ++audio_probe_count;
++}
++void other_audio_done(void*) noexcept {audio_probe_bad=true;}
 +unsigned callback_calls=0;uint64_t expected_control=0;
 +void authored_memory_callback(nx::CPU& c){
 + if(c.x[1]!=1||c.x[2]>4096||c.x[3]!=expected_control)throw std::runtime_error("callback ABI assertion");
@@ -12961,6 +13094,32 @@
 +#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
 +#if defined(_WIN32)
++ if(argc==2&&std::string_view(argv[1])=="--muted-audio-device") {
++     SetErrorMode(3);
++     if(_putenv_s("NX_MUTE","1")||_putenv_s("NX_MUTED_AUDIO_DEVICE","1"))return 3;
++     auto require=[](bool ok){if(!ok)throw std::runtime_error("native muted audio device assertion");};
++     require(!nx::plat::audio_open(nullptr));require(nx::plat::audio_queued()==0);
++     if(!nx::plat::audio_open(authored_audio_done)){std::cout<<"native muted audio device UNAVAILABLE"<<std::endl;return 4;}
++     require(nx::plat::audio_open(authored_audio_done));require(!nx::plat::audio_open(other_audio_done));
++     std::array<int16_t,4800> pcm{};
++     require(!nx::plat::audio_submit(nullptr,sizeof pcm,reinterpret_cast<void*>(1)));
++     require(!nx::plat::audio_submit(pcm.data(),0,reinterpret_cast<void*>(1)));
++     require(!nx::plat::audio_submit(pcm.data(),sizeof pcm-1,reinterpret_cast<void*>(1)));
++     require(!nx::plat::audio_submit(pcm.data(),uint64_t{1}<<32,reinterpret_cast<void*>(1)));
++     require(nx::plat::audio_queued()==0&&audio_probe_count==0);
++     uint64_t absolute_sum=0;
++     for(uintptr_t id=1;id<=4;++id) {
++         for(size_t sample=0;sample<pcm.size();++sample){pcm[sample]=(sample%96<48?1:-1)*int16_t(1000+id*100);absolute_sum+=uint64_t(std::abs(int(pcm[sample])));}
++         require(nx::plat::audio_submit(pcm.data(),sizeof pcm,reinterpret_cast<void*>(id)));
++         pcm.fill(0); // Platform owns its queued copy until the real callback.
++     }
++     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(3);
++     while(audio_probe_count<4&&std::chrono::steady_clock::now()<deadline)std::this_thread::sleep_for(std::chrono::milliseconds(1));
++     require(audio_probe_count==4&&audio_probe_mask==30&&!audio_probe_bad&&nx::plat::audio_queued()==0);
++     require(absolute_sum>0);
++     std::cout<<"native muted audio device PASS callbacks="<<audio_probe_count<<" unique-mask="<<audio_probe_mask<<" queued="<<nx::plat::audio_queued()<<" input-absolute-sum="<<absolute_sum<<" guest-modules=0 GPU-calls=0"<<std::endl;
++     return 0;
++ }
 + if(argc==2&&(std::string_view(argv[1])=="--throw-native-thread"||std::string_view(argv[1])=="--throw-std-thread"||std::string_view(argv[1])=="--seh-no-guest")) {
 +     SetErrorMode(3);nx::plat::install_failure_handlers();
 +     if(std::string_view(argv[1])=="--seh-no-guest")RaiseException(0xe0425a11u,EXCEPTION_NONCONTINUABLE,0,nullptr);

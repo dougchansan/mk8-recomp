@@ -258,3 +258,28 @@ within-submission upload/descriptor caches already perform reuse; the measured
 validation cache avoids duplicating those layers. CPU/GPU overlap remains an
 experiment until retained resources, writebacks, counters and actual game images
 are verified. Do not remove waits or bounds checks merely to advance a test.
+
+## Further controls and native audio-device verification
+
+The existing combined pipelined/chunked mode passes authored GPU/counter controls
+with chunk size 1, but actual MK8D with async 0 / pipeline 2 / chunk 150 stops at
+frame 1,330 when private memory reaches 6.10 GB against the 6 GB guard. Baseline
+async 2 / pipeline 0 completes its 2,700-frame control. No course-speedup comparison
+is valid and the experimental combination remains disabled; the guard is not
+raised. Its growth mechanism remains undiagnosed.
+
+R202 adds an opt-in silent real-device check, `NX_MUTED_AUDIO_DEVICE=1`, alongside
+`NX_MUTE=1`. The source voice is set to gain zero before it starts; normal muted
+and headless behavior is preserved. XAudio2 accepts the original SDK renderer's
+PCM and returns real buffer-completion callbacks. The 1,000-frame game probe
+reaches its target without a fatal/crash or changed source/executable/save input/
+foreground; logs show 6,000 submitted and 5,990 completed packets at the last
+periodic sample. The private 10-second WAV is 48 kHz, stereo, signed 16-bit,
+480,000 frames, with 862,411 nonzero samples, peak 9,588, RMS about 1,055 and zero
+clipped samples. This proves data/device processing, not subjective listening.
+An authored device probe also rejects invalid buffers and returns four distinct
+contexts with queue zero. Failed submissions now release their packet and queue
+count, and the renderer recycles rejected blocks. Hotplug/recovery is unverified.
+
+See the XAudio2 contracts for [zero-gain silence](https://learn.microsoft.com/en-us/windows/win32/api/xaudio2/nf-xaudio2-ixaudio2voice-setvolume)
+and [data lifetime through OnBufferEnd](https://learn.microsoft.com/en-us/windows/win32/api/xaudio2/nf-xaudio2-ixaudio2sourcevoice-submitsourcebuffer).

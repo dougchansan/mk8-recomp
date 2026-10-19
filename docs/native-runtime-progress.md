@@ -26,13 +26,32 @@ persisted race-stat fields and continued gameplay after restart were not decoded
 or established by that probe. Audible audio, physical controls, sustained full
 speed and broader gameplay/cup coverage remain open. No release/tag/download.
 
-The current source recipe is R201, reconstructing 192 generic adapted files.
+The current source recipe is R202, reconstructing 192 generic adapted files.
 All 40 component suites and the 1,950-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
+
+R202 verifies the native Windows audio device silently. `NX_MUTED_AUDIO_DEVICE=1`
+with `NX_MUTE=1` opens XAudio2 at zero source-voice gain before starting it; ordinary
+muted/headless behavior remains unchanged. An authored no-game/no-GPU probe checks
+invalid-buffer rejection, four unique completion contexts and a drained queue.
+The actual game then submits over 6,000 packets with more than 5,900 native device
+completion callbacks, with gain still zero. Its original SDK CPU mix produces a
+10-second, 48 kHz stereo s16 WAV: nonzero PCM, peak 9,588 and no clipped samples.
+This verifies device processing without claiming speaker/headphone listening.
+Buffer data remains owned until completion; rejected submissions now restore
+queue/packet ownership and renderer free blocks. Device-loss recovery is untested.
+The 40 suites, 1,950 GPU checks, sync/cutoff checks and failure probes pass; changed
+audio/Windows source analyses are clean. Full-race audio-device validation is next.
+
+An optional combined pipelined/chunked control (`NX_ASYNC_GPU=0`, `NX_PIPELINED=2`,
+`NX_SUBMIT_CHUNK_DRAWS=150`) exceeds the 6 GB memory guard at frame 1,330 and stops.
+It is not promoted and establishes no course speedup. The completed-race path
+remains async 2 / pipeline 0 / chunk 0, whose run peaks around 4.63 GB. The memory
+limit is retained; the optional combination's growth source is not yet diagnosed.
 
 R201 stabilizes a temporary texture selected after a replay has begun. The old
 empty-at-mark fallback follows the current object again after fast-cache eviction,

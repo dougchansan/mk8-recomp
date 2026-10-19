@@ -24,7 +24,10 @@ controls. Smooth 60 and correct 120 FPS gameplay remain performance goals.
 R221 reduces focus-check contention; R222 shares fully revalidated positive
 texture identities across descriptor copies. The latest clean R221 short course
 control averages 52.36 FPS, with late windows at 60. The first R222 timing run was
-affected by an unrelated build, and longer gameplay validation is in progress.
+affected by an unrelated build; its longer flight now verifies Stadium first and
+Water Park lap 2/3. R223 reduces diagnostic readback stalls using cached coherent
+memory and passes a 6,000-target game check; that course window averages 53.93 FPS.
+Sustained smooth 60 and correct 120 remain unverified.
 
 The following figures describe the earlier guarded-runtime research track; the current native race result is the Belmante integration above.
 

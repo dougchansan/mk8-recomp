@@ -50,6 +50,33 @@ presentation/non-replay 0.05 ms/frame; class sums match their aggregate and all
 query results are available. These are queued intervals, not isolated shader work.
 The source recipe now reconstructs 193 generic adapted files.
 
+R223 removes the uncached CPU-read penalty from diagnostic image downloads.
+It prefers a host-visible, coherent and host-cached memory type, falls back to
+the existing coherent selection, and adds explicit transfer-to-host dependencies
+before the existing fence-completed reads. Upload buffers and native
+TextureReadTexels staging are unchanged. `NX_CACHED_READBACK=0` retains the old
+memory-type control. Synthetic masks reject cached-but-noncoherent candidates.
+
+Three-repeat same-executable probes fill a 1920x1080 buffer on the actual GPU,
+wait for its fence, convert mapped RGBA to RGB and verify every authored red pixel.
+The measured median CPU conversion falls from 52.76 ms (type 1, flags 0x6) to
+0.267 ms (type 3, flags 0xe). This isolates host read cost, not game FPS. A clean
+6,000-target native flight preserves source/executable/input-save/foreground;
+the final racing image was reviewed. Capture-adjacent 60-frame windows observe
+presentation costs of 0.63/1.04/0.70/1.42 ms per frame, versus
+13.31/12.52/12.81/13.43 ms in the preceding R222 flight. Separate workloads and
+desktop scheduling remain limitations. Its 3,840-interval course window averages
+53.93 FPS, with remaining hitches; sustained smooth 60 is not established.
+
+All 40 component suites, 2,327 GPU checks, 300 sync/cutoff checks and the
+259-check synchronous native texture readback control pass. Changed-source
+analysis is clean. The source recipe reconstructs 198 generic adapted files.
+The next trace samples compiled CPU calls and kernel waits with captures off;
+coarse frame windows and inclusive call samples must not be treated as precise
+CPU shares or per-frame percentiles.
+
+See [Vulkan host caching and coherence properties](https://docs.vulkan.org/refpages/latest/refpages/source/VkMemoryPropertyFlagBits.html).
+
 R221 removes exclusive serialization from the stable focus-policy read path.
 Every call still validates the owned live window and reads visibility. State
 transitions, parking and reentrant notifications retain an exclusive recheck;
@@ -77,9 +104,13 @@ R222's first 6,000-presentation game run completes without fatal errors and with
 source/executable/input-save/foreground preserved. Its timing is contaminated:
 unrelated clang/linker processes were observed during part of the course. Later
 windows recover to about 60 FPS after those processes exit; the overall course
-rate is 49.70 FPS and does not establish an FPS comparison. A longer native
-Stadium/results/Water Park validation is running with the closed R217 flight's
-local driver cache and sparse captures. Full smooth 60 and correct 120 remain open.
+rate is 49.70 FPS and does not establish an FPS comparison. The longer native
+flight has now closed at 24,600 presentations/515.89 seconds: Stadium first with
+15 points, native 518,400-byte readback, and Water Park lap 2/3, with zero reported
+audio drops/underruns. Stadium/Water Park rates are 44.29/55.74 FPS with median
+windows 59.8/60.0; a severe Stadium wait interval remains unattributed. Sparse
+captures also contributed stalls. This is not sustained smooth 60 or a full cup.
+Full smooth 60 and correct 120 remain open.
 
 R220 fixes Windows sleep granularity using one high-resolution waitable timer
 per calling thread. Deadlines use relative 100 ns units and QPC rechecks; failures
@@ -274,7 +305,7 @@ Vulkan unit retains one inherited portability-chain dead-store warning. Those pi
 subsequent standalone 259-check probe and actual game readback pass as recorded
 above. Second-course gameplay remains unverified.
 
-The current source recipe is R222, reconstructing 197 generic adapted files.
+The current source recipe is R223, reconstructing 198 generic adapted files.
 All 40 component suites and the 2,327-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture

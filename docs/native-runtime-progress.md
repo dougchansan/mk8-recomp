@@ -50,7 +50,86 @@ presentation/non-replay 0.05 ms/frame; class sums match their aggregate and all
 query results are available. These are queued intervals, not isolated shader work.
 The source recipe now reconstructs 193 generic adapted files.
 
-R218 enables grouping by default of consecutive counted draws into one precise
+R221 removes exclusive serialization from the stable focus-policy read path.
+Every call still validates the owned live window and reads visibility. State
+transitions, parking and reentrant notifications retain an exclusive recheck;
+there is no cached liveness decision. A new eight-reader/40-visibility-toggle
+regression verifies writer progress and notifications. Thirty focus checks pass.
+Three-repeat 16-thread controls observe median 232 versus 119 ns/call; single
+thread cost remains about 18 ns. These are focus microbenchmarks, not FPS ratios.
+A clean 6,000-presentation game run observes 52.36 FPS over 3,840 course intervals
+and 957 intervals above 20 ms, versus R220's separate 46.91 FPS/1,902-interval run.
+Late windows reach 60 FPS. Shared-desktop/scene variation and first-use stalls
+still prevent a sustained smooth-60 claim.
+
+R222 lets identical copied SDK texture descriptors share a positive identity
+cache entry by GPU/pool hash. Each hit still validates the current registry
+generation, object type and every field used by the original matching predicate;
+misses and raw object pointers are not cached. The bounded table has 64 entries
+per thread. `NX_TEXTURE_IDENTITY_SHARED_CACHE=0` retains the original eight-slot,
+descriptor-address control. A same-executable authored 100,000-query probe across
+256 copies of 32 textures observes median 250 versus 56.75 ns/query, while changed
+fields and retired resources are rejected and a restored descriptor resolves.
+Default, legacy and cache-disabled 2,327-check GPU fixtures, 40 suites and
+300-check sync/cutoff controls pass. Both changed production analyses are clean.
+
+R222's first 6,000-presentation game run completes without fatal errors and with
+source/executable/input-save/foreground preserved. Its timing is contaminated:
+unrelated clang/linker processes were observed during part of the course. Later
+windows recover to about 60 FPS after those processes exit; the overall course
+rate is 49.70 FPS and does not establish an FPS comparison. A longer native
+Stadium/results/Water Park validation is running with the closed R217 flight's
+local driver cache and sparse captures. Full smooth 60 and correct 120 remain open.
+
+R220 fixes Windows sleep granularity using one high-resolution waitable timer
+per calling thread. Deadlines use relative 100 ns units and QPC rechecks; failures
+or unsupported systems fall back to the previous sleep path. This preserves
+requested waits without spinning or changing the global timer resolution.
+`NX_HIGH_RES_SLEEP=0` selects the old path for comparison. Actual same-binary
+0.5/1/5 ms sleep probes observe medians 15.58/15.56/15.61 ms with the old path,
+versus 1.00/1.52/5.51 ms with the new path. Four concurrent timer checks preserve
+independent minimum deadlines.
+
+`NX_FRAME_PACING_STATS=1` measures intervals and CPU time on the actual
+presentation caller, replay-worker wait, pacing requests and sleep overshoot.
+It works without Wonder-specific SDK addresses. Windows thread CPU accounting
+now uses GetThreadTimes in its documented 100 ns units, rather than returning
+zero. Page faults and context switches remain unavailable on Windows.
+
+Two clean 6,000-presentation same-executable controls use identical input, saved
+profile and driver-cache seeds, with captures/signatures/audio dumps disabled.
+Early pacing overshoot averages 6.33 ms/frame with the legacy timer versus
+0.256 ms with the new timer; course overshoot falls from 0.745 to 0.024 ms/frame.
+Overall course rates are 49.68 versus 46.91 FPS across 3,840 measured intervals.
+The shared desktop and scene workloads vary, and the new timer does not yet
+establish an overall FPS improvement or sustained smooth 60. Both runs preserve
+source/executable/input-save/foreground and stop intentionally at the target.
+CPU/GPU work, required waits and remaining first-use stalls still need reduction.
+
+`NX_PIPELINE_CACHE_DIR=<existing directory>` optionally retains the local
+driver-generated pipeline cache across build/test data roots. The default stays
+the data root, `NX_PIPELINE_CACHE=0` still disables it, and Vulkan performs cache
+compatibility handling. A preceding same-executable cold/warm pair reduces
+course pipeline creation from 3,358 to 434 ms for 114 versus 113 pipelines, but
+observes 50.12 versus 46.90 FPS; this is a cache-cost result, not an FPS speedup.
+Never publish or bundle the generated cache as part of this source recipe.
+
+All 40 suites, 2,327 GPU checks (including external-cache/disabled-cache arms),
+300 sync and 300 cutoff checks pass. Windows CPU-work/sleep accounting and
+concurrent timer probes pass; analyses of the four changed production units
+are clean. The verified recipe now reconstructs 197 generic adapted files.
+
+The next performance target is stable 16.67 ms frame delivery. Eventual 120 FPS
+requires 8.33 ms CPU/GPU critical paths and verification of MK8D simulation,
+physics, race clock, audio and input timing. The existing experimental display
+rate setting alone is not verified 120 FPS support. No release or download.
+
+References: [Windows high-resolution timers](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-createwaitabletimerexw),
+[relative timer deadlines](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-setwaitabletimer),
+[thread CPU-time units](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getthreadtimes),
+[Vulkan cache compatibility](https://docs.vulkan.org/refpages/latest/refpages/source/VkPipelineCacheCreateInfo.html).
+
+R218 enables grouping of consecutive counted draws by default into one precise
 occlusion query within a render pass (`NX_COALESCE_SAMPLE_QUERIES=1`). Queries
 close before pass end or internal helper work; explicit counted Draw brackets
 remain distinct from masked or ordinary clears outside those brackets. Both
@@ -82,7 +161,7 @@ Median GPU replay costs are 2.66 and 3.88 ms. Signatures were disabled but captu
 still occurred every 600 presentations. Four audio drops and zero underruns were
 reported; the real XAudio2 device was muted, so listening remains unverified.
 R218's default/legacy/cache-disabled GPU checks, sync/cutoff checks and native
-readback controls pass. A capture-free benchmark is the next attribution step.
+readback controls pass. The capture-free and timer comparisons are recorded above.
 Full second-race/cup completion, smooth 60 and physical input remain open.
 No release.
 
@@ -195,7 +274,7 @@ Vulkan unit retains one inherited portability-chain dead-store warning. Those pi
 subsequent standalone 259-check probe and actual game readback pass as recorded
 above. Second-course gameplay remains unverified.
 
-The current source recipe is R218, reconstructing 195 generic adapted files.
+The current source recipe is R222, reconstructing 197 generic adapted files.
 All 40 component suites and the 2,327-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture

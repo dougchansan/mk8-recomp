@@ -330,6 +330,41 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +int platform_entry();
 +int main(){return platform_entry();}
+--- a/runtime/src/frame_stats.cpp
++++ b/runtime/src/frame_stats.cpp
+@@ -11,6 +11,15 @@
+ #include <cstdio>
+ #include <cstdlib>
+ #include <ctime>
++#if defined(_WIN32)
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#endif
+ #if !defined(_WIN32)
+ #include <sys/resource.h>
+ #endif
+@@ -39,7 +48,15 @@
+ namespace {
+ 
+ uint64_t thread_cpu_ns() {
+-#if defined(CLOCK_THREAD_CPUTIME_ID)
++#if defined(_WIN32)
++    FILETIME created{}, exited{}, kernel{}, user{};
++    if (!GetThreadTimes(GetCurrentThread(), &created, &exited, &kernel, &user)) return 0;
++    const auto ticks = [](FILETIME value) {
++        return (uint64_t(value.dwHighDateTime) << 32) | value.dwLowDateTime;
++    };
++    // GetThreadTimes reports accumulated kernel/user CPU time in 100 ns units.
++    return (ticks(kernel) + ticks(user)) * 100;
++#elif defined(CLOCK_THREAD_CPUTIME_ID)
+     timespec ts{};
+     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+     return uint64_t(ts.tv_sec) * 1'000'000'000ull + uint64_t(ts.tv_nsec);
 --- a/runtime/src/hle_audio.cpp
 +++ b/runtime/src/hle_audio.cpp
 @@ -15,6 +15,8 @@
@@ -1713,7 +1748,7 @@
      auto it = g_vm.lower_bound(addr);
 --- /dev/null
 +++ b/runtime/src/mk8_focus_policy.cpp
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,70 @@
 +#include "native_perf.h"
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "mk8_focus_policy.h"
@@ -1723,10 +1758,11 @@
 +#include <windows.h>
 +#include <atomic>
 +#include <mutex>
++#include <shared_mutex>
 +#include <algorithm>
 +namespace nx {
 +namespace {
-+std::mutex lock;HWND display{};uint64_t generation{};bool configured=false,out_of_focus=false,notify=false,background=false,suspend=true;uint8_t logical_focus=1;std::function<void()> notification;
++std::shared_mutex lock;HWND display{};uint64_t generation{};bool configured=false,out_of_focus=false,notify=false,background=false,suspend=true;uint8_t logical_focus=1;std::function<void()> notification;
 +std::atomic<bool> enabled=false;
 +bool live(){DWORD process=0;return display&&GetWindowThreadProcessId(display,&process)&&process==GetCurrentProcessId()&&generation==plat::window_generation();}
 +}
@@ -1763,6 +1799,16 @@
 +    const bool sampled = perf::enabled() && (++samples & 1023u) == 0;
 +    perf::Scope perf_scope(perf::Region::Focus, sampled, 1024);
 + if(!enabled.load(std::memory_order_acquire))return;
++ // Stable visible/background policy needs no mutation. Check the live owner and
++ // visibility on every call while allowing concurrent readers. Transitions,
++ // notifications and parking retain the exclusive recheck below.
++ {
++  std::shared_lock guard(lock);
++  if(!live())fatal("owned native display closed");
++  const uint8_t next=IsWindowVisible(display)&&!IsIconic(display)?1:2;
++  if(next==logical_focus&&(background||logical_focus==1||(!suspend&&!out_of_focus)))return;
++ }
++
 + for(;;){std::function<void()> signal;bool park;{
 +  std::lock_guard guard(lock);if(!live())fatal("owned native display closed");
 +  const uint8_t next=IsWindowVisible(display)&&!IsIconic(display)?1:2;
@@ -8507,7 +8553,7 @@
      t->writes.push_back(std::move(w));
      t->has_writes.store(true, std::memory_order_release);
  }
-@@ -556,10 +642,68 @@
+@@ -556,10 +642,74 @@
  void TextureWriteTexelsStrided(CPU& c) { write_texels(c, c.x[4], c.x[5]); }
  void TextureFlushTexels(CPU&) {}  // coherent: the writes above are what matters
  
@@ -8527,9 +8573,15 @@
 +            for(size_t i=0;i<fields.size();++i)if(ld<uint32_t>(key+0x20+i*4)!=fields[i])return false;
 +            return true;
 +        };
-+        struct Hit{uint64_t descriptor=0,owner=0,generation=0;};thread_local Hit cache[8];
-+        auto& hit=cache[((key>>4)^(key>>12))&7];const auto generation=objects_lock().generation.load(std::memory_order_acquire);
-+        if(hit.descriptor==key&&hit.generation==generation){auto found=objects().find(hit.owner);const auto* texture=found==objects().end()?nullptr:dynamic_cast<Texture*>(found->second.get());if(texture&&matches(*texture))return hit.owner;}
++        // SDK stack copies of the same descriptor can share a positive owner.
++        // Every hit still checks the current registry generation, object type
++        // and complete descriptor fields below. No misses or raw pointers cache.
++        static const bool shared = [] { const char* e=std::getenv("NX_TEXTURE_IDENTITY_SHARED_CACHE");return !e||e[0]!='0'; }();
++        struct Hit{uint64_t descriptor=0,owner=0,generation=0;};thread_local Hit cache[64];
++        const auto gpu=ld<uint64_t>(key+0x80),pool=ld<uint64_t>(key+0x10);
++        const auto slot=shared?((gpu>>8)^(gpu>>16)^(gpu>>24)^(pool>>4))&63:((key>>4)^(key>>12))&7;
++        auto& hit=cache[slot];const auto generation=objects_lock().generation.load(std::memory_order_acquire);
++        if((shared||hit.descriptor==key)&&hit.generation==generation){auto found=objects().find(hit.owner);const auto* texture=found==objects().end()?nullptr:dynamic_cast<Texture*>(found->second.get());if(texture&&matches(*texture))return hit.owner;}
 +        // Most copied render targets still have a live owner in this pool.
 +        // Reuse its existing key index before searching retained snapshots.
 +        // The index is only a hint: resolve and validate every candidate now.
@@ -8578,7 +8630,7 @@
      }
  NX_TEXTURE_GETTER(TextureGetWidth, width)
  NX_TEXTURE_GETTER(TextureGetHeight, height)
-@@ -573,6 +717,13 @@
+@@ -573,6 +723,13 @@
  NX_TEXTURE_GETTER(TextureGetMemoryPool, pool)
  NX_TEXTURE_GETTER(TextureGetMemoryOffset, offset)
  NX_TEXTURE_GETTER(TextureGetStorageSize, storage_size)
@@ -8592,7 +8644,7 @@
  NX_TEXTURE_GETTER(TextureGetDepthStencilMode, depth_stencil_mode)
  #undef NX_TEXTURE_GETTER
  
-@@ -587,44 +738,35 @@
+@@ -587,44 +744,35 @@
      c.x[0] = 1;
  }
  
@@ -8662,7 +8714,7 @@
  }
  
  void DescriptorPoolGetMemoryPool(CPU& c) {
-@@ -650,8 +792,65 @@
+@@ -650,8 +798,65 @@
  
  }  // namespace
  
@@ -8728,7 +8780,7 @@
  NX_HLE("nvnMemoryPoolMap", MemoryPoolMap);
  NX_HLE("nvnMemoryPoolMapVirtual", MemoryPoolMapVirtual);
  NX_HLE("nvnTextureWriteTexels", TextureWriteTexels);
-@@ -663,6 +862,7 @@
+@@ -663,6 +868,7 @@
  NX_HLE("nvnMemoryPoolFlushMappedRange", MemoryPoolFlushMappedRange);
  NX_HLE("nvnMemoryPoolInvalidateMappedRange", MemoryPoolInvalidateMappedRange);
  NX_HLE("nvnBufferInitialize", BufferInitialize);
@@ -8736,7 +8788,7 @@
  NX_HLE("nvnBufferFinalize", BufferFinalize);
  NX_HLE("nvnBufferMap", BufferMap);
  NX_HLE("nvnBufferGetAddress", BufferGetAddress);
-@@ -685,6 +885,7 @@
+@@ -685,6 +891,7 @@
  NX_HLE("nvnTextureGetMemoryPool", TextureGetMemoryPool);
  NX_HLE("nvnTextureGetMemoryOffset", TextureGetMemoryOffset);
  NX_HLE("nvnTextureGetStorageSize", TextureGetStorageSize);
@@ -8744,7 +8796,7 @@
  NX_HLE("nvnTextureGetDepthStencilMode", TextureGetDepthStencilMode);
  NX_HLE("nvnSamplerPoolInitialize", DescriptorPoolInitialize);
  NX_HLE("nvnTexturePoolInitialize", DescriptorPoolInitialize);
-@@ -702,4 +903,17 @@
+@@ -702,4 +909,17 @@
  NX_HLE("nvnDeviceGetTexelFetchHandle", DeviceGetTexelFetchHandle);
  NX_HLE("nvnDeviceGetImageHandle", DeviceGetImageHandle);
  
@@ -9035,6 +9087,28 @@
  void upload_texture(VkCommandBuffer cb, const Texture& t, GpuImage& img, uint64_t lo = 0, uint64_t hi = UINT64_MAX);
  // Every level and layer to zero (colour; magenta with `magenta`), depth and stencil to 0. Leaves TRANSFER_DST.
  void clear_image(VkCommandBuffer cb, GpuImage& img, bool magenta = false);
+--- a/runtime/src/nvn/nvn_pipeline_cache.cpp
++++ b/runtime/src/nvn/nvn_pipeline_cache.cpp
+@@ -2,6 +2,9 @@
+ // creates on the fly. Pipelines are compiled the first time a draw needs them, inside the replay: the course's
+ // stutters when new objects come in (16-42 ms replays on the RTX 3050). The driver checks the cache header itself
+ // (vendor, device, driver build): a stale file is ignored. Saved every 600 presents when it grew.
++// NX_PIPELINE_CACHE_DIR=<existing directory>: retain the locally generated driver
++// cache across build/test data roots. No game assets or pipeline code are bundled.
++// The default remains the current data root; the driver checks compatibility.
+ // NX_PIPELINE_CACHE=0: no cache (bisecting, or to measure first-run stutter).
+ #include <cstdio>
+ #include <cstdlib>
+@@ -32,7 +35,8 @@
+     p_vkGetPhysicalDeviceProperties(vk_physical(), &p);
+     char name[64];
+     std::snprintf(name, sizeof name, "/pipelines_%04x_%04x.bin", p.vendorID, p.deviceID);
+-    g_path = plat::data_root() + name;
++    const char* directory = std::getenv("NX_PIPELINE_CACHE_DIR");
++    g_path = (directory && *directory ? std::string(directory) : plat::data_root()) + name;
+     std::vector<uint8_t> data;
+     if (FILE* f = plat::fopen_utf8(g_path, "rb")) {
+         plat::fseek64(f, 0, SEEK_END);
 --- a/runtime/src/nvn/nvn_program.cpp
 +++ b/runtime/src/nvn/nvn_program.cpp
 @@ -10,6 +10,7 @@
@@ -9267,16 +9341,79 @@
  }
  
  void WindowGetNumTextures(CPU& c) {
-@@ -504,6 +547,8 @@
+@@ -489,12 +532,50 @@
+ // one. On the Switch the texture-available sync of the next acquire does this; ours is signaled at once, so without
+ // it the game runs as fast as it can once it is faster than 60 fps. A late frame is not snapped to the next vsync
+ // (an 18 ms frame stays 18 ms, not 33). NX_NO_FRAME_LIMIT=1: unpaced.
++// Opt-in attribution on the actual presentation caller. Unlike Wonder's
++// frame_time_probe, this does not depend on a title-specific SDK call address.
++struct DeliveryStats {
++    bool enabled = [] { const char* e = std::getenv("NX_FRAME_PACING_STATS"); return e && e[0] == '1'; }();
++    uint64_t previous_wall{}, previous_cpu{}, intervals{}, wall{}, cpu{}, peak{}, late{};
++    uint64_t worker{}, requested{}, slept{}, overshoot{}, sleeps{}, interval2{};
++    void begin() {
++        if (!enabled) return;
++        uint64_t current_cpu{}; long faults[2]{}, switches[2]{};
++        plat::thread_counters(current_cpu, faults, switches);
++        const auto now = plat::monotonic_ns();
++        if (previous_wall) {
++            const auto elapsed = now - previous_wall;
++            wall += elapsed; peak = std::max(peak, elapsed); late += elapsed > 20'000'000;
++            if (current_cpu >= previous_cpu) cpu += current_cpu - previous_cpu;
++            if (++intervals == 60) {
++                log("native delivery over 60: wall %.3f ms/frame, caller CPU %.3f, peak %.3f, over20ms %llu, worker %.3f, pace-request %.3f, pace-sleep %.3f, overshoot %.3f, sleeps %llu, interval>=2 %llu",
++                    double(wall)/60e6, double(cpu)/60e6, double(peak)/1e6,
++                    (unsigned long long)late, double(worker)/60e6, double(requested)/60e6,
++                    double(slept)/60e6, double(overshoot)/60e6,
++                    (unsigned long long)sleeps, (unsigned long long)interval2);
++                intervals=wall=cpu=peak=late=worker=requested=slept=overshoot=sleeps=interval2=0;
++            }
++        }
++        previous_wall=now; previous_cpu=current_cpu;
++    }
++};
++thread_local DeliveryStats delivery;
++
+ void pace_present(int interval) {
+     static const bool off = std::getenv("NX_NO_FRAME_LIMIT") != nullptr;
+     static uint64_t next = 0;
+     if (off || interval <= 0) return;
+     uint64_t now = plat::monotonic_ns();
+-    if (next > now) plat::sleep_ns(next - now), now = plat::monotonic_ns();
++    if (next > now) {
++        const auto before = now, requested = next - now;
++        plat::sleep_ns(requested);
++        now = plat::monotonic_ns();
++        if (delivery.enabled) {
++            delivery.requested += requested; delivery.slept += now-before;
++            delivery.overshoot += now > next ? now-next : 0; ++delivery.sleeps;
++        }
++    }
++    if (delivery.enabled) delivery.interval2 += interval >= 2;
+     static uint64_t presents = 0, at2 = 0;  // how often the game asks for 30 fps (interval 2), per 600 presents
+     at2 += interval >= 2;
+     if (++presents % 600 == 0)
+@@ -504,6 +585,9 @@
  }
  
  void QueuePresentTexture(CPU& c) {
++    delivery.begin();
 +    require_queue(c.x[0]);
 +    const auto* owned_window=get<Window>(c.x[1]);if(!owned_window||int64_t(c.x[2])<0||c.x[2]>=owned_window->textures.size())fatal("native present requires valid window texture index");
      // The frame's work, from the end of the last present's pacing to now (perf_hint.cpp: ADPF on Android).
      static uint64_t work_from = 0;
      uint64_t t_in = plat::monotonic_ns();
-@@ -561,6 +606,7 @@
+@@ -520,7 +604,9 @@
+         // At most two presents queued: the game runs at most two frames ahead of the replay.
+         static uint64_t queued[2] = {};
+         static int next_slot = 0;
++        const auto wait_from = delivery.enabled ? plat::monotonic_ns() : 0;
+         worker_wait(queued[next_slot]);
++        if (delivery.enabled) delivery.worker += plat::monotonic_ns()-wait_from;
+         if (int(c.x[2]) >= 0 && size_t(c.x[2]) < w->textures.size()) {
+             uint64_t texture = w->textures[size_t(c.x[2])];
+             std::array<int32_t, 4> crop{w->crop[0], w->crop[1], w->crop[2], w->crop[3]};
+@@ -561,6 +647,7 @@
  }  // namespace
  
  NX_HLE("nvnWindowSetCrop", WindowSetCrop);
@@ -9284,7 +9421,7 @@
  NX_HLE("nvnSyncInitialize", SyncInitialize);
  NX_HLE("nvnSyncFinalize", SyncFinalize);
  NX_HLE("nvnSyncWait", SyncWait);
-@@ -572,6 +618,7 @@
+@@ -572,6 +659,7 @@
  NX_HLE("nvnQueueFenceSync", QueueFenceSync);
  NX_HLE("nvnQueueWaitSync", QueueWaitSync);
  NX_HLE("nvnQueuePresentTexture", QueuePresentTexture);
@@ -10542,16 +10679,55 @@
      return 0;
  }
  
-@@ -63,7 +75,7 @@
+@@ -63,8 +75,45 @@
  }
  
  void exit_thread() { ExitThread(0); }
 -void exit_process(int code) { ExitProcess(UINT(code)); }
+-void sleep_ns(int64_t ns) { std::this_thread::sleep_for(std::chrono::nanoseconds(ns)); }
 +void exit_process(int code) { ExitProcess(UINT(native_exit_policy().process_status(uint32_t(code)))); }
- void sleep_ns(int64_t ns) { std::this_thread::sleep_for(std::chrono::nanoseconds(ns)); }
++void sleep_ns(int64_t ns) {
++    if (ns <= 0) return;
++    static const bool precise = [] {
++        const char* e = std::getenv("NX_HIGH_RES_SLEEP");
++        return !e || e[0] != '0';
++    }();
++    if (!precise) {
++        std::this_thread::sleep_for(std::chrono::nanoseconds(ns));
++        return;
++    }
++    const auto from = monotonic_ns();
++    // Each calling thread owns its timer: concurrent audio/vsync/game waits
++    // cannot reset or consume one another's signals. No busy waiting or global
++    // timer-resolution change. Unsupported Windows versions use the old path.
++    struct Timer {
++        HANDLE handle = CreateWaitableTimerExW(nullptr, nullptr,
++            CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_MODIFY_STATE | SYNCHRONIZE);
++        ~Timer() { if (handle) CloseHandle(handle); }
++    };
++    thread_local Timer timer;
++    for (;;) {
++        const auto elapsed = monotonic_ns() - from;
++        if (elapsed >= uint64_t(ns)) return;
++        const auto remaining = uint64_t(ns) - elapsed;
++        LARGE_INTEGER due{};
++        // Relative deadlines are negative 100 ns units. Round up so the wait
++        // never intentionally shortens the caller's requested duration.
++        due.QuadPart = -int64_t(remaining / 100 + (remaining % 100 != 0));
++        if (!timer.handle || !SetWaitableTimer(timer.handle, &due, 0, nullptr, nullptr, FALSE) ||
++            WaitForSingleObject(timer.handle, INFINITE) != WAIT_OBJECT_0) {
++            const auto spent = monotonic_ns() - from;
++            if (spent < uint64_t(ns))
++                std::this_thread::sleep_for(std::chrono::nanoseconds(uint64_t(ns)-spent));
++            return;
++        }
++        // Check QPC after waking; a premature signal rearms the remaining wait.
++    }
++}
  void yield() { SwitchToThread(); }
  void set_thread_name(const char*) {}
-@@ -78,6 +90,7 @@
+ float default_render_scale() { return 1.0f; }
+@@ -78,6 +127,7 @@
      const char* v = std::getenv(env.c_str());
      return v ? v : "";
  }
@@ -10559,7 +10735,7 @@
  int64_t current_thread_id() { return int64_t(GetCurrentThreadId()); }
  bool profile(const int64_t*, const uint64_t* const*, size_t, int, const std::string&) { return false; }
  
-@@ -148,9 +161,10 @@
+@@ -148,9 +198,10 @@
  
  static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM w, LPARAM l) {
      switch (msg) {
@@ -10572,7 +10748,7 @@
          case WM_KEYDOWN:
              if (w == VK_F11) toggle_fullscreen(h);
              break;
-@@ -188,10 +202,11 @@
+@@ -188,10 +239,11 @@
      int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2, y = (sh - h) / 2;
      // NX_HEADLESS: created hidden (the surface still needs a window), never brought to the front.
      const DWORD style = headless() ? (kWindowed & ~WS_VISIBLE) : kWindowed;
@@ -10586,7 +10762,7 @@
      *ready = true;
      MSG m;
      while (GetMessageW(&m, nullptr, 0, 0) > 0) {
-@@ -278,12 +293,15 @@
+@@ -278,12 +330,15 @@
  namespace {
  
  std::atomic<uint32_t> g_queued{0};
@@ -10602,7 +10778,7 @@
          g_done(p->first);
          delete p;
      }
-@@ -292,7 +310,7 @@
+@@ -292,7 +347,7 @@
      void STDMETHODCALLTYPE OnStreamEnd() noexcept override {}
      void STDMETHODCALLTYPE OnBufferStart(void*) noexcept override {}
      void STDMETHODCALLTYPE OnLoopEnd(void*) noexcept override {}
@@ -10611,7 +10787,7 @@
  };
  
  IXAudio2* g_xa = nullptr;
-@@ -302,35 +320,58 @@
+@@ -302,35 +357,58 @@
  }  // namespace
  
  bool audio_open(AudioDone done) {
@@ -10696,7 +10872,7 @@
      return true;
  }
  
-@@ -392,7 +433,7 @@
+@@ -392,7 +470,7 @@
      if (e->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP || !g_watch) return EXCEPTION_CONTINUE_SEARCH;
      nx::log("WATCH: %llx written (now %llx) at %s.exe+%llx (tools/symbolize.py)", (unsigned long long)g_watch,
              (unsigned long long)nx::ld<uint64_t>(g_watch), nx::game::kInfo.id, (unsigned long long)exe_va(e->ExceptionRecord->ExceptionAddress));
@@ -10705,7 +10881,7 @@
      static int hits = 0;
      if (++hits >= 30) e->ContextRecord->Dr7 = 0;
      return EXCEPTION_CONTINUE_EXECUTION;
-@@ -440,8 +481,9 @@
+@@ -440,8 +518,9 @@
      nx::log("CRASH: exception %08lx at %s (tools/symbolize.py for the exe), data address %llx", r->ExceptionCode,
              host_where(uint64_t(r->ExceptionAddress)).c_str(), (unsigned long long)info);
      host_backtrace(*e->ContextRecord);
@@ -10716,7 +10892,7 @@
      return EXCEPTION_EXECUTE_HANDLER;
  }
  
-@@ -462,9 +504,31 @@
+@@ -462,9 +541,31 @@
      return EXCEPTION_CONTINUE_SEARCH;
  }
  
@@ -12203,7 +12379,7 @@
 +}
 --- /dev/null
 +++ b/tests/focus_policy_test.cpp
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,72 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "mk8_focus_policy.h"
 +#include "platform.h"
@@ -12248,6 +12424,19 @@
 +  const auto ns=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count();
 +  const auto foreground_after=GetForegroundWindow();check(foreground_after!=window);
 +  std::cout<<"focus_gate calls="<<calls<<" elapsed_ns="<<ns<<" ns_per_call="<<double(ns)/calls<<" foreground_preserved="<<(foreground_after==foreground)<<"\n";
++ }
++ // Readers must not starve policy writers or lose visibility notifications.
++ {
++  uint8_t concurrent_flags[4]={1,1,1,0};nx::IpcCtx concurrent;concurrent.cmd=13;concurrent.in=concurrent_flags;concurrent.in_size=4;
++  check(nx::mk8_prepare_focus(concurrent)==0);concurrent.commit_reply();
++  std::atomic<bool> stop=false;std::atomic<unsigned> calls=0;std::vector<std::thread> readers;
++  for(unsigned i=0;i<8;++i)readers.emplace_back([&]{while(!stop.load(std::memory_order_acquire)){nx::mk8_focus_gate();++calls;}});
++  while(calls.load()<100)std::this_thread::yield();
++  const auto notifications_before=notifications.load();
++  for(unsigned i=0;i<40;++i){ShowWindow(window,SW_HIDE);nx::mk8_observe_display();ShowWindow(window,SW_SHOWNOACTIVATE);nx::mk8_observe_display();}
++  stop.store(true,std::memory_order_release);for(auto& reader:readers)reader.join();
++  check(calls.load()>=100);check(notifications.load()>notifications_before);check(nx::mk8_logical_focus()==1);check(GetForegroundWindow()!=window);
++  check(nx::mk8_prepare_focus(notify_request)==0);notify_request.commit_reply();
 + }
 + // A visibility notification may reenter the policy and enable background work.
 + // The gate must invoke it outside its lock and use the updated policy.
@@ -13364,11 +13553,13 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,657 @@
+@@ -0,0 +1,733 @@
 +#if defined(_WIN32)
 +#include <windows.h>
 +#include "native_failure.h"
 +#endif
++#include <algorithm>
++#include <atomic>
 +#include <thread>
 +#include <chrono>
 +#include <map>
@@ -13431,6 +13622,80 @@
 +#include "native_counter_sync_probe.h"
 +#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
++ if(argc==2&&std::string_view(argv[1])=="--texture-identity-bench") {
++  nx::memory_init();const auto device=nx::kernel_alloc(7008,16);nx::vm_set(device,7008,nx::kMemHeap,3);
++  if(!nx::nvn::initialize_native_device(device,0))throw std::runtime_error("identity benchmark device initialization");
++  constexpr unsigned textures=32,copies=256,queries=100000;
++  const auto pool=nx::kernel_alloc(256,16),owners=nx::kernel_alloc(textures*256,16),aliases=nx::kernel_alloc(copies*256,16);
++  nx::vm_set(aliases,copies*256,nx::kMemHeap,3);
++  auto& memory=nx::nvn::make<nx::nvn::MemoryPool>(pool);memory.gpu=0x100000000;memory.size=textures*65536;
++  for(unsigned i=0;i<textures;++i) {
++   const auto owner=owners+i*256;auto& texture=nx::nvn::make<nx::nvn::Texture>(owner);
++   texture.pool=pool;texture.offset=i*65536;texture.gpu=memory.gpu+texture.offset;
++   texture.target=1;texture.format=0x25;texture.width=4+i;texture.height=4;texture.depth=texture.levels=texture.samples=1;
++   nx::nvn::pool_textures()[pool].insert(owner);
++   nx::nvn::Sdk53TextureWire wire;wire.device=device;wire.gpu=texture.gpu;wire.pool=pool;wire.offset=texture.offset;wire.aspect=nx::nvn::format_aspect(texture.format);
++   wire.fields={texture.flags,texture.target,texture.width,texture.height,texture.depth,texture.levels,texture.format,texture.samples,texture.swizzle[0],texture.swizzle[1],texture.swizzle[2],texture.swizzle[3],texture.depth_stencil_mode};
++   const auto bytes=nx::nvn::sdk53_texture_wire(wire);
++   for(unsigned copy=i;copy<copies;copy+=textures)std::memcpy(reinterpret_cast<void*>(aliases+copy*256),bytes.data(),bytes.size());
++  }
++  auto width=nx::hle_lookup("nvnTextureGetWidth");if(!width)throw std::runtime_error("identity benchmark getter unavailable");
++  const auto start=nx::plat::monotonic_ns();
++  for(unsigned q=0;q<queries;++q){const auto copy=q%copies;nx::CPU c{};c.x[0]=aliases+copy*256;width(c);if(c.x[0]!=4+copy%textures)throw std::runtime_error("shared copied identity mismatch");}
++  const auto elapsed=nx::plat::monotonic_ns()-start;
++  // A cached owner cannot admit a mutated descriptor or a retired resource.
++  nx::st<uint32_t>(aliases+0x28,999);nx::CPU c{};c.x[0]=aliases;bool rejected=false;
++  try{width(c);}catch(const std::invalid_argument&){rejected=true;}
++  if(!rejected)throw std::runtime_error("identity cache admitted changed fields");
++  nx::st<uint32_t>(aliases+0x28,4);c.x[0]=aliases;width(c);if(c.x[0]!=4)throw std::runtime_error("identity cache retained a failed lookup");
++  nx::nvn::destroy(owners);c.x[0]=aliases;rejected=false;try{width(c);}catch(const std::invalid_argument&){rejected=true;}
++  if(!rejected)throw std::runtime_error("identity cache admitted a retired resource");
++  std::printf("native copied identity queries=%u copies=%u textures=%u elapsed_ns=%llu ns_per_query=%.3f full-fields/retirement PASS\n",queries,copies,textures,(unsigned long long)elapsed,double(elapsed)/queries);
++  return 0;
++ }
++
++ if(argc==2&&std::string_view(argv[1])=="--sleep-timing") {
++  for(const int64_t requested : {500'000LL,1'000'000LL,5'000'000LL}) {
++   std::array<uint64_t,30> samples{};
++   for(auto& sample:samples) {
++    const auto before=nx::plat::monotonic_ns();nx::plat::sleep_ns(requested);
++    sample=nx::plat::monotonic_ns()-before;
++    if(sample<uint64_t(requested)) throw std::runtime_error("native sleep returned before its deadline");
++   }
++   std::sort(samples.begin(),samples.end());
++   std::printf("native sleep requested=%lld median=%llu worst=%llu ns PASS\n",
++    (long long)requested,(unsigned long long)samples[15],(unsigned long long)samples.back());
++  }
++  std::atomic<unsigned> failed{};
++  std::array<std::thread,4> threads;
++  for(size_t i=0;i<threads.size();++i)threads[i]=std::thread([i,&failed] {
++   for(unsigned n=0;n<12;++n) {
++    const int64_t requested=250'000*(i+1);const auto start=nx::plat::monotonic_ns();
++    nx::plat::sleep_ns(requested);
++    if(nx::plat::monotonic_ns()-start<uint64_t(requested))++failed;
++   }
++  });
++  for(auto& thread:threads)thread.join();
++  if(failed)throw std::runtime_error("concurrent native sleep deadline violated");
++  std::puts("native concurrent independent sleep deadlines PASS");return 0;
++ }
++
++ if(argc==2&&std::string_view(argv[1])=="--thread-timing") {
++  uint64_t before{}, after{}, slept{}; long faults[2]{}, switches[2]{};
++  nx::plat::thread_counters(before,faults,switches);
++  const auto end=nx::plat::monotonic_ns()+120'000'000;
++  uint64_t work=1;
++  while(nx::plat::monotonic_ns()<end) work=work*6364136223846793005ULL+1;
++  nx::plat::thread_counters(after,faults,switches);
++  nx::plat::sleep_ns(120'000'000);
++  nx::plat::thread_counters(slept,faults,switches);
++  if(after<=before || slept<after || after-before>500'000'000)
++   throw std::runtime_error("native thread CPU timing unavailable or wrong units");
++  std::printf("native thread timing CPU-work=%llu ns sleep-CPU=%llu ns token=%llu PASS\n",
++   (unsigned long long)(after-before),(unsigned long long)(slept-after),(unsigned long long)work);
++  return 0;
++ }
++
 +#if defined(_WIN32)
 + if(argc==2&&std::string_view(argv[1])=="--muted-audio-device") {
 +     SetErrorMode(3);

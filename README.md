@@ -16,6 +16,16 @@ R212 passes a 24,000-frame run through Stadium results and Water Park lap 2/3. A
 
 R218 enables precise-query grouping by default after a verified R217 Stadium win and Water Park lap. Racing averages are 50.02 and 53.52 FPS, with median reporting windows near 59 FPS; sustained smooth 60 remains open. Exact sample-count and clear-exclusion regressions pass, and `NX_COALESCE_SAMPLE_QUERIES=0` retains the diagnostic fallback.
 
+R220 fixes coarse Windows sleep timing and adds actual frame-delivery attribution
+and reusable local driver-cache support. Same-executable tests reduce timer
+overshoot, while racing remains variable around 47–50 FPS in the latest short
+controls. Smooth 60 and correct 120 FPS gameplay remain performance goals.
+
+R221 reduces focus-check contention; R222 shares fully revalidated positive
+texture identities across descriptor copies. The latest clean R221 short course
+control averages 52.36 FPS, with late windows at 60. The first R222 timing run was
+affected by an unrelated build, and longer gameplay validation is in progress.
+
 The following figures describe the earlier guarded-runtime research track; the current native race result is the Belmante integration above.
 
 Private CPU bring-up passes 12,017 checks across 16 fresh processes for genuine SDK bootstrap, the title's 24 MiB allocator, installed allocation/free hooks, aligned-pointer handling and finalization. One captured game background now draws through native Vulkan and reaches 45 successful, independently retired native presentations without copying pixels through the CPU. All 2,073,600 packed source pixels remain exact. Live native Device integration, complete game frames, audio, controls and save/restart remain pending.

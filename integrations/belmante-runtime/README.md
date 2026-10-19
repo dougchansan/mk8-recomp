@@ -21,6 +21,21 @@ controls pass. A 3,600-presentation course flight passes with class totals
 matching the aggregate; median replay is 18.06 ms/frame versus 0.05 ms/frame
 for presentation/non-replay. These intervals include synchronization/scheduling.
 
+R221 permits concurrent stable focus checks while preserving per-call ownership,
+visibility and exclusive state transitions. R222 shares positive texture identity
+entries across copied descriptors, with full field/type/generation revalidation;
+`NX_TEXTURE_IDENTITY_SHARED_CACHE=0` selects the original cache control. Both have
+authored concurrency/lifetime tests and passing full GPU/counter controls. Native
+gameplay validation continues; microbenchmark ratios are not whole-game FPS gains.
+
+R220 adds Windows high-resolution per-thread sleeps (`NX_HIGH_RES_SLEEP=0`
+retains the old comparison path), opt-in actual caller delivery/CPU/wait/pacing
+statistics (`NX_FRAME_PACING_STATS=1`), and an optional existing local driver-cache
+directory (`NX_PIPELINE_CACHE_DIR`). Deadlines, GPU waits and simulation timing
+stay intact. Timer overshoot falls sharply; overall racing rates remain variable
+and sustained smooth 60/120 are unverified. See the performance document for the
+same-executable controls and their limitations.
+
 R218 enables exact sample-query grouping by default, preserving reset/report,
 conditional, retirement and clear-exclusion behavior. Default/grouped 2,327-check
 GPU controls and 40 suites pass; the hardened R217 long flight verifies a Stadium win and Water Park lap.
@@ -37,7 +52,7 @@ remain open; no release/tag/download is available.
 
 Windows integration now passes 40 CPU/component suites and a 2,327-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R218 reconstructs 195 generic adapted files. Native sample counts
+entry point. R222 reconstructs 197 generic adapted files. Native sample counts
 and GPU-clock reports replace host placeholders. GPU comparisons replace the
 inherited forced-on conditional renderer, including explicit gated clears and
 original counter-to-predicate chains; regressions verify accumulation,

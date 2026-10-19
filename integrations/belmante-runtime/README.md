@@ -6,6 +6,14 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
+R201 now completes a native three-lap Mario Kart Stadium race, with the FINISH
+banner and first-place/15-point results reviewed. The 18,000-frame flight closes
+without a fatal error; its 11,280-frame racing window averages about 25 FPS
+(26.5 ms median interval), profiling disabled with sparse readbacks. Native save
+commit and exact game-produced-save reload to mode selection are verified.
+Audible audio, physical controls, broader gameplay and full-speed performance
+remain open; no release/tag/download is available.
+
 Windows integration now passes 40 CPU/component suites and a 1,950-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
 entry point. R201 reconstructs 192 generic adapted files. Native sample counts
@@ -22,17 +30,17 @@ Mario Kart Stadium intro with a lit Mario and kart. R182 passes the old arena
 stop and reaches countdown/driving; R187 reaches 6,000 frames without a fatal
 error, including anti-gravity and the glider jump. R188 verifies the first
 complete native lap with a clear 2/3 HUD at frame 6,420. A transient glider flash
-needs reference comparison; complete races, playable performance and full
+needs reference comparison; broader race/cup coverage, full-speed performance and full
 gameplay stability remain open.
 R188 makes repeated routine NVN messages opt-in with `NX_TRACE_NVN_CALLS=1`.
 R201 keeps the first positive post-mark texture incarnation stable through one
 replay, including after finalization/cache eviction; misses and later replays
 retain their current-state behavior. Authored native-view/red-pixel regressions
 fail before correction and pass afterward, including with the fast cache off.
-Actual full-race verification remains in progress.
+The actual full-race flight now passes, as recorded above.
 R194 adds unique-match retained-snapshot admission hints with final-reference
 retirement and unchanged full validation; its 900 profiled race frames average
-about 21 FPS. Full-speed gameplay and completed races remain open.
+about 21 FPS. Full-speed gameplay and broader coverage remain open.
 R166 also restores native
 EQUAL depth semantics and disabled-bias behavior with GPU regressions. An earlier original
 game run passed point setup and reaches original counter requests before a

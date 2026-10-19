@@ -1,5 +1,18 @@
 # Native performance work
 
+The R201 profiling-disabled validation completes all three laps of Mario Kart
+Stadium and renders first place/15-point results. It reaches 18,000 target frames
+and closes intentionally after 770.9 seconds without a fatal/crash message or
+source/executable/saved-input/foreground change. Frames 2,101–13,380 provide
+11,280 racing intervals: mean 40.010 ms (about 25 FPS), median 26.5 ms. Sparse
+readbacks remain enabled. This is an observed flight, not a controlled old/new
+FPS ratio or a sustained full-speed claim.
+
+The native game also flushes a post-finish save; a fresh process reloads the
+exact game-generated copy and reaches mode selection. Audible output, physical
+controls, broader gameplay and full-speed tuning remain open. No release or
+download is available.
+
 R201 adds a regression-backed lifetime correction alongside the performance work.
 A temporary texture first resolved after the replay mark could disappear after
 finalization and fast-cache eviction, despite its old object remaining deferred.
@@ -8,13 +21,13 @@ are not retained, and the selection is discarded at replay end. Native GPU tests
 cover finalization, replacement at the same address, cache eviction, real red-pixel
 readback and current/next-replay visibility. All 40 suites, 1,950 GPU checks and
 300-check sync/cutoff regressions pass. The 1,950-check fixture passes with the fast
-resolver cache disabled as well. Full-race validation remains in progress.
+resolver cache disabled as well. The actual full-race flight now passes, as recorded above.
 
 R194 reduces the measured retained-texture admission hotspot. Its course probe
 reports median identity time of 8.363 ms/frame, compared with 315.509 ms/frame in
 the earlier R189 probe. The 900 measured race frames average 47.630 ms (about
 21 FPS), median 35.1 ms. Different flights are not a controlled FPS speedup ratio.
-Full-speed gameplay and complete races remain unverified; no download is offered.
+Full-speed gameplay and broader coverage remain open; no download is offered.
 
 R187 completes a profiling-disabled async flight to its 6,000-frame target without
 a fatal error, stopping intentionally after 1,273.4 seconds. Native frames show

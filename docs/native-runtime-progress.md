@@ -4,6 +4,28 @@ Updated 2026-10-19. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
+**R201 completes the first native race.** Reviewed frames show lap 2/3, lap 3/3,
+the FINISH banner at frame 14,040 and Mario first with 15 points in the results
+at frames 14,700 and 15,240. This is the original three-lap Mario Kart Stadium
+50cc race under scripted native input, with static CPU modules and native Vulkan.
+The flight reaches its 18,000-frame target (last presented 18,015) and is stopped
+intentionally after 770.9 seconds, without a fatal/crash message. Source,
+executable, original saved input and foreground remain unchanged.
+
+The profiling-disabled racing window 2,101–13,380 contains 11,280 intervals:
+40.010 ms mean (about 25 FPS), 26.5 ms median, with sparse readbacks enabled.
+This is one observed flight on a shared desktop, not a controlled speedup ratio
+or full-speed guarantee.
+
+Native save commits are logged, including after the finish near frame 14,153.
+The game-produced 80,736-byte save differs from its input. After the producer
+closes, a fresh native process loads an exact immutable copy and reaches the
+Grand Prix/Time Trials/VS Race/Battle menu at frame 780 without a fatal/crash or
+visible corruption dialog. This verifies commit and restart-to-menu; individual
+persisted race-stat fields and continued gameplay after restart were not decoded
+or established by that probe. Audible audio, physical controls, sustained full
+speed and broader gameplay/cup coverage remain open. No release/tag/download.
+
 The current source recipe is R201, reconstructing 192 generic adapted files.
 All 40 component suites and the 1,950-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
@@ -21,7 +43,7 @@ the existing deferred-retirement epoch. It never pins misses, and subsequent
 replays see the current incarnation. Both finalization and same-address recreation
 retain the original native sampled view and red GPU pixels in the old replay.
 The full 1,950-check GPU fixture also passes with the fast resolver cache disabled.
-Actual full-race validation is in progress; this is not a completed-race claim.
+The actual full-race flight now completes successfully, as recorded above.
 
 Windows failure reporting now safely handles threads without a guest CPU context,
 flushes critical crash messages in buffered mode, and catches exceptions at native
@@ -50,8 +72,8 @@ and draw order, with medians of 19.05 ms indexed versus 46.8 ms legacy over fram
 121–180. This is one title-scene pair. Expanded native tests cover pending snapshot
 ownership, last-reference retirement, equal-address/different-shape candidates,
 duplicates, stale hints and owner reuse. Both search modes pass the 1,930-check
-benchmark fixture; the normal native fixture passes 1,928 checks. Full-race and
-full-speed verification remain open; no release/tag/download is available.
+benchmark fixture; the normal native fixture passes 1,928 checks. Full-speed and broader-gameplay verification remain open; no release/tag/download
+is available.
 
 R187 adds native Vulkan null descriptors for explicit unbound samples and the
 observed unavailable cube view over a live one-layer 2D image. The reference
@@ -70,7 +92,7 @@ frames show anti-gravity driving, the glider jump and first place beside Lakitu'
 2/3 sign. Its final HUD still reads 1/3. The longer R188 follow-up removes that
 ambiguity: reviewed frame 6,420 shows the lap HUD clearly at 2/3, with Mario
 past the start/finish line and continuing below the overpass in second place.
-One complete native lap is verified; a complete race remains unverified.
+That earlier flight established one native lap; the later R201 flight above completes all three.
 
 A transient glider frame has severe brightness clipping around the kart/lights;
 normal kart/glider colour returns in the next sampled frame. This is an observed

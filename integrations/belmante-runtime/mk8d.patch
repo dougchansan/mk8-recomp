@@ -1,6 +1,6 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -36,6 +36,104 @@
+@@ -36,6 +36,107 @@
  option(NX_TESTS "Build the standalone unit tests" OFF)
  if(NX_TESTS AND NOT ANDROID)
      enable_testing()
@@ -37,6 +37,9 @@
 +    add_executable(native_texture_layers_test tests/native_texture_layers_test.cpp)
 +    target_include_directories(native_texture_layers_test PRIVATE runtime/src)
 +    add_test(NAME native_texture_layers COMMAND native_texture_layers_test)
++    add_executable(native_point_size_patch_test tests/native_point_size_patch_test.cpp)
++    target_include_directories(native_point_size_patch_test PRIVATE runtime/src)
++    add_test(NAME native_point_size_patch COMMAND native_point_size_patch_test)
 +    add_executable(native_sampled_profile_test tests/native_sampled_profile_test.cpp)
 +    target_include_directories(native_sampled_profile_test PRIVATE runtime/src)
 +    add_test(NAME native_sampled_profile COMMAND native_sampled_profile_test)
@@ -105,7 +108,7 @@
      add_executable(gpu_pick_test tests/gpu_pick_test.cpp runtime/src/nvn/nvn_gpu_pick.cpp)
      target_compile_definitions(gpu_pick_test PRIVATE NX_GPU_PICK_STANDALONE)
      target_include_directories(gpu_pick_test PRIVATE runtime/src/nvn)
-@@ -67,7 +165,14 @@
+@@ -67,7 +168,14 @@
      return()
  endif()
  
@@ -121,7 +124,7 @@
      file(GLOB src CONFIGURE_DEPENDS "${NX_GEN_DIR}/${mod}/*.cpp")
      add_library(game_${mod} STATIC ${src})
      target_include_directories(game_${mod} PRIVATE runtime/include "${NX_GEN_DIR}/${mod}")
-@@ -84,8 +189,10 @@
+@@ -84,8 +192,10 @@
          target_compile_options(game_${mod} PRIVATE -O2 -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
      endif()
  endforeach()
@@ -132,7 +135,7 @@
      runtime/src/main.cpp
      runtime/src/sampler.cpp
      runtime/src/loader.cpp
-@@ -93,6 +200,12 @@
+@@ -93,6 +203,12 @@
      runtime/src/kernel.cpp
      runtime/src/kernel_watch.cpp
      runtime/src/ipc.cpp
@@ -145,7 +148,7 @@
      runtime/src/svc_am.cpp
      runtime/src/svc_set.cpp
      runtime/src/svc_misc.cpp
-@@ -101,6 +214,7 @@
+@@ -101,6 +217,7 @@
      runtime/src/hle_fs.cpp
      runtime/src/svc_account.cpp
      runtime/src/hle_ro.cpp
@@ -153,7 +156,7 @@
      runtime/src/hle_vi.cpp
      runtime/src/hle_hid.cpp
      runtime/src/hle_net.cpp
-@@ -114,6 +228,7 @@
+@@ -114,6 +231,7 @@
      runtime/src/nvn/nvn_caps.cpp
      runtime/src/nvn/nvn_renderpass.cpp
      runtime/src/nvn/nvn_gpu_busy.cpp
@@ -161,7 +164,7 @@
      runtime/src/nvn/nvn_janitor.cpp
      runtime/src/nvn/nvn_trace.cpp
      runtime/src/nvn/nvn_device.cpp
-@@ -185,7 +300,7 @@
+@@ -185,7 +303,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -170,7 +173,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +311,7 @@
+@@ -196,7 +314,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -179,7 +182,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,19 +323,59 @@
+@@ -208,19 +326,59 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -5980,6 +5983,88 @@
 +#include <cstdint>
 +namespace nx::nvn {bool native_guest_span(uint64_t,uint64_t,uint32_t);}
 --- /dev/null
++++ b/runtime/src/nvn/native_point_size_patch.h
+@@ -0,0 +1,79 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cmath>
++#include <cstdint>
++#include <cstring>
++#include <vector>
++
++namespace nx::nvn {
++inline bool native_point_size_supported(float size, bool large, float minimum, float maximum) {
++    return std::isfinite(size) && size > 0 && size >= minimum && size <= maximum && (large || size == 1.0f);
++}
++
++// Adapt an offline vertex module to NVN's fixed point size only when the
++// original program has no programmable PointSize output. No title ISA is decoded.
++inline bool patch_fixed_point_size(const std::vector<uint32_t>& input, float size,
++                                  std::vector<uint32_t>& output, bool* injected = nullptr) {
++    output.clear();
++    if (injected) *injected = false;
++    if (!std::isfinite(size) || size <= 0 || input.size() < 5 || input[0] != 0x07230203 ||
++        !input[3] || input[3] > UINT32_MAX - 4) return false;
++    size_t annotations = 0, declarations = 0, entry_offset = 0;
++    uint32_t entry = 0, function = 0, float_type = 0, entries = 0, returns = 0;
++    bool point_output = false;
++    for (size_t at = 5; at < input.size();) {
++        const uint32_t length = input[at] >> 16, op = input[at] & 0xffff;
++        if (!length || length > input.size() - at) return false;
++        if (op == 15) { // OpEntryPoint
++            if (length < 4 || input[at + 1] != 0 || ++entries != 1) return false;
++            entry = input[at + 2]; entry_offset = at;
++        }
++        if (!annotations && op >= 19 && op <= 39) annotations = at;
++        if (op == 22 && length == 3 && input[at + 2] == 32) float_type = input[at + 1];
++        if ((op == 71 && length >= 4 && input[at + 2] == 11 && input[at + 3] == 1) ||
++            (op == 72 && length >= 5 && input[at + 3] == 11 && input[at + 4] == 1)) point_output = true;
++        if (op == 54) { // OpFunction
++            if (length != 5 || function) return false;
++            if (!declarations) declarations = at;
++            function = input[at + 2];
++        }
++        if (op == 253 && function == entry) { if (length != 1) return false; ++returns; }
++        if (op == 254 && function == entry) return false;
++        if (op == 56) { if (length != 1 || !function) return false; function = 0; }
++        at += length;
++    }
++    if (entries != 1 || !entry || entry >= input[3] || !annotations || !declarations || !returns || function)
++        return false;
++    if (point_output) { output = input; return true; }
++    uint32_t next = input[3];
++    std::vector<uint32_t> globals;
++    if (!float_type) {
++        float_type = next++;
++        globals.insert(globals.end(), {(3u << 16) | 22u, float_type, 32});
++    }
++    const uint32_t pointer = next++, constant = next++, variable = next++;
++    uint32_t bits; std::memcpy(&bits, &size, sizeof bits);
++    globals.insert(globals.end(), {(4u << 16) | 32u, pointer, 3, float_type,
++        (4u << 16) | 43u, float_type, constant, bits,
++        (4u << 16) | 59u, pointer, variable, 3});
++    output.assign(input.begin(), input.begin() + 5); output[3] = next;
++    function = 0;
++    for (size_t at = 5; at < input.size();) {
++        const uint32_t length = input[at] >> 16, op = input[at] & 0xffff;
++        if (at == annotations) output.insert(output.end(), {(4u << 16) | 71u, variable, 11, 1});
++        if (at == declarations) output.insert(output.end(), globals.begin(), globals.end());
++        if (op == 54) function = input[at + 2];
++        if (op == 253 && function == entry) output.insert(output.end(), {(3u << 16) | 62u, variable, constant});
++        if (at == entry_offset) {
++            if (length == 0xffff) { output.clear(); return false; }
++            output.push_back(((length + 1) << 16) | op);
++            output.insert(output.end(), input.begin() + at + 1, input.begin() + at + length);
++            output.push_back(variable);
++        } else output.insert(output.end(), input.begin() + at, input.begin() + at + length);
++        if (op == 56) function = 0;
++        at += length;
++    }
++    if (injected) *injected = true;
++    return true;
++}
++}
+--- /dev/null
 +++ b/runtime/src/nvn/native_raster_policy.h
 @@ -0,0 +1,4 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -7092,7 +7177,15 @@
      if (!g_rendering) {
          if (gpu_profile_on()) {
              GpuImage* img = t.color_count && t.colors[0] ? image_of(t.colors[0]) : nullptr;
-@@ -502,13 +551,21 @@
+@@ -381,6 +430,7 @@
+     std::memset(&key, 0, sizeof key);  // the key is compared byte for byte
+     key.vs = vs, key.fs = fs;
+     key.topology = mode;
++    key.point_size = mode == 0 ? g_state.point_size : 0;
+     key.attrib_count = uint32_t(std::min<size_t>(g_state.attribs.size(), 16));
+     std::copy_n(g_state.attribs.begin(), key.attrib_count, key.attribs);
+     key.stream_count = uint32_t(std::min<size_t>(g_state.streams.size(), 16));
+@@ -502,13 +552,21 @@
              p_vkCmdBindIndexBuffer(cb, in.index.buffer, in.index.offset, in.index_type);
              g_bound.has_index = true, g_bound.index = in.index, g_bound.index_type = in.index_type, g_state_set++;
          }
@@ -7698,11 +7791,12 @@
 +NX_HLE("nvnTextureCompare",nx::nvn::TextureCompare);
 --- a/runtime/src/nvn/nvn_pipeline.cpp
 +++ b/runtime/src/nvn/nvn_pipeline.cpp
-@@ -15,9 +15,12 @@
+@@ -15,9 +15,13 @@
  #include <tuple>
  #include <unordered_map>
  
 +#include "native_volume_profile.h"
++#include "native_point_size_patch.h"
 +#include "native_guest_span.h"
  #include "nvn_pipeline.h"
  #include "nvn_ultrawide.h"
@@ -7711,7 +7805,7 @@
  
  namespace nx::nvn {
  
-@@ -27,6 +30,11 @@
+@@ -27,6 +31,11 @@
  // blends in linear) and samples them the same way. Ignoring it lost one conversion per draw: far too much contrast
  // and saturation (docs/nvn/DEBUG.md #29).
  VkFormat view_format(const GpuImage& img, uint32_t nvn) {
@@ -7723,7 +7817,39 @@
      if (VkFormat f; bc_view_format(img, nvn, f)) return f;  // decoded BC (nvn_bc.cpp)
      if (!nvn || nvn == img.nvn_format || img.alpha_from_r || img.aspect != VK_IMAGE_ASPECT_COLOR_BIT) return img.format;
      VkFormat f = vk_format(nvn);
-@@ -169,7 +177,7 @@
+@@ -79,14 +88,15 @@
+ 
+ // `kinds`: per vertex input location, 0 float or the integer kind of its attribute format (vertex_int_kind).
+ // `unwritten`: fragment input locations the vertex stage does not write (default_unwritten_inputs).
+-VkShaderModule module_of(const ShaderInfo* s, const uint8_t* kinds = nullptr, uint32_t unwritten = 0) {
+-    static std::map<std::tuple<const ShaderInfo*, std::string, uint32_t>, VkShaderModule> cache;
++VkShaderModule module_of(const ShaderInfo* s, const uint8_t* kinds = nullptr, uint32_t unwritten = 0, float point_size = 0) {
++    static std::map<std::tuple<const ShaderInfo*, std::string, uint32_t, uint32_t>, VkShaderModule> cache;
+     // The integer-vertex-input patch (skinned models' bone indices; without it Metal refuses every character's
+     // pipeline, DEBUG.md #25/#26). NX_INT_ATTRIBS=0 turns it off.
+     static const char* int_env = std::getenv("NX_INT_ATTRIBS");
+     static const bool off = int_env && int_env[0] == '0';
+     std::string k = kinds && !off ? std::string(reinterpret_cast<const char*>(kinds), 16) : std::string(16, '\0');
+-    auto& m = cache[{s, k, unwritten}];
++    uint32_t point_bits = 0; std::memcpy(&point_bits, &point_size, sizeof point_bits);
++    auto& m = cache[{s, k, unwritten, point_bits}];
+     if (!m) {
+         bool is_patched = false;
+         const uint8_t* int_kinds = k != std::string(16, '\0') ? reinterpret_cast<const uint8_t*>(k.data()) : nullptr;
+@@ -97,6 +107,12 @@
+             else log("nvn/vk: shader %s: ultrawide x scale not patched", s->hash.c_str());
+         }
+         if (s->stage == ShaderStage::Vertex) clip_z_module(s, code);  // NX_CLIP_Z_PATCH (nvn_spirv_clip.cpp)
++        if (s->stage == ShaderStage::Vertex && point_size > 0) {
++            std::vector<uint32_t> fixed;
++            if (!patch_fixed_point_size(code, point_size, fixed))
++                fatal("native point-size vertex adaptation rejected shader %s", s->hash.c_str());
++            code.swap(fixed);
++        }
+         if (const char* opt = std::getenv("NX_SPIRV_OPT"); opt || std::getenv("NX_SPIRV_TOOL")) {  // diagnostic: each module through `spirv-opt <flags>` (NX_SPIRV_OPT) or `<tool> in out` (NX_SPIRV_TOOL) first
+             static int n = 0;
+             std::string in = "/tmp/nx_spv_" + std::to_string(process_id()) + "_" + std::to_string(n++) + ".spv", out = in + ".out";
+@@ -169,7 +185,7 @@
      bool img1d = img.view_type == VK_IMAGE_VIEW_TYPE_1D || img.view_type == VK_IMAGE_VIEW_TYPE_1D_ARRAY;
      switch (type) {
          case VK_IMAGE_VIEW_TYPE_CUBE:
@@ -7732,7 +7858,7 @@
          case VK_IMAGE_VIEW_TYPE_3D: return img3d;
          case VK_IMAGE_VIEW_TYPE_1D:
          case VK_IMAGE_VIEW_TYPE_1D_ARRAY: return img1d;
-@@ -213,11 +221,18 @@
+@@ -213,11 +229,18 @@
          if (type == VK_IMAGE_VIEW_TYPE_CUBE) layers = 6;
          if (type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) layers -= layers % 6;
          if (!view_compatible(img, type, layers)) return VK_NULL_HANDLE;
@@ -7752,11 +7878,17 @@
      }
      if (v) hit = {key, v};  // never a null one: those are tried again
      return v;
-@@ -289,6 +304,14 @@
+@@ -289,6 +312,20 @@
  // ---- graphics pipelines ---------------------------------------------------------------------------------------------
  
  VkPipeline graphics_pipeline(const PipelineKey& key, const ProgramLayout& layout) {
-+    if(key.topology==0)fatal("native point primitive rendering requires a point-size shader profile");
++    if (key.topology == 0) {
++        VkPhysicalDeviceProperties properties{};
++        p_vkGetPhysicalDeviceProperties(vk_physical(), &properties);
++        if (!native_point_size_supported(key.point_size, vk_features().largePoints,
++                properties.limits.pointSizeRange[0], properties.limits.pointSizeRange[1]))
++            fatal("unsupported native point size %g", double(key.point_size));
++    }
 +    if (key.fs) for (const auto& output : key.fs->refl.outputs) {
 +        if (output.location >= key.color_count || key.color_formats[output.location] == VK_FORMAT_UNDEFINED) continue;
 +        const bool integer = key.color_formats[output.location] == VK_FORMAT_R32G32B32A32_UINT;
@@ -7767,7 +7899,16 @@
      // By the key's bytes, as before, but hashed (nvn_pipeline.h) instead of a ~700-byte std::string built and
      // compared down a tree per draw; and the last entry first: consecutive draws mostly share their state.
      using Key = ByteKey<sizeof(PipelineKey)>;
-@@ -554,6 +577,8 @@
+@@ -326,7 +363,7 @@
+         auto& st = stages[nstages++];
+         st.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+         st.stage = VkShaderStageFlagBits(stage_bit(s->stage));
+-        st.module = module_of(s, s == key.vs ? int_kinds : nullptr, s == key.fs ? unwritten : 0);
++        st.module = module_of(s, s == key.vs ? int_kinds : nullptr, s == key.fs ? unwritten : 0, s == key.vs && key.topology == 0 ? key.point_size : 0);
+         st.pName = "main";
+         if (s == key.vs && key.uw_x > 0) {  // NX_ULTRAWIDE: constant 0 of the patched vertex module
+             static VkSpecializationMapEntry entry{0, 0, sizeof(float)};
+@@ -554,6 +591,8 @@
  
  VkImageView attachment_view(GpuImage& img, uint32_t level, uint32_t layer, VkFormat format) {
      if (format == VK_FORMAT_UNDEFINED) format = img.format;
@@ -7776,7 +7917,7 @@
      level = std::min(level, img.levels - 1);
      // A 3D image's slice is a layer of its 2D-array-compatible views, counted at this level.
      layer = std::min(layer, img.view_type == VK_IMAGE_VIEW_TYPE_3D ? std::max(1u, img.depth >> level) - 1 : img.layers - 1);
-@@ -568,15 +593,36 @@
+@@ -568,15 +607,36 @@
          ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
          ci.format = format;
          ci.subresourceRange = {img.aspect, level, 1, layer, 1};
@@ -7814,7 +7955,7 @@
      bool dirty = t->dirty.exchange(false);
      uint64_t dirty_lo = t->dirty_lo.exchange(UINT64_MAX), dirty_hi = t->dirty_hi.exchange(0);
      if (dirty_hi <= dirty_lo) dirty_lo = 0, dirty_hi = UINT64_MAX;  // marked without a range: all of it
-@@ -595,8 +641,14 @@
+@@ -595,8 +655,14 @@
          }
      }
      // A texture already on the GPU that the CPU wrote part of: only those bytes go again (the glyph cache).
@@ -7829,7 +7970,7 @@
      if (img->layout == VK_IMAGE_LAYOUT_UNDEFINED) {  // never written: black, not garbage
          transition(cb, *img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
          VkImageSubresourceRange r{img->aspect, 0, img->levels, 0, img->layers};
-@@ -609,11 +661,12 @@
+@@ -609,11 +675,12 @@
  }
  
  VkImageView sampled_view(VkCommandBuffer cb, uint64_t texture, const ImageShape& shape, const ViewInfo* view,
@@ -7843,7 +7984,7 @@
          if (++no_image % 100000 == 1) log("nvn/vk: dummy sampled: %llu with no image, %llu with an incompatible view",
                                            (unsigned long long)no_image, (unsigned long long)incompatible);
          return dummy_view(cb, shape);
-@@ -643,6 +696,7 @@
+@@ -643,6 +710,7 @@
      }
      VkImageView v = view_of(*img, view_type(shape), vi);
      if (!v) {
@@ -7853,7 +7994,15 @@
              log("nvn/vk: texture %llx (%ux%u x%u, view type %d) sampled as view type %d: dummy", (unsigned long long)texture,
 --- a/runtime/src/nvn/nvn_pipeline.h
 +++ b/runtime/src/nvn/nvn_pipeline.h
-@@ -114,13 +114,14 @@
+@@ -61,6 +61,7 @@
+     const ShaderInfo* vs = nullptr;
+     const ShaderInfo* fs = nullptr;
+     uint32_t topology = 4;
++    float point_size = 1;
+     VertexAttrib attribs[16] = {};
+     VertexStream streams[16] = {};
+     uint32_t attrib_count = 0, stream_count = 0;
+@@ -114,13 +115,14 @@
  // `view`: the texture pool entry's view (levels, layers, swizzle), if any. `layout` gets the layout to sample in:
  // images the GPU renders stay GENERAL (a bloom chain samples one level while rendering another).
  VkImageView sampled_view(VkCommandBuffer cb, uint64_t texture, const ImageShape& shape, const ViewInfo* view,
@@ -11320,7 +11469,7 @@
 +}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,250 @@
+@@ -0,0 +1,252 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -11359,6 +11508,7 @@
 +#include "native_single_layer_array_sample_probe.h"
 +#include "native_counter_probe.h"
 +#include "native_conditional_probe.h"
++#include "native_point_probe.h"
 +#include "native_counter_sync_probe.h"
 +#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
@@ -11568,6 +11718,7 @@
 + native_image_snapshot_subresource_probe(check);
 + native_counter_probe(device,check);
 + native_conditional_probe(device,check);
++ native_point_probe(device,check);
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
@@ -11622,6 +11773,217 @@
 +#include <set>
 +#include <cstring>
 +int main(){using namespace nx::mii;unsigned checks=0;auto check=[&](bool v){++checks;if(!v)throw std::runtime_error("native Mii assertion");};std::set<std::array<u8,50>> faces;for(u32 age=0;age<4;++age)for(u32 gender=0;gender<3;++gender)for(u32 race=0;race<4;++race)for(u64 seed=0;seed<128;++seed){std::array<u8,16> id{};id[0]=1;auto m=build_random(age,gender,race,seed,id);check(m.Verify()==ValidationResult::NoErrors);check(gender==2||u32(m.gender)==gender);check(m.height==64&&m.build==64&&m.eyebrow_y>=3&&m.padding==0);check((m.create_id[6]&0xf0)==0x40&&(m.create_id[8]&0xc0)==0x80);std::array<u8,50> face{};std::memcpy(face.data(),reinterpret_cast<const u8*>(&m)+38,50);faces.insert(face);}check(faces.size()>100);for(auto args:std::array<std::array<u32,3>,3>{{{4,0,0},{0,3,0},{0,0,4}}}){bool rejected=false;try{build_random(args[0],args[1],args[2],0,{});}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"native Mii random checks="<<checks<<" faces="<<faces.size()<<" PASS\n";}
+--- /dev/null
++++ b/tests/native_point_probe.h
+@@ -0,0 +1,70 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/nvn_draw_state.h"
++#include "native_point_test_shaders.h"
++#include <cstring>
++#include <iterator>
++
++template<class Check> void native_point_probe(uint64_t device, Check check) {
++    using namespace nx;
++    using namespace nx::nvn;
++    static ShaderInfo vertex, fragment, programmable, programmable_block;
++    auto stage = [&](ShaderInfo& shader, const auto& words, const char* hash) {
++        shader.hash = hash; shader.spirv.assign(std::begin(words), std::end(words));
++        check(reflect_spirv(shader.spirv.data(), shader.spirv.size(), shader.refl));
++        shader.stage = shader.refl.stage;
++    };
++    stage(vertex, native_point_vertex, "authored-point-fixed");
++    stage(fragment, native_point_fragment, "authored-point-fragment");
++    stage(programmable, native_point_programmable, "authored-point-programmable");
++    stage(programmable_block, native_point_programmable_block, "authored-point-programmable-block");
++    const auto key = kernel_alloc(256, 4096), command_key = kernel_alloc(256,4096);
++    const auto control = kernel_alloc(4096,4096), pool_key = kernel_alloc(256,4096), memory = kernel_alloc(4096,4096);
++    for(auto address:{key,command_key,pool_key})vm_set(address,256,kMemHeap,3);
++    vm_set(memory,4096,kMemHeap,3);vm_set(control,4096,kMemHeap,3);
++    auto& pool=make<MemoryPool>(pool_key);pool.memory=memory;pool.size=4096;pool.gpu=gpu_alloc(4096);pool_register(&pool);
++    CPU api{};auto call=[&](const char* name){auto function=hle_lookup(name);check(function!=nullptr);function(api);};
++    api.x[0]=command_key;api.x[1]=device;call("nvnCommandBufferInitialize");check(api.x[0]==1);
++    api.x[0]=command_key;api.x[1]=pool_key;api.x[2]=0;api.x[3]=4096;call("nvnCommandBufferAddCommandMemory");
++    api.x[0]=command_key;api.x[1]=control;api.x[2]=4096;call("nvnCommandBufferAddControlMemory");
++    auto& texture=make<Texture>(key);texture.target=1;texture.width=texture.height=8;texture.depth=texture.levels=1;texture.format=0x25;
++    Targets targets{};targets.color_count=1;targets.colors[0]=key;
++    for (unsigned variant = 0; variant < 4; ++variant) {
++        const float size = variant == 1 ? 3.0f : 1.0f;
++        api.x[0]=command_key;call("nvnCommandBufferBeginRecording");
++        api.x[0]=command_key;api.v[0].f32[0]=size;call("nvnCommandBufferSetPointSize");
++        api.x[0]=command_key;call("nvnCommandBufferEndRecording");
++        auto list=command_list(api.x[0]);check(list&&list->cmds.size()==1&&list->cmds[0].op==Cmd::SetPointSize&&list->cmds[0].f[0]==size);
++        std::lock_guard lock(gpu_lock());auto command=frame_begin(false);clears_begin_submit();
++        replay_list(command,targets,*list,0);check(replay::g_state.point_size==size);
++        auto* image=image_of(key);check(image&&image->format==VK_FORMAT_R8G8B8A8_UNORM);
++        transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
++        VkClearColorValue black{};black.float32[3]=1;VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
++        vk::p_vkCmdClearColorImage(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&black,1,&range);image->rendered=true;
++        PipelineKey pipeline_key{};pipeline_key.vs=variant==3?&programmable_block:variant==2?&programmable:&vertex;pipeline_key.fs=&fragment;
++        pipeline_key.topology=0;pipeline_key.point_size=replay::g_state.point_size;pipeline_key.polygon.mode=2;
++        pipeline_key.color_count=1;pipeline_key.color_formats[0]=image->format;pipeline_key.mask.mask[0]=15;
++        const std::vector<const ShaderInfo*> shaders{pipeline_key.vs,&fragment};const auto& layout=program_layout(shaders);
++        const auto pipeline=graphics_pipeline(pipeline_key,layout);check(pipeline!=VK_NULL_HANDLE);
++        pass_begin(command,targets);vk::p_vkCmdBindPipeline(command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);
++        VkViewport viewport{0,0,8,8,0,1};VkRect2D scissor{{0,0},{8,8}};
++        vk::p_vkCmdSetViewport(command,0,1,&viewport);vk::p_vkCmdSetScissor(command,0,1,&scissor);
++        const float blend[4]={};vk::p_vkCmdSetBlendConstants(command,blend);vk::p_vkCmdSetDepthBias(command,0,0,0);
++        vk::p_vkCmdSetStencilReference(command,VK_STENCIL_FACE_FRONT_AND_BACK,0);
++        vk::p_vkCmdSetStencilCompareMask(command,VK_STENCIL_FACE_FRONT_AND_BACK,255);
++        vk::p_vkCmdSetStencilWriteMask(command,VK_STENCIL_FACE_FRONT_AND_BACK,255);
++        vk::p_vkCmdDraw(command,1,1,0,0);pass_mark_written(1);draw_end_rendering(command);
++        const auto result=upload_alloc(256,16);std::memset(result.ptr,0xcd,256);
++        transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);VkBufferImageCopy copy{};
++        copy.bufferOffset=result.offset;copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent={8,8,1};
++        vk::p_vkCmdCopyImageToBuffer(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,result.buffer,1,&copy);
++        VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
++        barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=result.buffer;barrier.offset=result.offset;barrier.size=256;
++        vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);
++        frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++        unsigned red=0;
++        for(unsigned pixel=0;pixel<64;++pixel){uint32_t value;std::memcpy(&value,result.ptr+pixel*4,4);check(value==0xff000000u||value==0xff0000ffu);red+=value==0xff0000ffu;}
++        check(red==(variant==0?1u:9u)); // Includes preservation of original programmable size3 when fixed state says1.
++    }
++    replay::g_state={};api.x[0]=command_key;call("nvnCommandBufferFinalize");api.x[0]=pool_key;call("nvnMemoryPoolFinalize");destroy(key);
++}
+--- /dev/null
++++ b/tests/native_point_size_patch_test.cpp
+@@ -0,0 +1,71 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/native_point_size_patch.h"
++#include "native_point_test_shaders.h"
++#include <iostream>
++#include <iterator>
++#include <limits>
++#include <stdexcept>
++
++int main() {
++    using namespace nx::nvn;
++    unsigned checks=0;
++    auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("point-size patch assertion");};
++    std::vector<uint32_t> original(std::begin(native_point_vertex),std::end(native_point_vertex)),output;
++    bool injected=false;
++    check(patch_fixed_point_size(original,3,output,&injected)&&injected);
++    check(original==std::vector<uint32_t>(std::begin(native_point_vertex),std::end(native_point_vertex)));
++    uint32_t variable=0,constant=0,entry=0,function=0;
++    unsigned stores=0;
++    for(size_t at=5;at<output.size();at+=output[at]>>16){
++        const auto op=output[at]&65535;
++        if(op==15){entry=output[at+2];check(output[at+(output[at]>>16)-1]<output[3]);}
++        if(op==71&&output[at+2]==11&&output[at+3]==1)variable=output[at+1];
++        if(op==43&&(output[at]>>16)==4&&output[at+3]==0x40400000)constant=output[at+2];
++        if(op==54)function=output[at+2];
++        if(op==62&&output[at+1]==variable&&function==entry){++stores;check(output[at+2]==constant);}
++        if(op==56)function=0;
++    }
++    check(variable!=0&&stores==1);
++    for(const auto& existing:{std::vector<uint32_t>(std::begin(native_point_programmable),std::end(native_point_programmable)),
++                             std::vector<uint32_t>(std::begin(native_point_programmable_block),std::end(native_point_programmable_block))}){
++        check(patch_fixed_point_size(existing,1,output,&injected)&&!injected&&output==existing);
++    }
++    // A structured early return plus an unrelated helper return. Only the two
++    // vertex-entry returns acquire a fixed-size store.
++    auto multiple=original;
++    size_t function_at=0,return_at=0;uint32_t void_type=0,function_type=0;
++    for(size_t at=5;at<multiple.size();at+=multiple[at]>>16){
++        const auto op=multiple[at]&65535;
++        if(op==54){function_at=at;void_type=multiple[at+1];function_type=multiple[at+4];}
++        if(op==253)return_at=at;
++    }
++    const auto boolean=multiple[3]++,truth=multiple[3]++,then_label=multiple[3]++,merge_label=multiple[3]++;
++    const std::vector<uint32_t> branch={(3u<<16)|247u,merge_label,0,(4u<<16)|250u,truth,then_label,merge_label,
++        (2u<<16)|248u,then_label,(1u<<16)|253u,(2u<<16)|248u,merge_label,(1u<<16)|253u};
++    multiple.erase(multiple.begin()+return_at);multiple.insert(multiple.begin()+return_at,branch.begin(),branch.end());
++    const std::vector<uint32_t> types={(2u<<16)|20u,boolean,(3u<<16)|41u,boolean,truth};
++    multiple.insert(multiple.begin()+function_at,types.begin(),types.end());
++    const auto helper=multiple[3]++,helper_label=multiple[3]++;
++    multiple.insert(multiple.end(),{(5u<<16)|54u,void_type,helper,0,function_type,(2u<<16)|248u,helper_label,(1u<<16)|253u,(1u<<16)|56u});
++    check(patch_fixed_point_size(multiple,1,output,&injected)&&injected);
++    variable=entry=function=0;unsigned main_stores=0,helper_stores=0;
++    for(size_t at=5;at<output.size();at+=output[at]>>16){
++        const auto op=output[at]&65535;
++        if(op==15)entry=output[at+2];
++        if(op==71&&output[at+2]==11&&output[at+3]==1)variable=output[at+1];
++        if(op==54)function=output[at+2];
++        if(op==62&&output[at+1]==variable){main_stores+=function==entry;helper_stores+=function==helper;}
++        if(op==56)function=0;
++    }
++    check(main_stores==2&&helper_stores==0);
++    for(float value:{0.0f,-1.0f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()})
++        check(!patch_fixed_point_size(original,value,output)&&output.empty());
++    auto bad=original;bad[5]=0;check(!patch_fixed_point_size(bad,1,output));
++    bad=original;bad.pop_back();check(!patch_fixed_point_size(bad,1,output));
++    bad=original;bad[3]=0;check(!patch_fixed_point_size(bad,1,output));
++    check(!patch_fixed_point_size(std::vector<uint32_t>(std::begin(native_point_fragment),std::end(native_point_fragment)),1,output));
++    check(native_point_size_supported(1,false,1,64));check(native_point_size_supported(3,true,1,64));
++    check(!native_point_size_supported(3,false,1,64));check(!native_point_size_supported(65,true,1,64));
++    check(!native_point_size_supported(0,true,1,64));
++    std::cout<<"point-size patch checks="<<checks<<" PASS\n";
++}
+--- /dev/null
++++ b/tests/native_point_test_shaders.h
+@@ -0,0 +1,61 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Authored point-raster test stages; no title code or data.
++#pragma once
++#include <cstdint>
++inline constexpr uint32_t native_point_vertex[] = {
++    0x07230203u,0x00010000u,0x00000000u,0x0000000fu,0x00000000u,0x00020011u,0x00000001u,0x0003000eu,
++    0x00000000u,0x00000001u,0x0006000fu,0x00000000u,0x00000002u,0x6e69616du,0x00000000u,0x00000001u,
++    0x00040047u,0x00000001u,0x0000000bu,0x00000000u,0x00020013u,0x00000003u,0x00030021u,0x00000004u,
++    0x00000003u,0x00030016u,0x00000005u,0x00000020u,0x00040017u,0x00000006u,0x00000005u,0x00000004u,
++    0x00040020u,0x00000007u,0x00000003u,0x00000006u,0x0004002bu,0x00000005u,0x00000008u,0x00000000u,
++    0x0004002bu,0x00000005u,0x00000009u,0x3f800000u,0x0004002bu,0x00000005u,0x0000000au,0x3e000000u,
++    0x0004002bu,0x00000005u,0x0000000bu,0x3f000000u,0x0004002bu,0x00000005u,0x0000000cu,0x40400000u,
++    0x0007002cu,0x00000006u,0x0000000du,0x0000000au,0x0000000au,0x0000000bu,0x00000009u,0x0004003bu,
++    0x00000007u,0x00000001u,0x00000003u,0x00050036u,0x00000003u,0x00000002u,0x00000000u,0x00000004u,
++    0x000200f8u,0x0000000eu,0x0003003eu,0x00000001u,0x0000000du,0x000100fdu,0x00010038u,
++};
++inline constexpr uint32_t native_point_fragment[] = {
++    0x07230203u,0x00010000u,0x00000000u,0x0000000fu,0x00000000u,0x00020011u,0x00000001u,0x0003000eu,
++    0x00000000u,0x00000001u,0x0006000fu,0x00000004u,0x00000002u,0x6e69616du,0x00000000u,0x00000001u,
++    0x00030010u,0x00000002u,0x00000007u,0x00040047u,0x00000001u,0x0000001eu,0x00000000u,0x00020013u,
++    0x00000003u,0x00030021u,0x00000004u,0x00000003u,0x00030016u,0x00000005u,0x00000020u,0x00040017u,
++    0x00000006u,0x00000005u,0x00000004u,0x00040020u,0x00000007u,0x00000003u,0x00000006u,0x0004002bu,
++    0x00000005u,0x00000008u,0x00000000u,0x0004002bu,0x00000005u,0x00000009u,0x3f800000u,0x0004002bu,
++    0x00000005u,0x0000000au,0x3e000000u,0x0004002bu,0x00000005u,0x0000000bu,0x3f000000u,0x0004002bu,
++    0x00000005u,0x0000000cu,0x40400000u,0x0007002cu,0x00000006u,0x0000000du,0x00000009u,0x00000008u,
++    0x00000008u,0x00000009u,0x0004003bu,0x00000007u,0x00000001u,0x00000003u,0x00050036u,0x00000003u,
++    0x00000002u,0x00000000u,0x00000004u,0x000200f8u,0x0000000eu,0x0003003eu,0x00000001u,0x0000000du,
++    0x000100fdu,0x00010038u,
++};
++inline constexpr uint32_t native_point_programmable[] = {
++    0x07230203u,0x00010000u,0x00000000u,0x00000011u,0x00000000u,0x00020011u,0x00000001u,0x0003000eu,
++    0x00000000u,0x00000001u,0x0007000fu,0x00000000u,0x00000003u,0x6e69616du,0x00000000u,0x00000001u,
++    0x00000002u,0x00040047u,0x00000001u,0x0000000bu,0x00000000u,0x00040047u,0x00000002u,0x0000000bu,
++    0x00000001u,0x00020013u,0x00000004u,0x00030021u,0x00000005u,0x00000004u,0x00030016u,0x00000006u,
++    0x00000020u,0x00040017u,0x00000007u,0x00000006u,0x00000004u,0x00040020u,0x00000008u,0x00000003u,
++    0x00000007u,0x0004002bu,0x00000006u,0x00000009u,0x00000000u,0x0004002bu,0x00000006u,0x0000000au,
++    0x3f800000u,0x0004002bu,0x00000006u,0x0000000bu,0x3e000000u,0x0004002bu,0x00000006u,0x0000000cu,
++    0x3f000000u,0x0004002bu,0x00000006u,0x0000000du,0x40400000u,0x0007002cu,0x00000007u,0x0000000eu,
++    0x0000000bu,0x0000000bu,0x0000000cu,0x0000000au,0x0004003bu,0x00000008u,0x00000001u,0x00000003u,
++    0x00040020u,0x0000000fu,0x00000003u,0x00000006u,0x0004003bu,0x0000000fu,0x00000002u,0x00000003u,
++    0x00050036u,0x00000004u,0x00000003u,0x00000000u,0x00000005u,0x000200f8u,0x00000010u,0x0003003eu,
++    0x00000001u,0x0000000eu,0x0003003eu,0x00000002u,0x0000000du,0x000100fdu,0x00010038u,
++};
++inline constexpr uint32_t native_point_programmable_block[] = {
++    0x07230203u,0x00010000u,0x00000000u,0x00000017u,0x00000000u,0x00020011u,0x00000001u,0x0003000eu,
++    0x00000000u,0x00000001u,0x0006000fu,0x00000000u,0x00000002u,0x6e69616du,0x00000000u,0x00000001u,
++    0x00030047u,0x00000003u,0x00000002u,0x00050048u,0x00000003u,0x00000000u,0x0000000bu,0x00000000u,
++    0x00050048u,0x00000003u,0x00000001u,0x0000000bu,0x00000001u,0x00020013u,0x00000004u,0x00030021u,
++    0x00000005u,0x00000004u,0x00030016u,0x00000006u,0x00000020u,0x00040017u,0x00000007u,0x00000006u,
++    0x00000004u,0x0004001eu,0x00000003u,0x00000007u,0x00000006u,0x00040020u,0x00000008u,0x00000003u,
++    0x00000003u,0x00040020u,0x00000009u,0x00000003u,0x00000007u,0x00040015u,0x0000000au,0x00000020u,
++    0x00000000u,0x0004002bu,0x0000000au,0x0000000bu,0x00000000u,0x0004002bu,0x0000000au,0x0000000cu,
++    0x00000001u,0x0004002bu,0x00000006u,0x0000000du,0x00000000u,0x0004002bu,0x00000006u,0x0000000eu,
++    0x3f800000u,0x0004002bu,0x00000006u,0x0000000fu,0x3e000000u,0x0004002bu,0x00000006u,0x00000010u,
++    0x3f000000u,0x0004002bu,0x00000006u,0x00000011u,0x40400000u,0x0007002cu,0x00000007u,0x00000012u,
++    0x0000000fu,0x0000000fu,0x00000010u,0x0000000eu,0x0004003bu,0x00000008u,0x00000001u,0x00000003u,
++    0x00040020u,0x00000013u,0x00000003u,0x00000006u,0x00050036u,0x00000004u,0x00000002u,0x00000000u,
++    0x00000005u,0x000200f8u,0x00000014u,0x00050041u,0x00000009u,0x00000015u,0x00000001u,0x0000000bu,
++    0x0003003eu,0x00000015u,0x00000012u,0x00050041u,0x00000013u,0x00000016u,0x00000001u,0x0000000cu,
++    0x0003003eu,0x00000016u,0x00000011u,0x000100fdu,0x00010038u,
++};
 --- /dev/null
 +++ b/tests/native_readonly_storage_test.cpp
 @@ -0,0 +1,4 @@

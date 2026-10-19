@@ -4,13 +4,29 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R161, reconstructing 170 generic adapted files.
-All 38 component suites and the 1,262-check native GPU fixture pass, plus a
+The current source recipe is R162, reconstructing 174 generic adapted files.
+All 39 component suites and the 1,560-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
+
+R162 supplies the original NVN point size to native point pipelines. When the
+offline vertex stage has no programmable PointSize output, a checked SPIR-V
+interface adaptation stores the actual fixed size before each entry-point return.
+Existing shader-written sizes are preserved, including block-member outputs.
+Pipeline and module caches distinguish fixed sizes; physical size ranges and the
+largePoints feature are checked. No Maxwell translation is added at runtime.
+
+An authored GPU regression uses the production pipeline builder: size1 produces
+exactly one red pixel, size3 produces nine, and programmable size3 still produces
+nine when fixed state says1. The original SetPointSize recording/replay path is
+included. CPU regressions cover structured early returns, helper functions,
+existing outputs and malformed inputs. All 39 component suites, 1,560 native GPU
+checks and 300 synchronous checks pass. Static CPU archives are unchanged. An
+initial Windows paging-capacity compiler failure is preserved; the unchanged
+source succeeds with one compiler on retry. Original-game validation is running.
 
 R161 replaces the inherited forced-on conditional-render handler with GPU
 predicates. The original SDK maps API modes 0/1 to equal/not-equal rendering.
@@ -23,8 +39,8 @@ bounds, readable permissions and contiguous virtual mappings are checked.
 
 Native regressions verify positive and suppressed pixels/sample counts, high-word
 differences, stale CPU shadows, a real counter-to-predicate-to-counter chain,
-color/alpha-only/depth clears and explicit overrides. All 38 component suites,
-1,262 native GPU checks and 300 synchronous checks pass. The synchronous fixture
+color/alpha-only/depth clears and explicit overrides. R161 passes 38 component suites,
+1,262 native GPU checks and 300 synchronous checks. The synchronous fixture
 uses its own transfer setup/readback resources and the real gpu_submit clear path.
 
 R159 passes the previous array-texture rejection and closes naturally after
@@ -32,7 +48,8 @@ R159 passes the previous array-texture rejection and closes naturally after
 shader profile. Source, executable and saved profile stay unchanged; foreground
 changes during this run. Corrected captures show populated, distinct HDR cubemap
 faces and populated eye/skin textures. Model diffuse lighting and a native race
-image remain unverified. R161 retains the point guard pending its implementation.
+image remain unverified. R162 now implements checked native point-size outputs;
+its original-game validation is next.
 
 R156 closes naturally after 1,668.812 seconds with source, executable, saved
 profile and foreground unchanged. It reaches the race-loading screen, then
@@ -282,8 +299,8 @@ device pointer at +8, the GPU address at +0x80 and depth/stencil aspect bits at
 +0x54; a dedicated authored regression checks those offsets.
 
 Line width is recorded and replayed against the native pipeline's supported
-unit width. Positive finite point-size state is recorded and replayed; point
-primitive rendering still requires its own shader profile and stops explicitly.
+unit width. Positive finite point-size state is recorded, replayed and supplied
+to checked native point-size vertex outputs; unsupported device sizes stop explicitly.
 Other line widths and malformed state stop explicitly. Vulkan image
 [memory requirements](https://docs.vulkan.org/refpages/latest/refpages/source/VkMemoryRequirements.html)
 account for resource allocation; these adaptations do not prove depth rendering.

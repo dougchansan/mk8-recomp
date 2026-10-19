@@ -6,16 +6,19 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-Windows integration now passes 38 CPU/component suites and a 752-check native
+Windows integration now passes 38 CPU/component suites and a 930-check native
 GPU fixture on an RX 9070 XT, plus 19 checks through the synchronous submission
-entry point. R156 reconstructs 164 generic adapted files. Native sample counts
+entry point. R159 reconstructs 165 generic adapted files. Native sample counts
 and GPU-clock reports replace host placeholders; regressions verify accumulation,
 resets, query retirement and both submission paths. Its
 RGB565 correction and bounded BC3 integer block views pass authored GPU encoding,
 face/mip readback and compressed-sampling regressions. Integer fragment outputs
 are compiled offline and checked against actual render-target types. The original
 game run confirms corrected cup colors and colored lighting cubemaps. Diffuse
-lighting remains too dark and race rendering is unverified. Optional uniform
+lighting remains too dark and race rendering is unverified. A real one-layer
+2D-array sampling regression covers the latest race-loading rejection. Raw and
+converted snapshot regressions verify all six faces at two mip levels; earlier
+HDR face reports read only face zero and carry explicit errata. Optional uniform
 captures copy actual GPU-bound ranges and retire them after their fence, with an
 authored GPU-write/offset regression. Actual MK8D startup reaches its owned window,
 Vulkan device/queue, three presentation textures, command-buffer setup, native

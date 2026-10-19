@@ -4,13 +4,29 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R156, reconstructing 164 generic adapted files.
-All 38 component suites and the 752-check native GPU fixture pass, plus a
+The current source recipe is R159, reconstructing 165 generic adapted files.
+All 38 component suites and the 930-check native GPU fixture pass, plus a
 separate 19-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
+
+R156 closes naturally after 1,668.812 seconds with source, executable, saved
+profile and foreground unchanged. It reaches the race-loading screen, then
+rejects a shader requesting a 2D-array sampler with a bound single-layer 2D BC3
+texture. R159 admits that valid one-layer array view while retaining format,
+sample-count and layer bounds. A native GPU regression creates the real view,
+samples the GPU-written image and checks both returned colors.
+
+R159 also corrects diagnostic subresource selection: the raw HDR capture path
+previously read face zero/mip zero for every requested face. The converted path
+selected the mip but used base dimensions. Authored regressions verify exact
+pixels, dimensions and file lengths for all six faces at two mip levels through
+both paths. Earlier HDR reports are preserved with explicit errata; they do not
+prove six-face HDR contents. The old code fails the new profile and capture
+regressions. R159 passes all 38 component suites, 930 native GPU checks and the
+separate 19-check synchronous probe. Its game validation is in progress.
 
 R151 passes the race UI shader and reaches a new missing API,
 `nvnCommandBufferResetCounter`, with an actual samples-passed counter request.
@@ -45,8 +61,9 @@ The two texture-compression pixel stages are rebuilt offline with explicit
 unsigned outputs; incompatible fragment-output/target types stop execution.
 All 88 runtime objects were rebuilt, and static analysis of the five changed
 implementation files reports no diagnostics. The original-game capture now shows
-colored compressed cubemaps and visible kart specular highlights. All 36 captured
-HDR faces contain nonzero RGB without NaNs or infinities, and all 36 compressed
+colored compressed cubemaps and visible kart specular highlights. The 36 HDR
+capture files contain nonzero RGB without NaNs or infinities, but all read face
+zero because of the diagnostic bug corrected in R159. The 36 converted compressed
 face readbacks contain color. Mario's face and diffuse lighting remain too dark.
 The cup screen directly verifies the RGB565 correction: the mushroom is red,
 the rims are gold and stars are yellow. Race rendering remains unverified.
@@ -71,8 +88,8 @@ The R150 run passes that stage and reaches the race item-box UI before another
 missing pixel stage. All four missing UI stages translate and pass module
 creation, bringing the private cache to 7,243. R150 closes naturally after
 1,743.813 seconds with source, executable, saved-input profile and foreground
-unchanged. R151 is testing this cache with earlier menu input and the bounded
-uniform capture. No native race image or playable result is claimed.
+unchanged. R151 then reaches the original samples-passed reset request.
+R159 is testing the later sampler fix and corrected lighting captures. No native race image or playable result is claimed.
 
 The native buffer-to-texture operation now validates active recording, real source
 pools, copied SDK texture descriptors and bounded copy regions. Actual Vulkan

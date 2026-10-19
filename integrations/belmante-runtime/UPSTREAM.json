@@ -4,7 +4,7 @@
   "license": "MIT",
   "license_sha256": "7f728cfaa94ff27c2a40c906dac12564a216077ceb017fb2d01cc29ba6697720",
   "local_changes_license": "GPL-3.0-or-later",
-  "patch_sha256": "21ca913832c19e5d66ee95a8512bbb688b0421844ecb5621d75cc04b44dd7509",
+  "patch_sha256": "abcacc6f932caa290d84dcc8efeca8bac863f9c00fd681bc2bdd91939a486738",
   "changed_files": [
     "CMakeLists.txt",
     "games/mk8d/game.cpp",
@@ -148,6 +148,7 @@
     "tests/native_rgb565_probe.h",
     "tests/native_sampled_profile_test.cpp",
     "tests/native_sdk_mii_probe.cpp",
+    "tests/native_single_layer_array_sample_probe.h",
     "tests/native_small_r11_probe.h",
     "tests/native_texture_clear_test.cpp",
     "tests/native_texture_layers_test.cpp",

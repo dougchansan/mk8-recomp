@@ -5915,7 +5915,7 @@
 +inline bool native_sampled_array_shadow_compatible(uint32_t target,uint32_t layers,uint32_t samples,uint32_t format,uint32_t depth_mode,uint32_t compare_mode,uint32_t compare_func) {
 +    return native_sampled_shadow_compatible(true,target,layers,samples,format,depth_mode,compare_mode,compare_func);
 +}
-+inline bool native_sampled_array_float_compatible(uint32_t target,uint32_t layers,uint32_t samples,uint32_t format){return target==4&&layers>0&&samples<=1&&native_float_color_format(format);}
++inline bool native_sampled_array_float_compatible(uint32_t target,uint32_t layers,uint32_t samples,uint32_t format){return ((target==4&&layers>0)||(target==1&&layers==1))&&samples<=1&&native_float_color_format(format);}
 +inline bool native_sampled_cube_array_float_compatible(uint32_t target,uint32_t width,uint32_t height,uint32_t layers,uint32_t samples,uint32_t format){return (target==9||(target==8&&layers==6))&&width>0&&width==height&&layers>=6&&layers%6==0&&samples<=1&&native_float_color_format(format);}
 +inline bool native_sampled_cube_float_compatible(uint32_t target,uint32_t width,uint32_t height,uint32_t samples,uint32_t format) {
 +    return target==8&&width>0&&width==height&&samples<=1&&native_float_color_format(format);
@@ -6429,7 +6429,58 @@
  #include "platform.h"
  
  namespace nx::nvn {
-@@ -493,12 +494,50 @@
+@@ -437,9 +438,14 @@
+ uint32_t g_snap_layer = 0, g_snap_level = 0;  // which layer and level the next debug_snapshot reads (nvn_draw.cpp)
+ 
+ void debug_snapshot(VkCommandBuffer cb, GpuImage& img, uint64_t draw) {
+-    if (!img.image || !(img.aspect & VK_IMAGE_ASPECT_COLOR_BIT)) return;
++    if (!img.image || !(img.aspect & VK_IMAGE_ASPECT_COLOR_BIT) || !img.width || !img.height ||
++        !img.levels || !img.layers) return;
++    const uint32_t level = std::min(g_snap_level, img.levels - 1);
++    const uint32_t layer = std::min(g_snap_layer, img.layers - 1);
++    const uint32_t width = std::max(1u, img.width >> std::min(level, 31u));
++    const uint32_t height = std::max(1u, img.height >> std::min(level, 31u));
+     Snap snap;
+-    snap.w = img.width, snap.h = img.height, snap.draw = draw;
++    snap.w = width, snap.h = height, snap.draw = draw;
+     // NX_SNAP_CROP=x,y,w,h (fractions of the image): only that part (8 MB per whole 1080p snapshot otherwise).
+     static float crop[4] = {0, 0, 1, 1};
+     static const bool cropped = [] {
+@@ -448,9 +454,12 @@
+     }();
+     int32_t x0 = 0, y0 = 0;
+     if (cropped) {
+-        x0 = int32_t(crop[0] * img.width), y0 = int32_t(crop[1] * img.height);
+-        snap.w = std::max(1u, std::min(uint32_t(crop[2] * img.width), img.width - uint32_t(x0)));
+-        snap.h = std::max(1u, std::min(uint32_t(crop[3] * img.height), img.height - uint32_t(y0)));
++        for (float value : crop) if (!std::isfinite(value)) return;
++        if (crop[0] < 0 || crop[0] >= 1 || crop[1] < 0 || crop[1] >= 1 ||
++            crop[2] <= 0 || crop[3] <= 0) return;
++        x0 = int32_t(crop[0] * width), y0 = int32_t(crop[1] * height);
++        snap.w = std::max(1u, std::min(uint32_t(std::min(crop[2], 1.0f) * width), width - uint32_t(x0)));
++        snap.h = std::max(1u, std::min(uint32_t(std::min(crop[3], 1.0f) * height), height - uint32_t(y0)));
+     }
+     static const bool raw_early = std::getenv("NX_SNAP_RAW") != nullptr;
+     const bool wide = raw_early && img.format == VK_FORMAT_R16G16B16A16_SFLOAT;  // 8-byte texels: a buffer twice as wide
+@@ -466,7 +475,7 @@
+     if (raw && (img.format == VK_FORMAT_R32_SFLOAT || img.format == VK_FORMAT_R16G16_SFLOAT ||
+                 img.format == VK_FORMAT_R32_UINT || img.format == VK_FORMAT_R8G8B8A8_UNORM || wide)) {
+         VkBufferImageCopy r{};
+-        r.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
++        r.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, layer, 1};
+         r.imageOffset = {x0, y0, 0};
+         r.imageExtent = {snap.w, snap.h, 1};
+         p_vkCmdCopyImageToBuffer(cb, img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, snap.s.buffer, 1, &r);
+@@ -480,7 +489,7 @@
+     dst.format = VK_FORMAT_R8G8B8A8_UNORM;
+     transition(cb, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+     VkImageBlit blit{};
+-    blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, std::min(g_snap_level, img.levels - 1), std::min(g_snap_layer, img.layers - 1), 1};
++    blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, layer, 1};
+     blit.srcOffsets[0] = {x0, y0, 0};
+     blit.srcOffsets[1] = {x0 + int32_t(snap.w), y0 + int32_t(snap.h), 1};
+     blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+@@ -493,12 +502,50 @@
      r.imageExtent = {snap.w, snap.h, 1};
      p_vkCmdCopyImageToBuffer(cb, snap.s.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, snap.s.buffer, 1, &r);
      if (back != VK_IMAGE_LAYOUT_UNDEFINED) transition(cb, img, back);
@@ -6480,7 +6531,7 @@
      for (Snap& snap : g_snaps) {
          void* p = nullptr;
          if (snap.raw_format == VK_FORMAT_R16G16B16A16_SFLOAT &&
-@@ -514,6 +553,18 @@
+@@ -514,6 +561,18 @@
              }
              log("snapshot %llx: %ux%u rgba16f, %llu NaN, %llu Inf of %llu values, largest finite %g", (unsigned long long)snap.draw, snap.w,
                  snap.h, (unsigned long long)nan, (unsigned long long)inf, (unsigned long long)n, big);
@@ -10436,13 +10487,14 @@
 +}
 --- /dev/null
 +++ b/tests/native_bc3_snapshot_probe.h
-@@ -0,0 +1,29 @@
+@@ -0,0 +1,45 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include "nvn/nvn_draw_state.h"
 +#include "platform.h"
 +#include <array>
 +#include <cstdio>
++#include <vector>
 +
 +template<class Check> void native_bc3_snapshot_probe(uint64_t texture, Check check) {
 +    using namespace nx;
@@ -10451,20 +10503,35 @@
 +    auto* image = image_of(texture);
 +    check(image && image->format == VK_FORMAT_BC3_UNORM_BLOCK);
 +    const auto command = frame_begin(false);
++    for (uint32_t level = 0; level < 2; ++level)
++        for (uint32_t face = 0; face < 6; ++face) {
++            g_snap_level = level;
++            g_snap_layer = face;
++            debug_snapshot(command, *image, 0xcfff0030 + level * 16 + face);
++        }
 +    g_snap_level = g_snap_layer = 0;
-+    debug_snapshot(command, *image, 0xcfff0030);
 +    frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, true);
 +    debug_snapshots_write();
-+    FILE* file = plat::fopen_utf8(plat::data_root() + "/frames/00000_cfff0030.raw", "rb");
-+    check(file != nullptr);
-+    std::array<uint32_t, 67> words{};
-+    check(std::fread(words.data(), sizeof(uint32_t), words.size(), file) == words.size());
-+    check(std::fgetc(file) == EOF);
-+    check(std::fclose(file) == 0);
-+    check(words[0] == 8 && words[1] == 8 && words[2] == VK_FORMAT_R8G8B8A8_UNORM);
-+    bool exact = true;
-+    for (unsigned index = 3; index < words.size(); ++index) exact &= words[index] == 0xff0000ff;
-+    check(exact); // Native BC3 decode and blit preserve both red and alpha 255.
++    constexpr uint32_t colours[] = {0xff0000ff, 0xff00ff00, 0xffff0000,
++                                    0xffffffff, 0xff00ffff, 0xffffff00};
++    for (uint32_t level = 0; level < 2; ++level)
++        for (uint32_t face = 0; face < 6; ++face) {
++            char suffix[64];
++            std::snprintf(suffix, sizeof suffix, "/frames/00000_%08x.raw", 0xcfff0030 + level * 16 + face);
++            FILE* file = plat::fopen_utf8(plat::data_root() + suffix, "rb");
++            check(file != nullptr);
++            std::array<uint32_t, 3> header{};
++            check(std::fread(header.data(), 4, 3, file) == 3);
++            const uint32_t extent = 8 >> level;
++            check(header[0] == extent && header[1] == extent && header[2] == VK_FORMAT_R8G8B8A8_UNORM);
++            std::vector<uint32_t> payload(extent * extent);
++            check(std::fread(payload.data(), 4, payload.size(), file) == payload.size());
++            check(std::fgetc(file) == EOF);
++            check(std::fclose(file) == 0);
++            bool exact = true;
++            for (auto pixel : payload) exact &= pixel == colours[(face + level) % 6];
++            check(exact); // Native BC3 conversion preserves the selected face, mip and alpha.
++        }
 +}
 --- /dev/null
 +++ b/tests/native_buffer_texture_probe.h
@@ -10688,7 +10755,7 @@
 +}
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,245 @@
+@@ -0,0 +1,248 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -10724,6 +10791,7 @@
 +#include "native_rgb565_probe.h"
 +#include "native_bc3_block_probe.h"
 +#include "native_uniform_snapshot_probe.h"
++#include "native_single_layer_array_sample_probe.h"
 +#include "native_counter_probe.h"
 +#include "native_counter_sync_probe.h"
 +#include "native_wait_cancellation_probe.h"
@@ -10929,7 +10997,9 @@
 + native_bc3_block_probe(check);
 + native_small_r11_probe(check);
 + native_buffer_texture_probe(device,check);
++ native_single_layer_array_sample_probe(check);
 + native_uniform_snapshot_probe(check);
++ native_image_snapshot_subresource_probe(check);
 + native_counter_probe(device,check);
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
@@ -11064,7 +11134,7 @@
 +#include "nvn/native_sampled_profile.h"
 +#include <iostream>
 +#include <stdexcept>
-+int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("sampled profile assertion");};for(unsigned format:{0x25u,0x4bu,0x79u,0x95u,0xau})check(native_sampled_2d_float_compatible(1,1,1,format));for(unsigned format:{0u,3u,4u,0x27u,0x31u,0x32u,0x33u,0x3eu,0x51u,0xffffffffu})check(!native_sampled_2d_float_compatible(1,1,1,format));for(unsigned target:{0u,2u,3u,4u,5u,6u,7u,8u,9u,0xffffffffu})check(!native_sampled_2d_float_compatible(target,1,1,0x25));check(!native_sampled_2d_float_compatible(1,2,1,0x25));check(!native_sampled_2d_float_compatible(1,1,4,0x25));check(native_sampled_2d_float_compatible(1,1,0,0x25));check(native_sampled_cube_float_compatible(8,16,16,1,0x25));check(native_sampled_cube_float_compatible(8,16,16,0,0x4b));check(!native_sampled_cube_float_compatible(1,16,16,1,0x25));check(!native_sampled_cube_float_compatible(8,16,8,1,0x25));check(!native_sampled_cube_float_compatible(8,0,0,1,0x25));check(!native_sampled_cube_float_compatible(8,16,16,4,0x25));check(!native_sampled_cube_float_compatible(8,16,16,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_array_shadow_compatible(4,4,1,format,0,1,4));check(!native_sampled_array_shadow_compatible(1,4,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,0,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,4,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x25,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,1,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,0,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,0));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,9));check(native_sampled_shadow_compatible(false,1,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,4,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,4,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x25,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x34,0,0,4));check(native_sampled_array_float_compatible(4,3,1,0x25));check(!native_sampled_array_float_compatible(4,0,1,0x25));check(!native_sampled_array_float_compatible(1,3,1,0x25));check(native_sampled_cube_array_float_compatible(9,16,16,12,1,0x25));check(native_sampled_cube_array_float_compatible(8,16,16,6,1,0x25));check(!native_sampled_cube_array_float_compatible(8,16,16,12,1,0x25));check(!native_sampled_cube_array_float_compatible(8,16,16,6,4,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,7,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,8,12,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,4,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_depth_float_compatible(false,1,1,1,format,0,0));check(native_sampled_depth_float_compatible(true,4,6,1,0x34,0,0));check(!native_sampled_depth_float_compatible(false,1,1,1,0x34,0,1));check(!native_sampled_depth_float_compatible(false,1,1,1,0x34,1,0));check(!native_sampled_depth_float_compatible(false,1,1,4,0x34,0,0));check(!native_sampled_depth_float_compatible(false,8,6,1,0x34,0,0));check(!native_sampled_depth_float_compatible(false,1,1,1,0x25,0,0));check(!native_sampled_depth_float_compatible(true,4,0,1,0x34,0,0));std::cout<<"sampled profile checks="<<checks<<" PASS\n";}
++int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("sampled profile assertion");};for(unsigned format:{0x25u,0x4bu,0x79u,0x95u,0xau})check(native_sampled_2d_float_compatible(1,1,1,format));for(unsigned format:{0u,3u,4u,0x27u,0x31u,0x32u,0x33u,0x3eu,0x51u,0xffffffffu})check(!native_sampled_2d_float_compatible(1,1,1,format));for(unsigned target:{0u,2u,3u,4u,5u,6u,7u,8u,9u,0xffffffffu})check(!native_sampled_2d_float_compatible(target,1,1,0x25));check(!native_sampled_2d_float_compatible(1,2,1,0x25));check(!native_sampled_2d_float_compatible(1,1,4,0x25));check(native_sampled_2d_float_compatible(1,1,0,0x25));check(native_sampled_cube_float_compatible(8,16,16,1,0x25));check(native_sampled_cube_float_compatible(8,16,16,0,0x4b));check(!native_sampled_cube_float_compatible(1,16,16,1,0x25));check(!native_sampled_cube_float_compatible(8,16,8,1,0x25));check(!native_sampled_cube_float_compatible(8,0,0,1,0x25));check(!native_sampled_cube_float_compatible(8,16,16,4,0x25));check(!native_sampled_cube_float_compatible(8,16,16,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_array_shadow_compatible(4,4,1,format,0,1,4));check(!native_sampled_array_shadow_compatible(1,4,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,0,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,4,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x25,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,1,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,0,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,0));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,9));check(native_sampled_shadow_compatible(false,1,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,4,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,4,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x25,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x34,0,0,4));check(native_sampled_array_float_compatible(4,3,1,0x25));check(!native_sampled_array_float_compatible(4,0,1,0x25));check(!native_sampled_array_float_compatible(1,3,1,0x25));check(native_sampled_cube_array_float_compatible(9,16,16,12,1,0x25));check(native_sampled_cube_array_float_compatible(8,16,16,6,1,0x25));check(!native_sampled_cube_array_float_compatible(8,16,16,12,1,0x25));check(!native_sampled_cube_array_float_compatible(8,16,16,6,4,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,7,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,8,12,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,4,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_depth_float_compatible(false,1,1,1,format,0,0));check(native_sampled_depth_float_compatible(true,4,6,1,0x34,0,0));check(!native_sampled_depth_float_compatible(false,1,1,1,0x34,0,1));check(!native_sampled_depth_float_compatible(false,1,1,1,0x34,1,0));check(!native_sampled_depth_float_compatible(false,1,1,4,0x34,0,0));check(!native_sampled_depth_float_compatible(false,8,6,1,0x34,0,0));check(!native_sampled_depth_float_compatible(false,1,1,1,0x25,0,0));check(!native_sampled_depth_float_compatible(true,4,0,1,0x34,0,0));check(native_sampled_array_float_compatible(1,1,1,0x44));check(!native_sampled_array_float_compatible(1,0,1,0x44));check(!native_sampled_array_float_compatible(1,2,1,0x44));check(!native_sampled_array_float_compatible(1,1,4,0x44));check(!native_sampled_array_float_compatible(1,1,1,0x27));std::cout<<"sampled profile checks="<<checks<<" PASS\n";}
 --- /dev/null
 +++ b/tests/native_sdk_mii_probe.cpp
 @@ -0,0 +1,25 @@
@@ -11093,6 +11163,58 @@
 + for(const auto& [code,count]:rejected)std::cout<<"SDK validation code="<<code<<" rejected="<<count<<"\n";
 + return accepted==total&&param_accepted==total&&defaults_accepted==6&&invalid_rejected?0:1;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/native_single_layer_array_sample_probe.h
+@@ -0,0 +1,49 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/nvn_draw_state.h"
++#include <cmath>
++#include <cstring>
++template<class Check> void native_single_layer_array_sample_probe(Check check){
++ using namespace nx;using namespace nx::nvn;
++ // Authored SPIR-V: two sampler2DArray lookups through a one-layer view of a 2D image.
++ const uint32_t code[]={
++ 0x07230203u,0x00010000u,0x00000000u,0x00000020u,0x00000000u,0x00020011u,0x00000001u,0x0003000eu,
++ 0x00000000u,0x00000001u,0x0005000fu,0x00000005u,0x00000019u,0x6e69616du,0x00000000u,0x00060010u,
++ 0x00000019u,0x00000011u,0x00000001u,0x00000001u,0x00000001u,0x00040047u,0x00000009u,0x00000022u,
++ 0x00000000u,0x00040047u,0x00000009u,0x00000021u,0x00000000u,0x00040047u,0x00000011u,0x00000022u,
++ 0x00000000u,0x00040047u,0x00000011u,0x00000021u,0x00000001u,0x00040047u,0x0000000du,0x00000006u,
++ 0x00000010u,0x00030047u,0x0000000fu,0x00000003u,0x00050048u,0x0000000fu,0x00000000u,0x00000023u,
++ 0x00000000u,0x00020013u,0x00000001u,0x00030021u,0x00000002u,0x00000001u,0x00030016u,0x00000003u,
++ 0x00000020u,0x00040017u,0x00000004u,0x00000003u,0x00000004u,0x00040017u,0x00000005u,0x00000003u,
++ 0x00000003u,0x00090019u,0x00000006u,0x00000003u,0x00000001u,0x00000000u,0x00000001u,0x00000000u,
++ 0x00000001u,0x00000000u,0x0003001bu,0x00000007u,0x00000006u,0x00040020u,0x00000008u,0x00000000u,
++ 0x00000007u,0x0004003bu,0x00000008u,0x00000009u,0x00000000u,0x00040015u,0x0000000au,0x00000020u,
++ 0x00000000u,0x0004002bu,0x0000000au,0x0000000bu,0x00000000u,0x0004002bu,0x0000000au,0x0000000cu,
++ 0x00000001u,0x0004002bu,0x0000000au,0x0000000eu,0x00000002u,0x0004001cu,0x0000000du,0x00000004u,
++ 0x0000000eu,0x0003001eu,0x0000000fu,0x0000000du,0x00040020u,0x00000010u,0x00000002u,0x0000000fu,
++ 0x0004003bu,0x00000010u,0x00000011u,0x00000002u,0x00040020u,0x00000012u,0x00000002u,0x00000004u,
++ 0x0004002bu,0x00000003u,0x00000013u,0x3e000000u,0x0004002bu,0x00000003u,0x00000015u,0x3f600000u,
++ 0x0004002bu,0x00000003u,0x00000016u,0x00000000u,0x0006002cu,0x00000005u,0x00000017u,0x00000013u,
++ 0x00000013u,0x00000013u,0x0006002cu,0x00000005u,0x00000018u,0x00000013u,0x00000013u,0x00000015u,
++ 0x00050036u,0x00000001u,0x00000019u,0x00000000u,0x00000002u,0x000200f8u,0x0000001au,0x0004003du,
++ 0x00000007u,0x0000001bu,0x00000009u,0x00070058u,0x00000004u,0x0000001cu,0x0000001bu,0x00000017u,
++ 0x00000002u,0x00000016u,0x00070058u,0x00000004u,0x0000001du,0x0000001bu,0x00000018u,0x00000002u,
++ 0x00000016u,0x00060041u,0x00000012u,0x0000001eu,0x00000011u,0x0000000bu,0x0000000bu,0x0003003eu,
++ 0x0000001eu,0x0000001cu,0x00060041u,0x00000012u,0x0000001fu,0x00000011u,0x0000000bu,0x0000000cu,
++ 0x0003003eu,0x0000001fu,0x0000001du,0x000100fdu,0x00010038u,
++ };
++ const auto texture=kernel_alloc(256,4096);auto& object=make<Texture>(texture);object.target=1;object.width=object.height=4;object.depth=object.levels=1;object.format=0x25;
++ const auto device=vk_device();std::lock_guard lock(gpu_lock());auto command=frame_begin(false);auto* image=image_of(texture);check(image&&image->view_type==VK_IMAGE_VIEW_TYPE_2D&&image->layers==1);
++ transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);VkClearColorValue colour{};colour.float32[0]=colour.float32[2]=colour.float32[3]=1;VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};vk::p_vkCmdClearColorImage(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&colour,1,&range);image->rendered=true;transition(command,*image,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
++ ImageShape shape{};shape.dim=1;shape.arrayed=true;shape.component=ScalarType::Float;VkImageLayout sample_layout{};const auto array_view=sampled_view(command,texture,shape,nullptr,&sample_layout,true);check(array_view!=VK_NULL_HANDLE&&array_view!=image->view);
++ VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};sampler_info.magFilter=sampler_info.minFilter=VK_FILTER_NEAREST;sampler_info.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST;sampler_info.addressModeU=sampler_info.addressModeV=sampler_info.addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;sampler_info.maxAnisotropy=1;
++ VkSampler sampler=VK_NULL_HANDLE;check(vk::p_vkCreateSampler(device,&sampler_info,nullptr,&sampler)==VK_SUCCESS);
++ VkDescriptorSetLayoutBinding bindings[2]={{0,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr},{1,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr}};VkDescriptorSetLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};layout_info.bindingCount=2;layout_info.pBindings=bindings;VkDescriptorSetLayout layout=VK_NULL_HANDLE;check(vk::p_vkCreateDescriptorSetLayout(device,&layout_info,nullptr,&layout)==VK_SUCCESS);
++ VkPipelineLayoutCreateInfo pipeline_layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};pipeline_layout_info.setLayoutCount=1;pipeline_layout_info.pSetLayouts=&layout;VkPipelineLayout pipeline_layout=VK_NULL_HANDLE;check(vk::p_vkCreatePipelineLayout(device,&pipeline_layout_info,nullptr,&pipeline_layout)==VK_SUCCESS);
++ VkShaderModuleCreateInfo module_info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};module_info.codeSize=sizeof code;module_info.pCode=code;VkShaderModule module=VK_NULL_HANDLE;check(vk::p_vkCreateShaderModule(device,&module_info,nullptr,&module)==VK_SUCCESS);
++ VkComputePipelineCreateInfo pipeline_info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};pipeline_info.stage={VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};pipeline_info.stage.stage=VK_SHADER_STAGE_COMPUTE_BIT;pipeline_info.stage.module=module;pipeline_info.stage.pName="main";pipeline_info.layout=pipeline_layout;VkPipeline pipeline=VK_NULL_HANDLE;check(vk::p_vkCreateComputePipelines(device,VK_NULL_HANDLE,1,&pipeline_info,nullptr,&pipeline)==VK_SUCCESS);
++ auto output=upload_alloc(32,256);std::memset(output.ptr,0xcc,32);const auto set=descriptor_set(layout);VkDescriptorImageInfo sampled{sampler,array_view,sample_layout};VkDescriptorBufferInfo buffer{output.buffer,output.offset,32};VkWriteDescriptorSet writes[2]{};for(auto& write:writes){write.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;write.dstSet=set;write.descriptorCount=1;}writes[0].dstBinding=0;writes[0].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;writes[0].pImageInfo=&sampled;writes[1].dstBinding=1;writes[1].descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;writes[1].pBufferInfo=&buffer;vk::p_vkUpdateDescriptorSets(device,2,writes,0,nullptr);vk::p_vkCmdBindPipeline(command,VK_PIPELINE_BIND_POINT_COMPUTE,pipeline);vk::p_vkCmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_COMPUTE,pipeline_layout,0,1,&set,0,nullptr);vk::p_vkCmdDispatch(command,1,1,1);
++ VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=output.buffer;barrier.offset=output.offset;barrier.size=32;vk::p_vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++ float actual[8];std::memcpy(actual,output.ptr,sizeof actual);const float expected[8]={1,0,1,1,1,0,1,1};for(unsigned n=0;n<8;++n)check(std::isfinite(actual[n])&&std::fabs(actual[n]-expected[n])<1e-6f);
++ vk::p_vkDestroyPipeline(device,pipeline,nullptr);vk::p_vkDestroyShaderModule(device,module,nullptr);vk::p_vkDestroyPipelineLayout(device,pipeline_layout,nullptr);vk::p_vkDestroyDescriptorSetLayout(device,layout,nullptr);vk::p_vkDestroySampler(device,sampler,nullptr);destroy(texture);
++}
 --- /dev/null
 +++ b/tests/native_small_r11_probe.h
 @@ -0,0 +1,14 @@
@@ -11136,11 +11258,13 @@
 +int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("touch policy assertion");};nx::NativeTouchPolicy p;std::array<uint8_t,nx::NativeTouchPolicy::StateBytes> state{};check(p.states(state,1)==0);p.initialize();check(p.states(state,0)==0);check(p.states(state,1)==1);uint64_t sample=0;std::memcpy(&sample,state.data(),8);check(sample==1);for(size_t i=8;i<state.size();++i)check(state[i]==0);check(p.states(state,16)==1);std::memcpy(&sample,state.data(),8);check(sample==2);bool bad=false;try{p.states(std::span<uint8_t>(state).first(4),1);}catch(const std::invalid_argument&){bad=true;}check(bad);std::cout<<"native_touch_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/native_uniform_snapshot_probe.h
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,98 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include "nvn/native_debug_buffer_snapshot.h"
 +#include "platform.h"
++#include "nvn/nvn_draw_state.h"
++#include <vector>
 +#include <array>
 +#include <cstdio>
 +#include <cstring>
@@ -11169,6 +11293,69 @@
 +    check(std::fclose(file) == 0);
 +    check(words[0] == 8 && words[1] == 1 && words[2] == VK_FORMAT_R32_UINT);
 +    for (unsigned index = 3; index < words.size(); ++index) check(words[index] == 0x11223344);
++}
++
++// Distinct authored GPU writes expose accidental face-zero or base-mip copies.
++template<class Check> void native_image_snapshot_subresource_probe(Check check) {
++    using namespace nx;
++    using namespace nx::nvn;
++    const auto key = kernel_alloc(256, 4096);
++    auto& texture = make<Texture>(key);
++    texture.target = 8;
++    texture.width = texture.height = 8;
++    texture.depth = 6;
++    texture.levels = 2;
++    texture.format = 0x29; // RGBA16F; checked below before any commands.
++    {
++        std::lock_guard lock(gpu_lock());
++        auto* image = image_of(key);
++        check(image && image->format == VK_FORMAT_R16G16B16A16_SFLOAT);
++        const auto command = frame_begin(false);
++        transition(command, *image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
++        for (uint32_t level = 0; level < 2; ++level) {
++            for (uint32_t face = 0; face < 6; ++face) {
++                VkClearColorValue colour{};
++                colour.float32[0] = float(face + 1);
++                colour.float32[1] = float(level + 1);
++                colour.float32[2] = 4.0f;
++                colour.float32[3] = 1.0f;
++                VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, level, 1, face, 1};
++                vk::p_vkCmdClearColorImage(command, image->image,
++                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &colour, 1, &range);
++            }
++        }
++        for (uint32_t level = 0; level < 2; ++level)
++            for (uint32_t face = 0; face < 6; ++face) {
++                g_snap_level = level;
++                g_snap_layer = face;
++                debug_snapshot(command, *image, 0xdffe0000 + level * 16 + face);
++            }
++        g_snap_level = g_snap_layer = 0;
++        frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, true);
++        debug_snapshots_write();
++        constexpr uint16_t half_faces[] = {0x3c00, 0x4000, 0x4200, 0x4400, 0x4500, 0x4600};
++        for (uint32_t level = 0; level < 2; ++level)
++            for (uint32_t face = 0; face < 6; ++face) {
++                char suffix[64];
++                std::snprintf(suffix, sizeof suffix, "/frames/00000_%08x.raw", 0xdffe0000 + level * 16 + face);
++                FILE* file = plat::fopen_utf8(plat::data_root() + suffix, "rb");
++                check(file != nullptr);
++                std::array<uint32_t, 3> header{};
++                check(std::fread(header.data(), 4, 3, file) == 3);
++                const uint32_t extent = 8 >> level;
++                check(header[0] == extent && header[1] == extent && header[2] == VK_FORMAT_R16G16B16A16_SFLOAT);
++                std::vector<uint16_t> payload(extent * extent * 4);
++                check(std::fread(payload.data(), 2, payload.size(), file) == payload.size());
++                check(std::fgetc(file) == EOF);
++                check(std::fclose(file) == 0);
++                bool exact = true;
++                for (size_t i = 0; i < payload.size(); i += 4)
++                    exact &= payload[i] == half_faces[face] && payload[i + 1] == (level ? 0x4000 : 0x3c00) &&
++                             payload[i + 2] == 0x4400 && payload[i + 3] == 0x3c00;
++                check(exact);
++            }
++    }
++    destroy(key);
 +}
 --- /dev/null
 +++ b/tests/native_volume_profile_test.cpp

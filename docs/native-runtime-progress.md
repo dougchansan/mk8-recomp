@@ -4,20 +4,38 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R182, reconstructing 185 generic adapted files.
-All 40 component suites and the 1,850-check native GPU fixture pass, plus a
+The current source recipe is R187, reconstructing 189 generic adapted files.
+All 40 component suites and the 1,902-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
 movie's 13,200 input-owned frame hashes match across default and interactive
 native decoder modes.
 
+R187 adds native Vulkan null descriptors for explicit unbound samples and the
+observed unavailable cube view over a live one-layer 2D image. The reference
+Vulkan renderer selects a null view when no compatible typed view exists. This
+uses the actual robustness2 nullDescriptor feature and its defined zero reads;
+it neither retypes shader instructions nor invents cube faces. Nonzero handles
+without registered resources, unsupported formats and physical bounds remain
+guarded. GPU tests sample valid 2D/cube colours, null 2D/cube/shadow values and the
+unavailable cube view; negative children retain failure when the feature is
+disabled or a nonzero descriptor is missing. The actual race run is in progress.
+
+The earlier R185 trace confirms a positive 408-index/one-instance particle draw,
+with a BC3 one-layer 2D resource and array view requested as a cube. This was not
+an empty draw. Separately, the old backend incorrectly forced zero instances to
+one: an authored regression renders one unintended pixel before correction.
+Zero-count/zero-instance draws now invoke no shaders or descriptor resolution;
+four empty GPU cases and two positive single-pixel controls pass. The native
+program-stage producer is shared with the normal offline-loader publication path.
+
 R182 passes the former starting-grid arena stop and reaches the original native
 countdown, green lights and scripted player movement. Root review verifies Mario
 past the starting line and through the first right bend, with live lap/minimap
 and position changes from 12th to 6th. The 670.5-second run then closes naturally
 on a strict particle-shader binding check: cubemap shader 214cd855f507c7b3 resolves
-a 1024x1024 RGBA16F 2D texture at slot 10. Source, executable, saved input and foreground
+a 1024x1024 BC3_UNORM 2D texture at slot 10. Source, executable, saved input and foreground
 remain unchanged. No complete race, audible output, physical controller or
 playable-performance claim is established; no release/download is available.
 

@@ -5,6 +5,25 @@ R182 reaches native countdown and initial scripted driving, with a later shader
 binding failure. Playable performance and complete gameplay remain unverified. No release or
 download is available.
 
+R187's component-verified candidate adds zero-work draw handling and native null
+sampled views, with the real race validation in progress. Its 40 suites, 1,902 native
+GPU checks and separate 300-check sync/cutoff regressions pass.
+
+The old code forced a zero instance count to one. GPU readback reproduces the
+unintended pixel for both indexed and non-indexed draws. The corrected replay
+skips zero counts/instances before resource resolution, retaining positive-draw
+validation and positive single-pixel controls.
+
+The later positive particle failure is distinct: 408 indices/one instance request
+a cube view from a live BC3 one-layer 2D/array image. The reference Vulkan renderer
+selects a null view when the requested typed view does not exist. Native
+robustness2 nullDescriptor support now supplies the defined zero reads without
+dummy images, shader retyping or manufactured cube faces. Explicit handle 0
+samples also use this feature. Unregistered nonzero handles still fail, and the
+path is unavailable when the physical device lacks/does not enable the feature.
+GPU controls retain valid 2D/cube colours and verify null 2D/cube/shadow values.
+See [native null-descriptor semantics](https://docs.vulkan.org/guide/latest/robustness.html).
+
 ## Measurements and changes
 
 Heavy stadium windows in the earlier R164 run spent 1.93–2.29 seconds per frame
@@ -74,6 +93,7 @@ measured medians of 20.339 versus 34.107 ns/call on one thread and 283.345 versu
 | `NX_SPAN_RANGE_CACHE=0` | Retain only exact-start span reuse, disabling checked-region reuse |
 | `NX_CPU_CALL_PROFILE=1` | Sample indirect compiled/HLE calls every 4093 calls and rank inclusive thread CPU cycles |
 | `NX_SVC_PROFILE=1` | Existing marked-thread SVC wall profiling, extended with CPU-cycle totals |
+| `NX_NATIVE_NULL_DESCRIPTORS=0` | Disable native null views; unbound/incompatible required views retain their strict stop |
 
 Other diagnostics remain opt-in and can be omitted from timing runs. Profiling is
 off by default. Synchronous log behavior remains the default. Forced process

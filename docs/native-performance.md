@@ -24,6 +24,32 @@ not establish a controlled audio or version speedup. The original SDK mix and
 real device consumption are verified together with the race. Subjective
 listening, physical controls, sustained full speed and wider gameplay remain open.
 
+R205's actual repeat now completes all three laps, FINISH at frame 13,860,
+and Mario first/15-point results at 15,720. Normal result-advance input then
+reaches the previously unsupported `nvnTextureReadTexels` operation at frame
+16,120. The process closes naturally after 616.3 seconds; source, executable,
+saved input and foreground remain unchanged. This verifies another completed
+race and identifies a separate transition blocker, rather than a clean full
+probe pass. Its racing window averages 35.770 ms (about 28 FPS), median 22.9 ms,
+with frame signatures and sparse readbacks still enabled. No controlled speedup
+or universal descriptor-stability claim follows from one additional pass.
+
+R207 implements a bounded native GPU-to-CPU texture readback for uncompressed
+2D color storage, including strided output. It waits preceding replay/GPU work,
+applies pending texture writes, copies the actual native image to coherent
+staging, and waits for a GPU fence before writing output rows. It preserves row
+gaps and image layout; invalid regions, strides, output permissions and resource
+profiles reject. Converted/compressed/depth/multisample/array/3D storage remains
+outside this profile. Authored GPU regressions verify red subrectangle pixels,
+strided canaries, pending blue texel writes and rejection without output changes.
+The unchanged runtime fails the required-HLE regression first. All 40 suites,
+2,240 GPU checks and 300-check sync/cutoff controls pass; all 2,240 GPU checks
+also pass with the object resolver fast cache disabled. Analysis of the changed
+Vulkan unit retains one inherited portability-chain dead-store warning. Readback's
+synchronous branch is not separately exercised by these pipelined GPU tests.
+The real results-transition retry is active; the game's exact texture dimensions
+and format and next-course success remain unverified until that request executes.
+
 R205 fixes a second replay-cache edge case found during a repeat flight.
 That R202 run stops during the first race at frame 4,081, before course advance:
 a required array binding is missing while a retained registered snapshot exists.
@@ -36,8 +62,8 @@ sampled view, exact red GPU pixels, positive selection after slot replacement,
 and the replacement in the next replay. All 40 suites, 1,964 native GPU checks
 and 300-check sync/cutoff controls pass; the full GPU fixture passes with the
 object resolver's fast cache disabled too. Static analysis retains one pre-existing
-nullable set-cache-slot warning outside this change. Actual repeat-race and
-next-course validation are running; the regression does not prove universal
+nullable set-cache-slot warning outside this change. Actual repeat-race validation reaches first-place results. Next-course
+validation continues with the new readback path. The regression does not prove universal
 gameplay stability or fully establish the real failure's timing mechanism.
 
 R201 adds a regression-backed lifetime correction alongside the performance work.

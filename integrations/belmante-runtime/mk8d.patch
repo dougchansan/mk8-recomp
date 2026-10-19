@@ -9828,17 +9828,21 @@
  // NVN's GPU side on Vulkan (docs/NVN.md, N3): the host device, a VkImage per NVN texture the GPU touches, the
  // replay of recorded command lists, and presenting a window texture on the host swapchain.
  //
-@@ -20,7 +21,9 @@
+@@ -20,7 +21,13 @@
  #include <vector>
  
  #include "nvn_vk.h"
 +#include "native_counters.h"
++#include "native_guest_span.h"
++#include "native_buffer_texture_copy.h"
++#include "nvn_pipeline.h"
++#include <stdexcept>
  #include "platform.h"
 +#include "vi_state.h"
  
  #include <nx/game.h>
  
-@@ -52,6 +55,9 @@
+@@ -52,6 +59,9 @@
  VkFormat g_sc_format = VK_FORMAT_B8G8R8A8_UNORM;
  VkSemaphore g_acquired = VK_NULL_HANDLE, g_rendered = VK_NULL_HANDLE;
  VkBool32 g_depth_clip_control = VK_FALSE;
@@ -9848,7 +9852,7 @@
  bool g_integrated = false;
  bool g_require_sg32 = false;  // compute pipelines are made with a required subgroup size of 32 (Maxwell's warp)  // the chosen GPU is an integrated one (unified memory, the GPU is the long side)
  VkPhysicalDeviceFeatures g_features{};  // the core features enabled (vk_features())
-@@ -176,6 +182,24 @@
+@@ -176,6 +186,24 @@
      std::vector<VkExtensionProperties> dext(n);
      p_vkEnumerateDeviceExtensionProperties(g_physical, nullptr, &n, dext.data());
      std::vector<const char*> dexts = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
@@ -9873,7 +9877,7 @@
      // Features: everything core the GPU has, dynamic rendering (1.3), 8-bit indices (NVN has them), clip-space
      // depth -1..1 (NVN's default depth mode, what Wonder uses), and on MoltenVK the portability subset's own
      // features, which must be enabled to be used.
-@@ -183,6 +207,8 @@
+@@ -183,6 +211,8 @@
      VkPhysicalDeviceVulkan13Features f13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
      VkPhysicalDeviceIndexTypeUint8FeaturesEXT fu8{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT};
      VkPhysicalDeviceDepthClipControlFeaturesEXT fclip{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT};
@@ -9882,7 +9886,7 @@
      struct {  // VkPhysicalDevicePortabilitySubsetFeaturesKHR, without its header (beta extensions)
          VkStructureType sType = VkStructureType(1000163000);
          void* pNext = nullptr;
-@@ -198,11 +224,23 @@
+@@ -198,11 +228,23 @@
          dexts.push_back("VK_EXT_depth_clip_control");
          *tail = &fclip, tail = &fclip.pNext;
      }
@@ -9906,7 +9910,7 @@
      {   // The translated shaders assume Maxwell's warp of 32 (TRANSLATOR.md). Intel runs subgroups of 8, 16 or 32 as its
          // compiler chooses; where the size can be pinned (core 1.3 subgroup size control), compute pipelines pin 32.
          VkPhysicalDeviceSubgroupSizeControlProperties sgc{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
-@@ -217,6 +255,8 @@
+@@ -217,6 +259,8 @@
              g_require_sg32 ? "pinned to 32" : "left to the driver");
      }
      g_depth_clip_control = fclip.depthClipControl;
@@ -9915,7 +9919,7 @@
      g_features = features.features;
      // NX_ASTC_DECODE=1|linear|srgb: the CPU decoder even where the GPU has ASTC (to compare the two on one GPU).
      set_astc_native(g_features.textureCompressionASTC_LDR);
-@@ -396,11 +436,23 @@
+@@ -396,11 +440,23 @@
  }  // namespace
  
  std::recursive_mutex& gpu_lock() { return g_gpu; }
@@ -9939,7 +9943,7 @@
  const VkPhysicalDeviceFeatures& vk_features() { return g_features; }
  bool gpu_is_integrated() { return g_integrated; }
  bool gpu_require_subgroup32() { return g_require_sg32; }
-@@ -479,7 +531,9 @@
+@@ -479,7 +535,9 @@
      p_vkResetCommandBuffer(g_cb, 0);
      VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
      bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -9950,7 +9954,7 @@
  }
  
  // Where the submitting thread's time goes, logged with the draw stats, per presented frame: the replay (recording
-@@ -491,6 +545,7 @@
+@@ -491,6 +549,7 @@
  
  void end_and_wait(VkSemaphore wait, VkSemaphore signal) {
      uint64_t t0 = plat::monotonic_ns();
@@ -9958,7 +9962,7 @@
      p_vkEndCommandBuffer(g_cb);
      VkPipelineStageFlags stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
      VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-@@ -533,6 +588,14 @@
+@@ -533,6 +592,14 @@
      frame_log(frames);
      creation_log(frames);  // pipelines and ASTC decodes of the window; saves the pipeline cache now and then
      g_timing = {};
@@ -9973,7 +9977,7 @@
  }
  
  // gpu_present's time, whatever way it returns.
-@@ -638,6 +701,8 @@
+@@ -638,6 +705,8 @@
  }
  
  void gpu_present(uint64_t texture, const int32_t* crop) {
@@ -9982,6 +9986,87 @@
      plat::perf_hint_thread();  // the thread that presents takes part in the frame (perf_hint.cpp)
      std::lock_guard lk(g_gpu);
      PresentTimer timer;
+@@ -729,4 +798,80 @@
+     if (remake) make_swapchain();
+ }
+ 
++
++uint64_t native_texture_identity_locked(uint64_t);
++
++namespace {
++// NVN's CPU read API returns tightly packed original texels, after preceding
++// GPU writes complete. It cannot read stale guest backing memory instead.
++void read_native_texels(CPU& c,bool strided) {
++    const auto descriptor=c.x[0],view_address=c.x[1],region_address=c.x[2],output=c.x[3];
++    uint64_t row_stride=strided?c.x[4]:0,image_stride=strided?c.x[5]:0;
++    constexpr uint64_t limit=256ull<<20;
++    if(!native_guest_span(region_address,24,1)||!output||row_stride>limit||image_stride>limit)
++        throw std::invalid_argument("native texture readback input/stride");
++    std::array<int32_t,6> region;std::memcpy(region.data(),reinterpret_cast<const void*>(region_address),24);
++    const auto view=read_view(c,view_address);
++    wait_submits_so_far(kWaitFinish);worker_finish();
++    std::lock_guard gpu_guard(g_gpu);
++    if(!init())throw std::runtime_error("native texture readback GPU unavailable");
++    if(async_gpu())frame_wait_all();
++    uint64_t texture;
++    {std::shared_lock registry(objects_lock());texture=native_texture_identity_locked(descriptor);}
++    const auto* source=get<Texture>(texture);
++    if(!source)throw std::invalid_argument("native texture readback lost source");
++    static std::atomic<unsigned> requests{0};
++    if(++requests<=12)log("native texture readback request key=%llx source=%llx target=%u format=%u size=%ux%ux%u levels=%u samples=%u region=%d,%d,%d/%d,%d,%d mip=%u row=%llu image=%llu",
++        (unsigned long long)descriptor,(unsigned long long)texture,source->target,source->format,source->width,source->height,source->depth,source->levels,source->samples,
++        region[0],region[1],region[2],region[3],region[4],region[5],view.base_level,(unsigned long long)row_stride,(unsigned long long)image_stride);
++    if(source->target!=1||source->depth!=1||format_aspect(source->format))
++        throw std::invalid_argument("native texture readback requires uncompressed 2D color");
++    const auto bytes=native_buffer_texture_bytes(source->width,source->height,source->levels,source->format,source->samples,view,region,0);
++    const auto rows=uint64_t(region[4]),row_bytes=bytes/rows;
++    if(!row_stride)row_stride=row_bytes;
++    if(row_stride<row_bytes||(rows-1)>(limit-row_bytes)/row_stride)
++        throw std::invalid_argument("native texture readback output row extent");
++    const auto span=(rows-1)*row_stride+row_bytes;
++    if(!native_guest_span(output,span,2))throw std::invalid_argument("native texture readback output is not writable");
++    auto* image=image_of(texture);
++    if(!image||image->aspect!=VK_IMAGE_ASPECT_COLOR_BIT||image->format!=vk_format(source->format)||
++       image->alpha_from_r||image->width!=source->width||image->height!=source->height||image->layers!=1||image->depth!=1||
++       vk_block_bytes(image->format)!=native_texture_block(source->format).bytes)
++        throw std::invalid_argument("native texture readback converted/native image profile");
++    if(!async_gpu())g_upload_used=0; // All prior synchronous work has completed.
++    if(!begin())throw std::runtime_error("native texture readback command begin failed");
++    image=ensure_contents(g_cb,texture);
++    if(!image)throw std::runtime_error("native texture readback image unavailable");
++    const auto old_layout=image->layout;
++    auto staging=upload_alloc(bytes,16);
++    if(!staging.ptr||!staging.buffer)throw std::runtime_error("native texture readback staging unavailable");
++    transition(g_cb,*image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
++    VkBufferImageCopy copy{};copy.bufferOffset=staging.offset;copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,view.base_level,0,1};
++    copy.imageOffset={region[0],region[1],0};copy.imageExtent={uint32_t(region[3]),uint32_t(region[4]),1};
++    p_vkCmdCopyImageToBuffer(g_cb,image->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,staging.buffer,1,&copy);
++    VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};barrier.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
++    barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;barrier.buffer=staging.buffer;barrier.offset=staging.offset;barrier.size=bytes;
++    p_vkCmdPipelineBarrier(g_cb,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&barrier,0,nullptr);
++    if(old_layout!=VK_IMAGE_LAYOUT_UNDEFINED)transition(g_cb,*image,old_layout);
++    if(async_gpu()) {
++        const auto before=frame_completed();frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++        if(frame_completed()<=before)throw std::runtime_error("native texture readback did not complete submission");
++    } else {
++        native_counter_part_end(g_cb);
++        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};submit.commandBufferCount=1;submit.pCommandBuffers=&g_cb;
++        if(p_vkEndCommandBuffer(g_cb)!=VK_SUCCESS||p_vkResetFences(g_device,1,&g_fence)!=VK_SUCCESS||
++           p_vkQueueSubmit(g_queue,1,&submit,g_fence)!=VK_SUCCESS||p_vkWaitForFences(g_device,1,&g_fence,VK_TRUE,2'000'000'000ull)!=VK_SUCCESS)
++            throw std::runtime_error("native texture readback synchronous submission failed");
++    }
++    if(!native_guest_span(output,span,2))throw std::invalid_argument("native texture readback output revoked");
++    for(uint64_t row=0;row<rows;++row)std::memcpy(reinterpret_cast<void*>(output+row*row_stride),staging.ptr+row*row_bytes,row_bytes);
++    static std::atomic<unsigned> completed{0};
++    if(++completed<=12)log("native texture readback completed bytes=%llu destination-span=%llu GPU-fence=1",(unsigned long long)bytes,(unsigned long long)span);
++}
++void TextureReadTexelsNative(CPU& c){read_native_texels(c,false);}
++void TextureReadTexelsStridedNative(CPU& c){read_native_texels(c,true);}
++}
++NX_HLE("nvnTextureReadTexels",TextureReadTexelsNative);
++NX_HLE("nvnTextureReadTexelsStrided",TextureReadTexelsStridedNative);
++
+ }  // namespace nx::nvn
 --- a/runtime/src/nvn/nvn_vk.h
 +++ b/runtime/src/nvn/nvn_vk.h
 @@ -27,6 +27,7 @@
@@ -13044,7 +13129,7 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,545 @@
+@@ -0,0 +1,582 @@
 +#if defined(_WIN32)
 +#include <windows.h>
 +#include "native_failure.h"
@@ -13410,6 +13495,43 @@
 + for(auto descriptor:{descriptor_a,descriptor_b}) {
 +     bool retired=false;try{(void)width(descriptor);}catch(const std::invalid_argument&){retired=true;}check(retired);
 + }
++ }
++ // CPU readback must consume actual GPU results and preserve output row gaps.
++ {
++     auto read=nx::hle_lookup("nvnTextureReadTexels");auto strided=nx::hle_lookup("nvnTextureReadTexelsStrided");
++     check(read!=nullptr&&strided!=nullptr);
++     const auto owner=nx::kernel_alloc(256,16),region=nx::kernel_alloc(24,16),output=nx::kernel_alloc(128,16);
++     nx::vm_set(region,24,nx::kMemHeap,3);nx::vm_set(output,128,nx::kMemHeap,3);
++     auto& texture=nx::nvn::make<nx::nvn::Texture>(owner);
++     texture.target=1;texture.format=0x25;texture.width=texture.height=4;
++     texture.depth=texture.levels=texture.samples=1;
++     {
++         std::lock_guard gpu_lock(nx::nvn::gpu_lock());auto command=nx::nvn::frame_begin(false);
++         auto* image=nx::nvn::image_of(owner);check(image!=nullptr);
++         nx::nvn::transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
++         VkClearColorValue red{{1,0,0,1}};VkImageSubresourceRange subresource{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
++         nx::vk::p_vkCmdClearColorImage(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&red,1,&subresource);image->rendered=true;
++         nx::nvn::frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);
++     }
++     const std::array<int32_t,6> area{1,1,0,2,2,1};std::memcpy(reinterpret_cast<void*>(region),area.data(),24);
++     nx::CPU args{};args.x[0]=owner;args.x[2]=region;args.x[3]=output+16;
++     std::memset(reinterpret_cast<void*>(output),0xa5,128);read(args);
++     for(unsigned i=0;i<128;++i)check(nx::ld<uint8_t>(output+i)==(i>=16&&i<32?((i-16)%4==0||(i-16)%4==3?255:0):0xa5));
++     std::memset(reinterpret_cast<void*>(output),0xa5,128);args.x[4]=12;args.x[5]=24;strided(args);
++     for(unsigned i=0;i<128;++i){const bool pixel=(i>=16&&i<24)||(i>=28&&i<36);check(nx::ld<uint8_t>(output+i)==(pixel?((i-16)%4==0||(i-16)%4==3?255:0):0xa5));}
++     auto rejected=[&](nx::CPU bad){std::memset(reinterpret_cast<void*>(output),0xa5,128);bool threw=false;try{strided(bad);}catch(const std::invalid_argument&){threw=true;}check(threw);bool intact=true;for(unsigned i=0;i<128;++i)intact&=nx::ld<uint8_t>(output+i)==0xa5;check(intact);};
++     auto bad=args;bad.x[4]=7;rejected(bad);bad=args;bad.x[4]=UINT64_MAX;rejected(bad);bad=args;bad.x[2]=0;rejected(bad);bad=args;bad.x[3]=UINT64_MAX-3;rejected(bad);
++     nx::st<int32_t>(region,-1);rejected(args);nx::st<int32_t>(region,1);
++     nx::st<int32_t>(region+12,4);rejected(args);nx::st<int32_t>(region+12,2);
++     texture.samples=4;rejected(args);texture.samples=1;
++     nx::vm_set(output,128,nx::kMemHeap,1);rejected(args);nx::vm_set(output,128,nx::kMemHeap,3);
++     const auto blue=nx::kernel_alloc(64,16);nx::vm_set(blue,64,nx::kMemHeap,3);
++     for(unsigned i=0;i<16;++i)nx::st<uint32_t>(blue+i*4,0xffff0000u);
++     const std::array<int32_t,6> full{0,0,0,4,4,1};std::memcpy(reinterpret_cast<void*>(region),full.data(),24);
++     auto write=nx::hle_lookup("nvnTextureWriteTexels");check(write!=nullptr);nx::CPU upload{};upload.x[0]=owner;upload.x[2]=region;upload.x[3]=blue;write(upload);
++     args.x[4]=args.x[5]=0;read(args);bool pixels_blue=true;for(unsigned i=0;i<16;++i)pixels_blue&=nx::ld<uint32_t>(output+16+i*4)==0xffff0000u;check(pixels_blue);
++     nx::nvn::destroy(owner);
++     std::cout<<"native texture CPU readback GPU-red/strided-canaries/pending-blue/rejections PASS"<<std::endl;
 + }
 + // An empty descriptor can be registered after its first lookup in this replay.
 + {

@@ -14,9 +14,9 @@ commit and exact game-produced-save reload to mode selection are verified.
 Audible audio, physical controls, broader gameplay and full-speed performance
 remain open; no release/tag/download is available.
 
-Windows integration now passes 40 CPU/component suites and a 1,964-check native
+Windows integration now passes 40 CPU/component suites and a 2,240-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R205 reconstructs 192 generic adapted files. Native sample counts
+entry point. R207 reconstructs 192 generic adapted files. Native sample counts
 and GPU-clock reports replace host placeholders. GPU comparisons replace the
 inherited forced-on conditional renderer, including explicit gated clears and
 original counter-to-predicate chains; regressions verify accumulation,
@@ -39,12 +39,17 @@ completion callbacks. Default mute/headless behavior is preserved. The generated
 10-second stereo capture is private; full-race device coverage passes with 129,992 observed completions and first-place
 results. Subjective listening and physical controls remain separate gates. Optional pipeline-2/chunk-150 mode hits the memory guard
 and is not promoted; the verified race configuration is async 2 / pipeline 0.
+R205's actual repeat completes the race and first-place/15-point results. Result
+advance then needs CPU texture readback. R207 supplies a bounded native GPU
+readback for uncompressed 2D color storage, standard and strided, preserving
+output canaries and waiting for actual GPU completion. Authored GPU pixels,
+pending writes and rejection tests pass; actual transition coverage is pending.
 R205 also avoids retaining empty descriptor-handle lookups across a replay:
 a late registration can now resolve its retained texture snapshot. The unchanged
 runtime fails the focused regression; the correction passes native sampled-view,
 GPU pixel and replay-visibility checks. A repeat first-race failure shows that
-the earlier successful races do not establish full gameplay stability. Actual
-repeat/next-course validation of R205 remains in progress.
+the earlier successful races do not establish full gameplay stability. The actual repeat reaches first-place results; the next unsupported readback
+operation is addressed in R207 and transition validation continues.
 R201 keeps the first positive post-mark texture incarnation stable through one
 replay, including after finalization/cache eviction; misses and later replays
 retain their current-state behavior. Authored native-view/red-pixel regressions

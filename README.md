@@ -14,7 +14,7 @@ A later repeat exposed another descriptor timing failure. R205 fixes a regressio
 
 R212 passes a 24,000-frame run through Stadium results and Water Park lap 2/3. A same-build control with frame-signature hashing off and sparse captures observes about 38.5 FPS over 3,900 course presentations; sustained 60 FPS, complete-cup coverage and human audio/control checks remain open. The chunked-submission experiment reaches the unchanged memory guard and is rejected.
 
-R217 tests optional precise-query grouping with exact sample-count and clear-exclusion regressions. A same-build short control cuts query count and queued replay time; the hardened long gameplay check is active. The legacy per-draw mode remains the default until validation completes.
+R218 enables precise-query grouping by default after a verified R217 Stadium win and Water Park lap. Racing averages are 50.02 and 53.52 FPS, with median reporting windows near 59 FPS; sustained smooth 60 remains open. Exact sample-count and clear-exclusion regressions pass, and `NX_COALESCE_SAMPLE_QUERIES=0` retains the diagnostic fallback.
 
 The following figures describe the earlier guarded-runtime research track; the current native race result is the Belmante integration above.
 

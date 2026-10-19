@@ -50,14 +50,14 @@ presentation/non-replay 0.05 ms/frame; class sums match their aggregate and all
 query results are available. These are queued intervals, not isolated shader work.
 The source recipe now reconstructs 193 generic adapted files.
 
-R217 adds optional grouping of consecutive counted draws into one precise
+R218 enables grouping by default of consecutive counted draws into one precise
 occlusion query within a render pass (`NX_COALESCE_SAMPLE_QUERIES=1`). Queries
 close before pass end or internal helper work; explicit counted Draw brackets
 remain distinct from masked or ordinary clears outside those brackets. Both
 `vkCmdClearAttachments` paths are excluded because Vulkan permits driver-dependent
 clear contributions. Reset/report boundaries, conditional rendering, cross-submit
 accumulation, query capacity, CPU-visible writeback and required waits remain.
-The legacy per-draw mode stays the default while longer validation is active.
+Explicit `NX_COALESCE_SAMPLE_QUERIES=0` retains the per-draw diagnostic control.
 
 Authored tests verify 1/2/5/17 consecutive draws return 16/32/80/272 samples,
 and two counted draws around either a masked helper or an ordinary ClearColor
@@ -72,7 +72,19 @@ grouped observes 43.28 FPS, 8.27 ms and 208.28 queries/frame. The title workload
 average 897.52 versus 916.44 draws/frame; separate process/NPC/clock/scheduling
 variation remains. Late grouped windows reach 57–59 FPS, not a sustained-fullspeed
 claim. This pair precedes R217's ordinary-clear hardening and is provisional;
-the hardened long Stadium/results/Water Park flight is in progress. No release.
+the hardened R217 long flight has now completed 24,600 presentations in
+508.83 seconds without fatal errors. Stadium finishes first with 15 points, then
+the native 480x270 RGBA8 readback succeeds and Water Park reaches lap 2/3.
+Racing averages are 50.02 FPS over 11,280 Stadium presentations and 53.52 FPS over
+6,600 Water Park presentations. Median 60-presentation windows are 58.6 and
+59.5 FPS; these are not individual-frame percentiles or sustained 60 FPS proof.
+Median GPU replay costs are 2.66 and 3.88 ms. Signatures were disabled but captures
+still occurred every 600 presentations. Four audio drops and zero underruns were
+reported; the real XAudio2 device was muted, so listening remains unverified.
+R218's default/legacy/cache-disabled GPU checks, sync/cutoff checks and native
+readback controls pass. A capture-free benchmark is the next attribution step.
+Full second-race/cup completion, smooth 60 and physical input remain open.
+No release.
 
 See the [Vulkan query scope and sample-count rules](https://docs.vulkan.org/spec/latest/chapters/queries.html).
 
@@ -183,7 +195,7 @@ Vulkan unit retains one inherited portability-chain dead-store warning. Those pi
 subsequent standalone 259-check probe and actual game readback pass as recorded
 above. Second-course gameplay remains unverified.
 
-The current source recipe is R217, reconstructing 195 generic adapted files.
+The current source recipe is R218, reconstructing 195 generic adapted files.
 All 40 component suites and the 2,327-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture

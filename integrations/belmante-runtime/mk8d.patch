@@ -5993,7 +5993,7 @@
 +}
 --- /dev/null
 +++ b/runtime/src/nvn/native_counters.cpp
-@@ -0,0 +1,374 @@
+@@ -0,0 +1,377 @@
 +#include "native_perf.h"
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "native_counters.h"
@@ -6034,7 +6034,10 @@
 +    VkCommandBuffer command=VK_NULL_HANDLE;
 +    bool initialized=false,enabled=false,draw_scope=false;
 +} counters;
-+bool coalesced_samples() {static const bool value=[] {const char* e=std::getenv("NX_COALESCE_SAMPLE_QUERIES");return e&&e[0]=='1';}();return value;}
++// Grouped precise queries passed native samples/conditional regressions and
++// a complete Stadium race followed by Water Park's first lap. Explicit0 keeps
++// the per-draw diagnostic control; all sample reports and waits stay intact.
++bool coalesced_samples() {static const bool value=[] {const char* e=std::getenv("NX_COALESCE_SAMPLE_QUERIES");return !e||e[0]=='1';}();return value;}
 +bool sample_query_stats() {static const bool value=[] {const char* e=std::getenv("NX_COUNTER_QUERY_STATS");return e&&e[0]=='1';}();return value;}
 +uint64_t sample_draws=0,sample_queries=0,sample_ends=0;
 +

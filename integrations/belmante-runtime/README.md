@@ -21,10 +21,10 @@ controls pass. A 3,600-presentation course flight passes with class totals
 matching the aggregate; median replay is 18.06 ms/frame versus 0.05 ms/frame
 for presentation/non-replay. These intervals include synchronization/scheduling.
 
-R217 includes optional exact sample-query grouping, preserving reset/report,
+R218 enables exact sample-query grouping by default, preserving reset/report,
 conditional, retirement and clear-exclusion behavior. Default/grouped 2,327-check
-GPU controls and 40 suites pass; long grouped gameplay validation is active.
-`NX_COALESCE_SAMPLE_QUERIES=1` selects it; legacy per-draw queries remain default.
+GPU controls and 40 suites pass; the hardened R217 long flight verifies a Stadium win and Water Park lap.
+`NX_COALESCE_SAMPLE_QUERIES=0` selects the legacy per-draw diagnostic control.
 `NX_COUNTER_QUERY_STATS=1` reports query/draw counts in existing timing windows.
 
 R201 now completes a native three-lap Mario Kart Stadium race, with the FINISH
@@ -37,7 +37,7 @@ remain open; no release/tag/download is available.
 
 Windows integration now passes 40 CPU/component suites and a 2,327-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R217 reconstructs 195 generic adapted files. Native sample counts
+entry point. R218 reconstructs 195 generic adapted files. Native sample counts
 and GPU-clock reports replace host placeholders. GPU comparisons replace the
 inherited forced-on conditional renderer, including explicit gated clears and
 original counter-to-predicate chains; regressions verify accumulation,

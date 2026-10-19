@@ -4,8 +4,8 @@ Updated 2026-10-18. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-The current source recipe is R172, reconstructing 180 generic adapted files.
-All 40 component suites and the 1,633-check native GPU fixture pass, plus a
+The current source recipe is R176, reconstructing 182 generic adapted files.
+All 40 component suites and the 1,820-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full
@@ -16,8 +16,31 @@ R172 adds opt-in aggregate replay timings, buffered routine logs with immediate
 fatal flushing, and a switch to disable per-frame stall tracing while retaining
 the hang watchdog. The first live timing experiment exposed millions of focus
 gate calls; the current profiler samples that gate once per 1,024 calls to reduce
-measurement overhead. Reported sampled focus costs are estimates. Matched game
-comparisons remain in progress; no game-frame speedup is established yet.
+measurement overhead. Reported sampled focus costs are estimates. R176 removes
+the temporary per-opcode table/timers after they identify counter reporting as
+the expensive state operation; aggregate and counter-phase timings remain.
+
+Counter-report destination admission takes 3,241 ms across 300 reports in the
+R174 diagnostic window, while all other report phases together take about 9 ms.
+The successful-span cache introduced in R175 is invalidated by every tracked
+guest-map or Win32 reserve/commit/decommit mutation. It caches neither failures
+nor object liveness. Regressions cover guest permission revocation/restoration,
+host decommit/recommit, cross-page spans and cross-thread invalidation. Both the
+cached and uncached paths pass the expanded 1,820-check GPU fixture.
+
+A same-executable R175 comparison over title frames 121–180 measures median
+48.85 ms/frame with the cache against 219.45 ms without it, about 4.49 times faster.
+Mean intervals are 60.30 and 230.14 ms, respectively. The captured frame 120 is
+byte-identical across all 2,073,600 RGB pixels, and draw count/order match. This is
+one sequential pair on a shared desktop, restricted to the title scene; it is
+not a course-FPS or playable-game claim. The profiling-disabled control and an
+async submission case also reach the identical title image. A longer async
+menus/race-loading run is under verification; async remains opt-in.
+
+Query pools now reset only slots used in their previous recording. An explicit
+full-reset control remains available. Shrinking, empty and growing query sets
+pass across pool reuse. This avoids redundant work but was not the main measured
+counter-report cost. No counter wait, capacity or arena bound is relaxed.
 
 The GPU clock now uses supported calibrated DEVICE-domain timestamps, with the
 same timestamp units/epoch as submitted GPU queries and a submitted-query fallback.

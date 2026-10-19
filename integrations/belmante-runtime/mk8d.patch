@@ -1560,7 +1560,15 @@
      if (tdata_range(nx_module_main, tdata, tdata_end) && tdata_end > tdata) {
 --- a/runtime/src/memory.cpp
 +++ b/runtime/src/memory.cpp
-@@ -24,7 +24,7 @@
+@@ -6,6 +6,7 @@
+ #include <nx/runtime.h>
+ 
+ #include "platform.h"
++#include "native_memory_epoch.h"
+ 
+ namespace nx {
+ 
+@@ -24,7 +25,7 @@
  }  // namespace
  
  void memory_init() {
@@ -1569,6 +1577,14 @@
      reserve(kHeapBase, kHeapMax, "heap");
      reserve(kAliasBase, kAliasSize, "alias");
      reserve(kStackBase, kStackSize, "stack");
+@@ -64,6 +65,7 @@
+ 
+ void vm_set(uint64_t addr, uint64_t size, uint32_t state, uint32_t perm) {
+     std::lock_guard lk(g_vm_lock);
++    memory_epoch::Mutation mutation;
+     uint64_t end = addr + size;
+     // Cut overlapping blocks.
+     auto it = g_vm.lower_bound(addr);
 --- /dev/null
 +++ b/runtime/src/mk8_focus_policy.cpp
 @@ -0,0 +1,59 @@
@@ -1990,6 +2006,31 @@
 + void disconnect(uint32_t id){std::lock_guard guard(lock);if(id==0)disconnected=true;}
 + uint32_t style(uint32_t id)const{std::lock_guard guard(lock);return initialized&&!disconnected&&id==0&&ids.contains(id)&&(supported&1)?1:0;}
 +};
++}
+--- /dev/null
++++ b/runtime/src/native_memory_epoch.h
+@@ -0,0 +1,22 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <atomic>
++#include <cstdint>
++
++namespace nx::memory_epoch {
++inline std::atomic<uint64_t> generation{1};
++inline std::atomic<uint32_t> writers{};
++// Every runtime guest-map edit and Win32 reserve/commit/decommit participates.
++// Concurrent or nested writers keep caching disabled until all writers finish.
++struct Mutation {
++    Mutation() { writers.fetch_add(1); generation.fetch_add(1); }
++    ~Mutation() { generation.fetch_add(1); writers.fetch_sub(1); }
++    Mutation(const Mutation&) = delete;
++    Mutation& operator=(const Mutation&) = delete;
++};
++inline uint64_t stable() {
++    const auto value = generation.load(std::memory_order_acquire);
++    if (writers.load(std::memory_order_acquire)) return 0;
++    return generation.load(std::memory_order_acquire) == value ? value : 0;
++}
 +}
 --- /dev/null
 +++ b/runtime/src/native_mf_avc.h
@@ -5753,7 +5794,7 @@
 +}
 --- /dev/null
 +++ b/runtime/src/nvn/native_counters.cpp
-@@ -0,0 +1,313 @@
+@@ -0,0 +1,342 @@
 +#include "native_perf.h"
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "native_counters.h"
@@ -5899,15 +5940,26 @@
 +}
 +bool native_counter_target_valid(uint64_t address) {return target(address)!=nullptr;}
 +void native_counter_frame_begin(uint32_t index,VkCommandBuffer command) {
++    const auto reset_started = perf::enabled() ? perf::now() : 0;
 +    if(counters.conditional_active)throw std::runtime_error("native conditional scope crossed frames");
 +    if(index>=slots_count||counters.active!=invalid_query)throw std::runtime_error("native counter frame lifecycle mismatch");
 +    counters.slot=index;counters.command=command;counters.conditional_prepared=VK_NULL_HANDLE;
 +    auto& slot=counters.slots[index];
 +    if(slot.pending_count)throw std::runtime_error("native counter results escaped their command buffer");
++    static const bool full_reset = [] { const auto* e = std::getenv("NX_FULL_QUERY_RESET"); return e && e[0]=='1'; }();
++    // Pools are reset completely when created. On reuse only queries issued in
++    // their last use need resetting; every other slot is still in reset state.
++    const auto samples = full_reset ? query_count : slot.next_sample;
++    const auto timestamps = full_reset ? query_count : slot.next_timestamp;
++    if(slot.samples && samples)p_vkCmdResetQueryPool(command,slot.samples,0,samples);
++    if(slot.timestamps && timestamps)p_vkCmdResetQueryPool(command,slot.timestamps,0,timestamps);
 +    slot.next_sample=slot.next_timestamp=0;slot.reports=false;
-+    if(slot.samples)p_vkCmdResetQueryPool(command,slot.samples,0,query_count);
-+    if(slot.timestamps)p_vkCmdResetQueryPool(command,slot.timestamps,0,query_count);
 +    if(counters.enabled)pool(command,slot.samples,VK_QUERY_TYPE_OCCLUSION);
++    if(reset_started) {
++        static uint64_t calls=0,ns=0;
++        ns+=perf::now()-reset_started;
++        if(++calls%60==0){log("native counter reset over60: total_ms=%.6f full=%u",double(ns)/1e6,unsigned(full_reset));ns=0;}
++    }
 +}
 +void native_counter_part_begin(VkCommandBuffer command) {
 +    if(counters.conditional_active)throw std::runtime_error("native conditional scope crossed frame parts");
@@ -5954,24 +6006,42 @@
 +    ++slot.pending_count;counters.active=invalid_query;
 +}
 +void native_counter_report(VkCommandBuffer command,uint32_t type,uint64_t address) {
++    static std::array<uint64_t,8> phase_ns{};
++    static uint64_t profiled_reports=0;
++    uint64_t phase_started=perf::enabled()?perf::now():0;
++    auto phase=[&](unsigned index){if(phase_started){const auto now=perf::now();phase_ns[index]+=now-phase_started;phase_started=now;}};
 +    if(!native_counter_report_type(type)||replay::written_separate())throw std::invalid_argument("unsupported native counter report profile");
 +    auto* destination=target(address);if(!destination)throw std::invalid_argument("native counter result requires a live aligned writable range");
 +    initialize();auto& slot=context(command);
++    phase(0);
 +    draw_end_rendering(command,2);
++    phase(1);
 +    if(type==1){if(!counters.enabled)throw std::runtime_error("native samples report requires an initial reset");resolve(command);}
 +    pool(command,slot.timestamps,VK_QUERY_TYPE_TIMESTAMP);
 +    if(slot.next_timestamp>=query_count)throw std::runtime_error("native timestamp query capacity exceeded");
++    phase(2);
 +    const auto result=replay::written_bind(command,destination,16,16);
++    phase(3);
 +    const VkDescriptorBufferInfo record{result.buffer,result.offset,16};
 +    if(type==1){const VkDescriptorBufferInfo total{counters.total,0,8};barrier(command,total,VK_ACCESS_MEMORY_WRITE_BIT,VK_ACCESS_TRANSFER_READ_BIT);
 +        const VkBufferCopy copy{0,result.offset,8};p_vkCmdCopyBuffer(command,counters.total,result.buffer,1,&copy);}
 +    else p_vkCmdFillBuffer(command,result.buffer,result.offset,8,0);
++    phase(4);
 +    const auto query=slot.next_timestamp++;
 +    p_vkCmdWriteTimestamp(command,type==16?VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT:VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,slot.timestamps,query);
 +    p_vkCmdCopyQueryPoolResults(command,slot.timestamps,query,1,result.buffer,result.offset+8,8,VK_QUERY_RESULT_64_BIT|VK_QUERY_RESULT_WAIT_BIT);
++    phase(5);
 +    barrier(command,record,VK_ACCESS_TRANSFER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 +    const uint64_t ratio[]={counters.ratio.numerator,counters.ratio.denominator};dispatch(command,counters.clock,&record,1,ratio,sizeof ratio);
++    phase(6);
 +    barrier(command,record,VK_ACCESS_SHADER_WRITE_BIT,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
++    phase(7);
++    if(phase_started && ++profiled_reports%300==0){
++        log("native counter report over300: target=%.3f end-pass=%.3f pool=%.3f written-bind=%.3f fill=%.3f query-copy=%.3f conversion=%.3f barrier=%.3f ms",
++            double(phase_ns[0])/1e6,double(phase_ns[1])/1e6,double(phase_ns[2])/1e6,double(phase_ns[3])/1e6,
++            double(phase_ns[4])/1e6,double(phase_ns[5])/1e6,double(phase_ns[6])/1e6,double(phase_ns[7])/1e6);
++        phase_ns={};
++    }
 +    slot.reports=true;
 +    static uint64_t types=0;if(!(types&(1ull<<type))){types|=1ull<<type;log("native GPU counter report type=%u",type);}
 +}
@@ -7081,7 +7151,7 @@
          std::memset(u.ptr, 0, padded);
 --- a/runtime/src/nvn/nvn_device.cpp
 +++ b/runtime/src/nvn/nvn_device.cpp
-@@ -1,129 +1,81 @@
+@@ -1,129 +1,99 @@
 -// NVN device (docs/NVN.md, phases N2-N3). Values come from what the game checks and from the SDK's own NVN driver
 -// (recompiled in sdk; NX_NVN_REAL=1 records where each of its procs lives, see nvn_trace.cpp).
 -#include <map>
@@ -7091,6 +7161,8 @@
 +#include "native_device.h"
 +#include "native_raster_policy.h"
 +#include "native_counters.h"
++#include "native_memory_epoch.h"
++#include <cstdlib>
 +#define WIN32_LEAN_AND_MEAN
 +#define NOMINMAX
 +#include <windows.h>
@@ -7101,12 +7173,28 @@
 +namespace {
 +std::atomic<uint64_t> current_device=0;
 +struct Device final:Object{std::atomic<uint32_t> origin=0;std::atomic<bool> ready=false;VkDevice backend=VK_NULL_HANDLE;};
-+bool span_valid(uint64_t address,uint64_t bytes,uint32_t permissions){
++bool uncached_span_valid(uint64_t address,uint64_t bytes,uint32_t permissions){
 + if(!address||address>=(1ull<<39)||bytes>(1ull<<39)-address)return false;
 + for(uint64_t cursor=address;cursor<address+bytes;){auto v=vm_query(cursor);if(cursor<v.addr||cursor-v.addr>=v.size||(v.perm&permissions)!=permissions)return false;MEMORY_BASIC_INFORMATION info{};if(!VirtualQuery(reinterpret_cast<void*>(cursor),&info,sizeof(info))||info.State!=MEM_COMMIT||(info.Protect&(PAGE_GUARD|PAGE_NOACCESS)))return false;
 +  if((permissions&2)&&!(info.Protect&(PAGE_READWRITE|PAGE_WRITECOPY|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY)))return false;
 +  const auto end=std::min<uint64_t>(v.addr+v.size,reinterpret_cast<uint64_t>(info.BaseAddress)+info.RegionSize);if(end<=cursor)return false;cursor=std::min(end,address+bytes);
 + }return true;
++}
++bool span_valid(uint64_t address,uint64_t bytes,uint32_t permissions){
++ static const bool cache_enabled=[] {const auto* e=std::getenv("NX_SPAN_CACHE");return !e||e[0]!='0';}();
++ if(!cache_enabled)return uncached_span_valid(address,bytes,permissions);
++ if(!address||address>=(1ull<<39)||bytes>(1ull<<39)-address)return false;
++ struct Entry{uint64_t epoch=0,address=0,bytes=0;uint32_t permissions=0;};
++ static thread_local Entry entries[64];
++ auto& entry=entries[((address>>4)^(address>>14))&63];
++ const auto epoch=memory_epoch::stable();
++ if(epoch&&entry.epoch==epoch&&entry.address==address&&bytes<=entry.bytes&&
++    (entry.permissions&permissions)==permissions&&memory_epoch::stable()==epoch)return true;
++ const bool valid=uncached_span_valid(address,bytes,permissions);
++ // Store successful exact-start spans only. Any map or host backing mutation
++ // invalidates all thread caches; failed checks and in-flight mutations do not cache.
++ if(valid&&epoch&&memory_epoch::stable()==epoch)entry={epoch,address,bytes,permissions};
++ return valid;
 +}
 +}
 +bool native_guest_span(uint64_t address,uint64_t bytes,uint32_t permissions){return span_valid(address,bytes,permissions);}
@@ -9507,16 +9595,39 @@
      pthread_threadid_np(nullptr, &tid);
 --- a/runtime/src/platform_win.cpp
 +++ b/runtime/src/platform_win.cpp
-@@ -22,6 +22,8 @@
+@@ -22,6 +22,9 @@
  
  #include "kernel.h"
  #include "platform.h"
 +#include "native_exit_policy.h"
 +#include "mk8_focus_policy.h"
++#include "native_memory_epoch.h"
  
  namespace nx {
  HWND g_window = nullptr;
-@@ -63,7 +65,7 @@
+@@ -33,15 +36,20 @@
+ // ---- memory ---------------------------------------------------------------------------------------------------
+ 
+ bool reserve(uint64_t addr, uint64_t size) {
++    memory_epoch::Mutation mutation;
+     return VirtualAlloc(reinterpret_cast<void*>(addr), size, MEM_RESERVE, PAGE_NOACCESS) != nullptr;
+ }
+ 
+ bool commit(uint64_t addr, uint64_t size) {
++    memory_epoch::Mutation mutation;
+     uint64_t a = addr & ~0xFFFull, e = (addr + size + 0xFFF) & ~0xFFFull;
+     return VirtualAlloc(reinterpret_cast<void*>(a), e - a, MEM_COMMIT, PAGE_READWRITE) != nullptr;
+ }
+ 
+-void decommit(uint64_t addr, uint64_t size) { VirtualFree(reinterpret_cast<void*>(addr), size, MEM_DECOMMIT); }
++void decommit(uint64_t addr, uint64_t size) {
++    memory_epoch::Mutation mutation;
++    VirtualFree(reinterpret_cast<void*>(addr), size, MEM_DECOMMIT);
++}
+ 
+ // ---- threads and time -----------------------------------------------------------------------------------------
+ 
+@@ -63,7 +71,7 @@
  }
  
  void exit_thread() { ExitThread(0); }
@@ -9525,7 +9636,7 @@
  void sleep_ns(int64_t ns) { std::this_thread::sleep_for(std::chrono::nanoseconds(ns)); }
  void yield() { SwitchToThread(); }
  void set_thread_name(const char*) {}
-@@ -78,6 +80,7 @@
+@@ -78,6 +86,7 @@
      const char* v = std::getenv(env.c_str());
      return v ? v : "";
  }
@@ -9533,7 +9644,7 @@
  int64_t current_thread_id() { return int64_t(GetCurrentThreadId()); }
  bool profile(const int64_t*, const uint64_t* const*, size_t, int, const std::string&) { return false; }
  
-@@ -148,9 +151,10 @@
+@@ -148,9 +157,10 @@
  
  static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM w, LPARAM l) {
      switch (msg) {
@@ -9546,7 +9657,7 @@
          case WM_KEYDOWN:
              if (w == VK_F11) toggle_fullscreen(h);
              break;
-@@ -188,10 +192,11 @@
+@@ -188,10 +198,11 @@
      int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2, y = (sh - h) / 2;
      // NX_HEADLESS: created hidden (the surface still needs a window), never brought to the front.
      const DWORD style = headless() ? (kWindowed & ~WS_VISIBLE) : kWindowed;
@@ -9560,7 +9671,7 @@
      *ready = true;
      MSG m;
      while (GetMessageW(&m, nullptr, 0, 0) > 0) {
-@@ -462,7 +467,7 @@
+@@ -462,7 +473,7 @@
      return EXCEPTION_CONTINUE_SEARCH;
  }
  
@@ -11816,7 +11927,7 @@
 +std::cout<<"native counter clock checks="<<count<<" PASS\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/native_counter_probe.h
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,99 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include "nvn/native_counters.h"
@@ -11900,6 +12011,20 @@
 +        frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,draw_take_write_backs(),false);
 +    }
 +    check(ld<uint64_t>(memory+128)==32);check(timestamp(128)>=last_time);
++    // Reuse the frame-slot query pools with shrinking, empty and growing sets.
++    // Unused queries must remain reset; used queries must not retain old values.
++    for(unsigned frame=0;frame<24;++frame){
++        const unsigned count=frame%6;
++        const auto low=current();
++        {
++            std::lock_guard lock(gpu_lock());auto command=frame_begin(false);
++            replay::written_reset();replay::dedup_reset();
++            for(unsigned query=0;query<count;++query)native_counter_report(command,query%2?0:16,backing.gpu+256+16*query);
++            frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,draw_take_write_backs(),false);
++        }
++        const auto high=current();
++        for(unsigned query=0;query<count;++query){const auto value=timestamp(256+16*query);check(value>=low&&value<=high);}
++    }
 +    api.x[0]=command_key;call("nvnCommandBufferFinalize");api.x[0]=pool_key;call("nvnMemoryPoolFinalize");destroy(texture_key);
 +}
 --- /dev/null
@@ -12088,7 +12213,7 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,263 @@
+@@ -0,0 +1,264 @@
 +#include <limits>
 +#include <array>
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -12126,6 +12251,7 @@
 +#include "native_uniform_snapshot_probe.h"
 +#include "native_single_layer_array_sample_probe.h"
 +#include "native_counter_probe.h"
++#include "native_span_cache_probe.h"
 +#include "native_conditional_probe.h"
 +#include "native_point_probe.h"
 +#include "native_depth_contract_probe.h"
@@ -12149,7 +12275,7 @@
 + if(gpu){if(_putenv_s("NX_PIPELINED","1")||_putenv_s("NX_SNAP_RAW","1"))throw std::runtime_error("fixture pipeline/raw snapshot mode setup failed");}
 + unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("native device assertion "+std::to_string(n));};
 + for(const char* name:{"_ZN2nv20SetGraphicsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_","_ZN2nv28SetGraphicsDevtoolsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_"}){auto setter=nx::hle_lookup(name);check(setter!=nullptr);nx::CPU invalid_allocator{};bool rejected=false;try{setter(invalid_allocator);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
-+ check(nx::find_symbol("nnMain")==0);nx::memory_init();native_wait_cancellation_probe(check); {const auto mii_output=nx::kernel_alloc(6*sizeof(nx::mii::CharInfoElement),16);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);uint32_t creator_key=0;nx::IpcCtx mii_open{};mii_open.cmd=0;mii_open.in=reinterpret_cast<uint8_t*>(&creator_key);mii_open.in_size=4;auto mii_manager=nx::make_service("mii:u");check(mii_manager&&mii_manager->handle(mii_open)==0&&mii_open.out_objects.size()==1);auto database=mii_open.out_objects[0];for(uint32_t sources:{0u,1u,2u,3u}){nx::IpcCtx query{};query.cmd=2;query.in=reinterpret_cast<const uint8_t*>(&sources);query.in_size=4;check(database->handle(query)==0);uint32_t count=99;std::memcpy(&count,query.out.data(),4);check(count==((sources&2)?6u:0u));}uint32_t defaults_source=2;nx::IpcCtx list{};list.cmd=3;list.in=reinterpret_cast<const uint8_t*>(&defaults_source);list.in_size=4;list.b.push_back({mii_output,6*sizeof(nx::mii::CharInfoElement)});std::memset(reinterpret_cast<void*>(mii_output),0xcd,6*sizeof(nx::mii::CharInfoElement));check(database->handle(list)==0);check(nx::ld<uint8_t>(mii_output)==0xcd);check(list.validate_reply&&list.validate_reply());check(bool(list.commit_reply));list.commit_reply();nx::mii::CharInfoElement first{};std::memcpy(&first,reinterpret_cast<void*>(mii_output),sizeof first);check(first.source==1&&first.info.Verify()==nx::mii::ValidationResult::NoErrors);nx::IpcCtx revoked=list;revoked.out.clear();revoked.commit_reply={};revoked.validate_reply={};check(database->handle(revoked)==0);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,1);check(!revoked.validate_reply());nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);nx::IpcCtx short_list{};short_list.cmd=3;short_list.in=reinterpret_cast<const uint8_t*>(&defaults_source);short_list.in_size=4;short_list.b.push_back({mii_output,sizeof(nx::mii::CharInfoElement)});check(database->handle(short_list)==0x47e);uint32_t invalid_source=4;nx::IpcCtx invalid_mii{};invalid_mii.cmd=2;invalid_mii.in=reinterpret_cast<const uint8_t*>(&invalid_source);invalid_mii.in_size=4;check(database->handle(invalid_mii)==0xe401);}
++ check(nx::find_symbol("nnMain")==0);nx::memory_init();native_span_cache_probe(check);native_wait_cancellation_probe(check); {const auto mii_output=nx::kernel_alloc(6*sizeof(nx::mii::CharInfoElement),16);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);uint32_t creator_key=0;nx::IpcCtx mii_open{};mii_open.cmd=0;mii_open.in=reinterpret_cast<uint8_t*>(&creator_key);mii_open.in_size=4;auto mii_manager=nx::make_service("mii:u");check(mii_manager&&mii_manager->handle(mii_open)==0&&mii_open.out_objects.size()==1);auto database=mii_open.out_objects[0];for(uint32_t sources:{0u,1u,2u,3u}){nx::IpcCtx query{};query.cmd=2;query.in=reinterpret_cast<const uint8_t*>(&sources);query.in_size=4;check(database->handle(query)==0);uint32_t count=99;std::memcpy(&count,query.out.data(),4);check(count==((sources&2)?6u:0u));}uint32_t defaults_source=2;nx::IpcCtx list{};list.cmd=3;list.in=reinterpret_cast<const uint8_t*>(&defaults_source);list.in_size=4;list.b.push_back({mii_output,6*sizeof(nx::mii::CharInfoElement)});std::memset(reinterpret_cast<void*>(mii_output),0xcd,6*sizeof(nx::mii::CharInfoElement));check(database->handle(list)==0);check(nx::ld<uint8_t>(mii_output)==0xcd);check(list.validate_reply&&list.validate_reply());check(bool(list.commit_reply));list.commit_reply();nx::mii::CharInfoElement first{};std::memcpy(&first,reinterpret_cast<void*>(mii_output),sizeof first);check(first.source==1&&first.info.Verify()==nx::mii::ValidationResult::NoErrors);nx::IpcCtx revoked=list;revoked.out.clear();revoked.commit_reply={};revoked.validate_reply={};check(database->handle(revoked)==0);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,1);check(!revoked.validate_reply());nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);nx::IpcCtx short_list{};short_list.cmd=3;short_list.in=reinterpret_cast<const uint8_t*>(&defaults_source);short_list.in_size=4;short_list.b.push_back({mii_output,sizeof(nx::mii::CharInfoElement)});check(database->handle(short_list)==0x47e);uint32_t invalid_source=4;nx::IpcCtx invalid_mii{};invalid_mii.cmd=2;invalid_mii.in=reinterpret_cast<const uint8_t*>(&invalid_source);invalid_mii.in_size=4;check(database->handle(invalid_mii)==0xe401);}
 +const auto device=nx::kernel_alloc(7008,16);
 + check(!nx::nvn::initialize_native_device(device,0));
 + nx::vm_set(device,7008,nx::kMemHeap,3); // Authored fixture explicitly admits its storage to the guest-visible bus.
@@ -12818,6 +12944,29 @@
 +  bool exact=true;for(unsigned z=0;z<8;++z)for(unsigned y=0;y<8;++y)for(unsigned x=0;x<8;++x){const auto index=(z*8+y)*8+x;if(wide){uint16_t rgba[4];std::memcpy(rgba,readback.ptr+index*8,8);exact&=rgba[0]==(x>=4?0x3c00:0)&&rgba[1]==(y>=4?0x3c00:0)&&rgba[2]==(z>=4?0x3c00:0)&&rgba[3]==0x3c00;}else{uint32_t packed;std::memcpy(&packed,readback.ptr+index*4,4);exact&=packed==expected[index];}}check(exact);
 + }
 + native_volume_sample_probe(key,check,8,1.0f);destroy(key);
++}
+--- /dev/null
++++ b/tests/native_span_cache_probe.h
+@@ -0,0 +1,20 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/native_guest_span.h"
++#include <thread>
++template<class Check> void native_span_cache_probe(Check check){
++ using namespace nx;
++ const auto memory=kernel_alloc(8192,4096);vm_set(memory,8192,kMemHeap,3);
++ auto valid=[&](uint64_t offset,uint64_t bytes,uint32_t permissions){return nvn::native_guest_span(memory+offset,bytes,permissions);};
++ check(!nvn::native_guest_span(0,16,3));
++ check(valid(32,16,3));check(valid(32,16,3));
++ vm_set(memory,4096,kMemHeap,1);check(!valid(32,16,3));check(valid(32,16,1));
++ vm_set(memory,4096,kMemHeap,3);check(valid(32,16,3));
++ std::thread revoke([&]{vm_set(memory,4096,kMemHeap,1);});revoke.join();check(!valid(32,16,3));
++ vm_set(memory,4096,kMemHeap,3);check(valid(32,16,3));
++ decommit(memory,4096);check(!valid(32,16,3));check(commit(memory,4096));check(valid(32,16,3));
++ vm_set(memory+4096,4096,kMemHeap,1);check(!valid(4096-8,16,3));check(valid(4096-8,16,1));
++ vm_set(memory,8192,kMemHeap,3);check(valid(4096-8,16,3));check(valid(4096-8,16,3));
++ decommit(memory+4096,4096);check(!valid(4096-8,16,3));check(commit(memory+4096,4096));check(valid(4096-8,16,3));
++ vm_set(memory,8192,kMemFree,0);decommit(memory,8192);check(!valid(32,16,3));
 +}
 --- /dev/null
 +++ b/tests/native_texture_clear_test.cpp

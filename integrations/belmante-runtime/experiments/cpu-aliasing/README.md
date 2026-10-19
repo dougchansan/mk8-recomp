@@ -1,6 +1,8 @@
 # Experimental CPU aliasing and shared memory
 
-This optional R236 patch applies after the default R235 integration. It is not
+This optional R236 patch targets the historical R235 integration at `d223385`.
+The current default is R245; combining the experiment with its thread changes
+has not been verified. This patch is not
 enabled by `prepare.py` and is not a demonstrated smooth-60 implementation.
 Water Park performance remains unresolved. No game code, assets or binary is
 included.
@@ -12,7 +14,7 @@ under that optimization. Existing acquire/release, exclusive-monitor and barrier
 helpers remain unchanged. Restricted references alone fail an authored polling
 control and must not be enabled without the memory-access change.
 
-Apply `cpu-aliasing.patch` to a fresh source folder prepared by the default
+Apply `cpu-aliasing.patch` to a fresh source folder prepared from the `d223385`
 integration, using `git apply --check` before `git apply`. Its exact SHA-256 and
 baseline are recorded in `EXPERIMENT.json`.
 

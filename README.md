@@ -32,7 +32,11 @@ strengthens timestamp-result visibility. The measured report uses 512 rather
 than 66,048 upload bytes, with exact padded GPU-read regressions. Both allocation
 modes pass 6,000-presentation game controls; course averages of 51.87 and 50.80
 FPS show no demonstrated speed gain. The source recipe reconstructs 200 generic
-files. Sustained smooth 60 and correct 120 remain unverified.
+files. R245 fixes worker-handle leaks and native thread descriptions, synchronizes
+priority metadata and expands validation to 42 suites. Its default scheduling
+control averages 57.28 FPS; optional native priority mapping remains off after
+showing no demonstrated speed gain. The default source recipe now reconstructs
+202 files. Sustained smooth 60 and correct 120 remain unverified.
 
 The following figures describe the earlier guarded-runtime research track; the current native race result is the Belmante integration above.
 

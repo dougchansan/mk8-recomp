@@ -185,7 +185,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,19 +329,59 @@
+@@ -208,19 +329,63 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -218,6 +218,10 @@
 +        target_link_libraries(native_device_fixture PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt mfplat mfuuid wmcodecdspuuid mfreadwrite)
 +        target_link_options(native_device_fixture PRIVATE /STACK:67108864 /HIGHENTROPYVA:NO /MAP)
 +        add_test(NAME native_device_cpu COMMAND native_device_fixture)
++        add_test(NAME native_thread_host_default COMMAND native_device_fixture --thread-policy)
++        set_tests_properties(native_thread_host_default PROPERTIES ENVIRONMENT "NX_NATIVE_THREAD_PRIORITY=0" TIMEOUT 15)
++        add_test(NAME native_thread_host_priorities COMMAND native_device_fixture --thread-policy)
++        set_tests_properties(native_thread_host_priorities PROPERTIES ENVIRONMENT "NX_NATIVE_THREAD_PRIORITY=1" TIMEOUT 15)
 +        add_executable(native_sdk_mii_probe tests/native_sdk_mii_probe.cpp $<TARGET_OBJECTS:nx_runtime_objects>)
 +        target_include_directories(native_sdk_mii_probe PRIVATE runtime/include runtime/src "${NX_VULKAN_SDK}/Include")
 +        target_link_libraries(native_sdk_mii_probe PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt mfplat mfuuid wmcodecdspuuid)
@@ -1290,13 +1294,14 @@
  };
 --- a/runtime/src/kernel.cpp
 +++ b/runtime/src/kernel.cpp
-@@ -1,3 +1,5 @@
+@@ -1,3 +1,6 @@
++#include "native_thread_priority.h"
 +#include "native_failure.h"
 +#include "mk8_focus_policy.h"
  // A small Horizon kernel: handles, threads, synchronization (mutex/condvar/address arbitration), events,
  // memory and GetInfo. Services (IPC) live in ipc.cpp.
  #include <algorithm>
-@@ -18,6 +20,7 @@
+@@ -18,6 +21,7 @@
  
  #include "kernel_state.h"
  #include "platform.h"
@@ -1304,7 +1309,7 @@
  
  namespace nx {
  
-@@ -43,6 +46,11 @@
+@@ -43,6 +47,11 @@
  
  using namespace kstate;
  
@@ -1316,7 +1321,7 @@
  uint32_t handle_add(std::shared_ptr<KObject> o) {
      std::lock_guard lk(g_k);
      uint32_t h = g_next_handle++;
-@@ -53,6 +61,7 @@
+@@ -53,6 +62,7 @@
  std::shared_ptr<KObject> handle_get(uint32_t h) {
      std::lock_guard lk(g_k);
      if (h == kPseudoCurrentThread && t_self) return t_self->self.lock();
@@ -1324,7 +1329,7 @@
      auto it = g_handles.find(h);
      return it == g_handles.end() ? nullptr : it->second;
  }
-@@ -75,6 +84,7 @@
+@@ -75,6 +85,7 @@
  uint64_t heap_size() { return g_heap_size; }
  
  CPU& current_cpu() { return t_self->ctx; }
@@ -1332,7 +1337,7 @@
  
  uint64_t system_tick() { return plat::monotonic_ns() * 192 / 10000; }  // 19.2 MHz
  
-@@ -337,7 +347,8 @@
+@@ -337,7 +348,8 @@
      };
      auto until = std::chrono::steady_clock::now() + std::chrono::nanoseconds(timeout < 0 ? 0 : timeout);
      KThread* self = t_self;
@@ -1342,7 +1347,7 @@
      g_sync_waiters.push_back(self);
      struct Leave {
          KThread* t;
-@@ -350,11 +361,12 @@
+@@ -350,11 +362,12 @@
              objs[i]->consume();
              return 0;
          }
@@ -1356,7 +1361,62 @@
          if (timeout < 0)
              self->cv.wait(lk);
          else if (self->cv.wait_until(lk, until) == std::cv_status::timeout && ready() < 0)
-@@ -587,7 +599,8 @@
+@@ -364,13 +377,21 @@
+ 
+ // ---- threads --------------------------------------------------------------------------------------------------
+ 
++static void configure_current_host_thread(KThread& t) {
++    {
++        std::lock_guard guard(g_k);
++        t.host_tid=plat::current_thread_id();
++        apply_native_thread_priority(t.host_tid,t.prio,true);
++    }
++    char name[16];
++    std::snprintf(name,sizeof name,"g%llx",(unsigned long long)t.id);
++    plat::set_thread_name(name);
++}
++
+ static void thread_main(void* p) {
+     KThread* t = static_cast<KThread*>(p);
+     t_self = t;
+-    t->host_tid = plat::current_thread_id();
+-    char name[16];
+-    std::snprintf(name, sizeof name, "g%llx", (unsigned long long)t->id);
+-    plat::set_thread_name(name);
++    configure_current_host_thread(*t);
+     call(t->ctx, t->entry);
+     // Returning from the entry point is like svcExitThread.
+     std::lock_guard lk(g_k);
+@@ -407,7 +428,7 @@
+     auto t = new_thread(0, 0, stack + stack_size, 44, 0);
+     t->started = true;
+     t_self = t.get();
+-    t->host_tid = plat::current_thread_id();
++    configure_current_host_thread(*t);
+     return t->handle;
+ }
+ 
+@@ -516,13 +537,18 @@
+             return;
+         }
+         case 0x0C: {  // GetThreadPriority(handle) -> prio
++            std::lock_guard guard(g_k);
+             auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[1])));
+             c.x[1] = t ? t->prio : 44;
+             break;
+         }
+         case 0x0D: {  // SetThreadPriority(handle, prio)
++            std::lock_guard guard(g_k);
+             auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[0])));
+-            if (t) t->prio = int(c.x[1]);
++            if (t) {
++                t->prio = int(c.x[1]);
++                if(t->started&&!t->exited&&t->host_tid)apply_native_thread_priority(t->host_tid,t->prio);
++            }
+             break;
+         }
+         case 0x0E: {  // GetThreadCoreMask(handle) -> core, mask
+@@ -587,7 +613,8 @@
          case 0x19: {  // CancelSynchronization(thread handle)
              auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[0])));
              std::lock_guard lk(g_k);
@@ -1366,7 +1426,7 @@
              notify_all();
              break;
          }
-@@ -616,9 +629,13 @@
+@@ -616,9 +643,13 @@
          case 0x22:  // SendSyncRequestWithUserBuffer(buf, size, handle)
              rc = ipc_request(c, uint32_t(c.x[2]), c.x[0], c.x[1]);
              break;
@@ -1383,7 +1443,7 @@
          case 0x25: {  // GetThreadId(handle) -> id
              auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[1])));
              c.x[1] = t ? t->id : 0;
-@@ -678,7 +695,7 @@
+@@ -678,7 +709,7 @@
              rc = unmap_transfer_memory(uint32_t(c.x[0]), c.x[1], c.x[2]);
              break;
          default:
@@ -1392,7 +1452,7 @@
                  (unsigned long long)c.x[0], (unsigned long long)c.x[1], (unsigned long long)c.x[2]);
              rc = 0;
      }
-@@ -691,7 +708,8 @@
+@@ -691,7 +722,8 @@
  namespace {
  thread_local int t_svc_role = 0;  // 1 game main, 2 the thread that presents
  std::mutex g_svc_lock;
@@ -1402,7 +1462,7 @@
  bool svc_profile_on() {
      static const bool on = std::getenv("NX_SVC_PROFILE") != nullptr;
      return on;
-@@ -706,28 +724,40 @@
+@@ -706,28 +738,40 @@
      std::vector<std::pair<uint64_t, std::tuple<int, uint32_t, uint64_t>>> v;
      uint64_t total = 0;
      for (auto& [k, val] : g_svc_prof)
@@ -5792,6 +5852,46 @@
 +        std::vector<uint8_t> bytes(static_cast<size_t>(count));if(image_->read({false,0,size_},offset,bytes)!=count)throw std::runtime_error("native archive read failed");return bytes;
 +    }
 +};
++}
+--- /dev/null
++++ b/runtime/src/native_thread_priority.h
+@@ -0,0 +1,37 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstdint>
++#include <cstdlib>
++#include <nx/runtime.h>
++#if defined(_WIN32)
++#include <windows.h>
++#endif
++namespace nx {
++inline bool native_thread_priority_enabled(){
++#if defined(_WIN32)
++ static const bool enabled=[] {const char* e=std::getenv("NX_NATIVE_THREAD_PRIORITY");return e&&e[0]=='1';}();return enabled;
++#else
++ return false;
++#endif
++}
++inline void apply_native_thread_priority(int64_t tid,int priority,bool announce=false){
++#if defined(_WIN32)
++ if(!native_thread_priority_enabled()||tid<=0||uint64_t(tid)>0xffffffffull||priority<0||priority>63)return;
++ // Bounded relative priorities only. Keep the process class unchanged and do
++ // not request REALTIME or TIME_CRITICAL scheduling.
++ const int level=priority<24?THREAD_PRIORITY_HIGHEST:priority<40?THREAD_PRIORITY_ABOVE_NORMAL:priority<48?THREAD_PRIORITY_NORMAL:priority<56?THREAD_PRIORITY_BELOW_NORMAL:THREAD_PRIORITY_LOWEST;
++ const bool self=DWORD(tid)==GetCurrentThreadId();
++ HANDLE thread=self?GetCurrentThread():OpenThread(THREAD_SET_INFORMATION|THREAD_QUERY_LIMITED_INFORMATION,FALSE,DWORD(tid));
++ if(!thread){log("native thread priority: tid=%llu guest=%d applied=0 error=%lu",(unsigned long long)tid,priority,GetLastError());return;}
++ DWORD status=0;const bool owned=GetProcessIdOfThread(thread)==GetCurrentProcessId();
++ const bool active=owned&&GetExitCodeThread(thread,&status)&&status==STILL_ACTIVE;
++ const bool applied=active&&SetThreadPriority(thread,level);const DWORD error=applied?0:GetLastError();
++ const int actual=applied?GetThreadPriority(thread):THREAD_PRIORITY_ERROR_RETURN;
++ if(!self)CloseHandle(thread);
++ static const bool trace=[] {const char* e=std::getenv("NX_TRACE_THREAD_PRIORITY");return e&&e[0]=='1';}();
++ if(announce||trace||!applied)log("native thread priority: tid=%llu guest=%d requested=%d actual=%d applied=%u error=%lu",(unsigned long long)tid,priority,level,actual,unsigned(applied),error);
++#else
++ (void)tid;(void)priority;(void)announce;
++#endif
++}
 +}
 --- /dev/null
 +++ b/runtime/src/native_touch_policy.h
@@ -10827,7 +10927,7 @@
  
  // ---- threads and time -----------------------------------------------------------------------------------------
  
-@@ -53,7 +64,8 @@
+@@ -53,20 +64,71 @@
  static DWORD WINAPI thread_entry(void* p) {
      ThreadStart s = *static_cast<ThreadStart*>(p);
      delete static_cast<ThreadStart*>(p);
@@ -10837,7 +10937,15 @@
      return 0;
  }
  
-@@ -63,8 +75,45 @@
+ void start_thread(ThreadFn fn, void* arg, size_t stack_size) {
+-    CreateThread(nullptr, stack_size, thread_entry, new ThreadStart{fn, arg}, STACK_SIZE_PARAM_IS_A_RESERVATION,
+-                 nullptr);
++    auto* start=new ThreadStart{fn,arg};
++    HANDLE thread=CreateThread(nullptr,stack_size,thread_entry,start,STACK_SIZE_PARAM_IS_A_RESERVATION,nullptr);
++    if(!thread){const auto error=GetLastError();delete start;fatal("native thread creation failed (%lu)",error);}
++    // The running thread owns its OS lifetime. This creation handle is not a
++    // join handle and must not accumulate after each completed guest worker.
++    CloseHandle(thread);
  }
  
  void exit_thread() { ExitThread(0); }
@@ -10883,9 +10991,21 @@
 +    }
 +}
  void yield() { SwitchToThread(); }
- void set_thread_name(const char*) {}
+-void set_thread_name(const char*) {}
++void set_thread_name(const char* name) {
++    if(!name)return;
++    using SetDescription=HRESULT(WINAPI*)(HANDLE,PCWSTR);
++    static const auto set=reinterpret_cast<SetDescription>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"SetThreadDescription"));
++    if(!set)return;
++    const int count=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,name,-1,nullptr,0);
++    if(count<=0)return;
++    std::wstring wide(size_t(count),L'\0');
++    if(MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,name,-1,wide.data(),count)==count)set(GetCurrentThread(),wide.c_str());
++}
  float default_render_scale() { return 1.0f; }
-@@ -78,6 +127,7 @@
+ void release_window(void*) {}
+ uint64_t window_generation() { return 1; }
+@@ -78,6 +140,7 @@
      const char* v = std::getenv(env.c_str());
      return v ? v : "";
  }
@@ -10893,7 +11013,7 @@
  int64_t current_thread_id() { return int64_t(GetCurrentThreadId()); }
  bool profile(const int64_t*, const uint64_t* const*, size_t, int, const std::string&) { return false; }
  
-@@ -148,9 +198,10 @@
+@@ -148,9 +211,10 @@
  
  static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM w, LPARAM l) {
      switch (msg) {
@@ -10906,7 +11026,7 @@
          case WM_KEYDOWN:
              if (w == VK_F11) toggle_fullscreen(h);
              break;
-@@ -188,10 +239,11 @@
+@@ -188,10 +252,11 @@
      int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2, y = (sh - h) / 2;
      // NX_HEADLESS: created hidden (the surface still needs a window), never brought to the front.
      const DWORD style = headless() ? (kWindowed & ~WS_VISIBLE) : kWindowed;
@@ -10920,7 +11040,7 @@
      *ready = true;
      MSG m;
      while (GetMessageW(&m, nullptr, 0, 0) > 0) {
-@@ -278,12 +330,15 @@
+@@ -278,12 +343,15 @@
  namespace {
  
  std::atomic<uint32_t> g_queued{0};
@@ -10936,7 +11056,7 @@
          g_done(p->first);
          delete p;
      }
-@@ -292,7 +347,7 @@
+@@ -292,7 +360,7 @@
      void STDMETHODCALLTYPE OnStreamEnd() noexcept override {}
      void STDMETHODCALLTYPE OnBufferStart(void*) noexcept override {}
      void STDMETHODCALLTYPE OnLoopEnd(void*) noexcept override {}
@@ -10945,7 +11065,7 @@
  };
  
  IXAudio2* g_xa = nullptr;
-@@ -302,35 +357,58 @@
+@@ -302,35 +370,58 @@
  }  // namespace
  
  bool audio_open(AudioDone done) {
@@ -11030,7 +11150,7 @@
      return true;
  }
  
-@@ -392,7 +470,7 @@
+@@ -392,7 +483,7 @@
      if (e->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP || !g_watch) return EXCEPTION_CONTINUE_SEARCH;
      nx::log("WATCH: %llx written (now %llx) at %s.exe+%llx (tools/symbolize.py)", (unsigned long long)g_watch,
              (unsigned long long)nx::ld<uint64_t>(g_watch), nx::game::kInfo.id, (unsigned long long)exe_va(e->ExceptionRecord->ExceptionAddress));
@@ -11039,7 +11159,7 @@
      static int hits = 0;
      if (++hits >= 30) e->ContextRecord->Dr7 = 0;
      return EXCEPTION_CONTINUE_EXECUTION;
-@@ -440,8 +518,9 @@
+@@ -440,8 +531,9 @@
      nx::log("CRASH: exception %08lx at %s (tools/symbolize.py for the exe), data address %llx", r->ExceptionCode,
              host_where(uint64_t(r->ExceptionAddress)).c_str(), (unsigned long long)info);
      host_backtrace(*e->ContextRecord);
@@ -11050,7 +11170,7 @@
      return EXCEPTION_EXECUTE_HANDLER;
  }
  
-@@ -462,9 +541,31 @@
+@@ -462,9 +554,31 @@
      return EXCEPTION_CONTINUE_SEARCH;
  }
  
@@ -13743,7 +13863,8 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,782 @@
+@@ -0,0 +1,784 @@
++#include "native_thread_policy_probe.h"
 +#include <source_location>
 +#include "nvn/native_readback_memory.h"
 +namespace nx::nvn {VkQueue vk_queue();uint32_t vk_queue_family();}
@@ -13817,6 +13938,7 @@
 +#include "native_counter_sync_probe.h"
 +#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
++ if(argc==2&&std::string_view(argv[1])=="--thread-policy")return authored_thread_probe::run();
 + if(argc==2&&std::string_view(argv[1])=="--mapped-readback-bench") {
 +  using namespace nx::nvn;using namespace nx::vk;
 +  auto require=[](bool ok){if(!ok)throw std::runtime_error("mapped readback benchmark assertion");};
@@ -15214,6 +15336,72 @@
 +#include <iostream>
 +#include <stdexcept>
 +int main(){unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("texture layer assertion");};for(unsigned depth:{0u,1u,2u,6u,0xffffffffu})check(nx::nvn::native_texture_storage_layers(8,depth)==6);check(nx::nvn::native_texture_storage_layers(1,1)==1);check(nx::nvn::native_texture_storage_layers(4,7)==7);check(nx::nvn::native_texture_storage_layers(2,9)==9);std::cout<<"texture layer checks="<<checks<<" PASS\n";}
+--- /dev/null
++++ b/tests/native_thread_policy_probe.h
+@@ -0,0 +1,63 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "kernel.h"
++#include "platform.h"
++#include <atomic>
++#include <cstdio>
++#include <cstdlib>
++#include <cwchar>
++#include <string>
++#include <vector>
++#include <thread>
++#include <windows.h>
++namespace authored_thread_probe {
++struct State{std::atomic<bool> ready=false,stop=false;std::atomic<DWORD> tid=0;};
++inline void entry(nx::CPU& c){auto* state=reinterpret_cast<State*>(c.x[0]);state->tid=GetCurrentThreadId();state->ready.store(true,std::memory_order_release);while(!state->stop.load(std::memory_order_acquire))Sleep(1);}
++NX_HLE("authoredNativeThreadPolicyEntry",entry);
++struct Count{std::atomic<unsigned> done=0,wrong=0;DWORD parent=0;};
++inline void count(void* value){auto& state=*static_cast<Count*>(value);if(GetCurrentThreadId()==state.parent)++state.wrong;++state.done;}
++inline int run(){
++ using namespace nx;unsigned checks=0;std::vector<std::string> failures;
++ auto check=[&](bool ok,const char* text){++checks;if(!ok)failures.emplace_back(text);};
++ const bool native=[] {const char* e=std::getenv("NX_NATIVE_THREAD_PRIORITY");return e&&e[0]=='1';}();
++ const auto process_class=GetPriorityClass(GetCurrentProcess());memory_init();create_main_thread(65536);
++ State state;const auto stack=kernel_alloc(65536);vm_set(stack,65536,kMemStack,3);CPU api{};
++ api.x[1]=hle_address("authoredNativeThreadPolicyEntry");api.x[2]=reinterpret_cast<uint64_t>(&state);api.x[3]=stack+65536;api.x[4]=44;api.x[5]=0;svc(api,0x08,0);
++ check(api.x[0]==0,"create SVC");const auto handle=uint32_t(api.x[1]);auto thread=std::dynamic_pointer_cast<KThread>(handle_get(handle));
++ if(!thread){std::fprintf(stderr,"authored thread handle absent\n");return 2;}
++ api={};api.x[0]=handle;api.x[1]=56;svc(api,0x0d,0);check(api.x[0]==0&&thread->prio==56&&thread->host_tid==0,"prestart priority stored");
++ api={};api.x[0]=handle;svc(api,0x09,0);check(api.x[0]==0,"start SVC");
++ const auto limit=GetTickCount64()+3000;while(!state.ready.load(std::memory_order_acquire)&&GetTickCount64()<limit)Sleep(1);
++ if(!state.ready.load()){state.stop=true;std::fprintf(stderr,"authored thread did not start\n");return 3;}
++ const auto native_handle=OpenThread(SYNCHRONIZE|THREAD_QUERY_LIMITED_INFORMATION,FALSE,state.tid.load());
++ if(!native_handle){state.stop=true;std::fprintf(stderr,"cannot open owned authored thread\n");return 4;}
++ check(GetProcessIdOfThread(native_handle)==GetCurrentProcessId(),"owned native thread");
++ const int initial=GetThreadPriority(native_handle);check(initial==(native?THREAD_PRIORITY_LOWEST:THREAD_PRIORITY_NORMAL),"prestart priority applied on native entry");
++ for(const auto values: {std::pair<int,int>{16,THREAD_PRIORITY_HIGHEST},{32,THREAD_PRIORITY_ABOVE_NORMAL},{44,THREAD_PRIORITY_NORMAL},{52,THREAD_PRIORITY_BELOW_NORMAL},{63,THREAD_PRIORITY_LOWEST}}){
++  api={};api.x[0]=handle;api.x[1]=values.first;svc(api,0x0d,0);check(api.x[0]==0,"set priority SVC");
++  const auto actual=GetThreadPriority(native_handle);check(actual==(native?values.second:THREAD_PRIORITY_NORMAL),"running native priority matches bounded policy");
++  api={};api.x[1]=handle;svc(api,0x0c,0);check(api.x[0]==0&&api.x[1]==uint64_t(values.first),"guest priority remains exact");
++ }
++ // Concurrent setter/getter traffic must complete with exact guest values and
++ // the final native state. The target remains an owned sleeping thread.
++ api={};api.x[0]=handle;api.x[1]=32;svc(api,0x0d,0);
++ std::atomic<bool> entered=false;std::atomic<unsigned> bad=0;
++ std::thread setter([&]{entered=true;for(unsigned i=0;i<128;++i){CPU request{};request.x[0]=handle;request.x[1]=(i&1)?44:32;svc(request,0x0d,0);if(request.x[0])++bad;}});
++ while(!entered.load())std::this_thread::yield();
++ for(unsigned i=0;i<512;++i){CPU request{};request.x[1]=handle;svc(request,0x0c,0);if(request.x[0]||(request.x[1]!=32&&request.x[1]!=44))++bad;}
++ setter.join();check(bad.load()==0,"concurrent priority operations complete coherently");
++ api={};api.x[1]=handle;svc(api,0x0c,0);check(api.x[1]==44&&GetThreadPriority(native_handle)==THREAD_PRIORITY_NORMAL,"final priority state is coherent");
++ using Description=HRESULT(WINAPI*)(HANDLE,PWSTR*);auto description=reinterpret_cast<Description>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"GetThreadDescription"));
++ if(description){PWSTR name=nullptr;const auto code=description(native_handle,&name);wchar_t expected[32]{};std::swprintf(expected,32,L"g%llx",(unsigned long long)thread->id);check(SUCCEEDED(code)&&name&&std::wstring(name)==expected,"native guest-thread description");if(name)LocalFree(name);}
++ state.stop.store(true,std::memory_order_release);check(WaitForSingleObject(native_handle,3000)==WAIT_OBJECT_0,"owned native thread completes");CloseHandle(native_handle);handle_close(handle);
++ DWORD before=0,after=0;check(GetProcessHandleCount(GetCurrentProcess(),&before)!=FALSE,"initial handle count");
++ Count counter;counter.parent=GetCurrentThreadId();for(unsigned i=0;i<128;++i)plat::start_thread(count,&counter,65536);
++ const auto deadline=GetTickCount64()+3000;while(counter.done.load()<128&&GetTickCount64()<deadline)Sleep(1);
++ check(counter.done.load()==128&&counter.wrong.load()==0,"all128 callbacks execute on native workers");
++ check(GetProcessHandleCount(GetCurrentProcess(),&after)!=FALSE,"final handle count");check(after<=before+4,"completed native workers release creation handles");
++ check(GetPriorityClass(GetCurrentProcess())==process_class,"process priority class unchanged");
++ std::printf("native thread policy mode=%s checks=%u initial_priority=%d handles_before=%lu handles_after=%lu callbacks=%u guest_modules=0 GPU=0\n",native?"native":"legacy",checks,initial,before,after,counter.done.load());
++ for(const auto& text:failures)std::fprintf(stderr,"native thread policy failure: %s\n",text.c_str());
++ if(failures.empty())std::printf("native thread policy PASS\n");return failures.empty()?0:1;
++}
++}
 --- /dev/null
 +++ b/tests/native_touch_policy_test.cpp
 @@ -0,0 +1,5 @@

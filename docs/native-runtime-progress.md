@@ -4,9 +4,42 @@ Updated 2026-10-19. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
-R236 is available as an optional
+R245 fixes native Windows worker-handle ownership and thread descriptions.
+The old path leaked 128 creation handles after 128 completed workers; both new
+controls finish with no handle-count increase. Real SVC-created authored threads
+verify pre-start and running priority updates, concurrent getters/setters, exact
+stored guest priorities, unchanged process class and native descriptions.
+The priority getter and setter now share kernel synchronization.
+
+`NX_NATIVE_THREAD_PRIORITY=1` optionally maps valid stored priorities to bounded
+Windows relative levels from -2 to +2 for owned live threads. It never raises
+the process priority class. Mapping remains disabled by default: separate
+6,000-target controls observe 57.28 FPS with default scheduling and 54.46 FPS
+with mapping, with desktop/scene variation still relevant. Both close without
+errors or changed source/executable/input-save. All 42 suites, 2,507 GPU checks,
+300-check sync/cutoff controls, 259 native readback checks and both changed-source
+analyses pass. The default source recipe reconstructs 202 generic files.
+
+The focus-snapshot experiment remains private and disabled. Its 65 lease,
+notification, visibility and parking regressions pass, but a continuous-game
+ABBA control observes 56.45 FPS for the old lock versus 56.38 for the snapshot.
+Across 15 complete paired groups/3,600 intervals, the snapshot is faster in
+only six groups; the median paired difference is +0.018 ms/frame. Host benchmark
+throughput improvements did not establish a game-speed benefit.
+
+An optional private queue-timing diagnostic uses the existing GPU timestamps and
+calibrated device clock without adding GPU queries, commands or waits. In 487
+course samples it observes mean queue/preamble lead 0.210 ms, GPU execution
+4.918 ms, completion-to-retirement lag 0.082 ms and fence wait 5.112 ms. Maximum
+calibration deviation is 636 ns; two calibration calls cost about 37.4 microseconds
+per sampled submission. These samples indicate that the observed waits are
+largely GPU work, rather than large queue or retirement delays. The diagnostic
+flight averages 57.28 FPS with 481 intervals above 20 ms. Smooth 60 and correct
+120 remain unverified.
+
+R236 is available as an optional historical
 [CPU experiment](../integrations/belmante-runtime/experiments/cpu-aliasing/README.md),
-while the default source recipe remains R235. It enables clang-cl CPU-context
+targeting R235 at `d223385`. It enables clang-cl CPU-context
 aliasing annotations together with relaxed atomic integer guest memory accesses.
 An annotation-only polling control fails; the combined memory contract passes.
 All 400 static CPU and 89 runtime objects are rebuilt against the changed header,

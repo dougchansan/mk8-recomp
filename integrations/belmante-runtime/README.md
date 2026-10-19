@@ -56,9 +56,13 @@ commit and exact game-produced-save reload to mode selection are verified.
 Audible audio, physical controls, broader gameplay and full-speed performance
 remain open; no release/tag/download is available.
 
-Windows integration now passes 40 CPU/component suites and a 2,507-check native
+Windows integration now passes 42 CPU/component suites and a 2,507-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R235 reconstructs 200 generic adapted files. Exact 16-byte counter
+entry point. R245 reconstructs 202 generic adapted files. Native worker creation
+handles are released, thread descriptions are applied and concurrent priority
+metadata access is synchronized. `NX_NATIVE_THREAD_PRIORITY=1` enables an
+experimental bounded Windows priority mapping; it remains off by default after
+the game controls showed no demonstrated FPS gain. Exact 16-byte counter
 bindings avoid an unnecessary 64 KiB allocation tail; authored GPU tests verify
 later padded reads preserve the result and zero tail. A stronger timestamp-record
 dependency passes repeated exact hardware-query controls. Pool resource release

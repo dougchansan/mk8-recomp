@@ -50,6 +50,32 @@ presentation/non-replay 0.05 ms/frame; class sums match their aggregate and all
 query results are available. These are queued intervals, not isolated shader work.
 The source recipe now reconstructs 193 generic adapted files.
 
+R217 adds optional grouping of consecutive counted draws into one precise
+occlusion query within a render pass (`NX_COALESCE_SAMPLE_QUERIES=1`). Queries
+close before pass end or internal helper work; explicit counted Draw brackets
+remain distinct from masked or ordinary clears outside those brackets. Both
+`vkCmdClearAttachments` paths are excluded because Vulkan permits driver-dependent
+clear contributions. Reset/report boundaries, conditional rendering, cross-submit
+accumulation, query capacity, CPU-visible writeback and required waits remain.
+The legacy per-draw mode stays the default while longer validation is active.
+
+Authored tests verify 1/2/5/17 consecutive draws return 16/32/80/272 samples,
+and two counted draws around either a masked helper or an ordinary ClearColor
+return 32. All 40 suites and 2,327 GPU checks pass in default/grouped modes,
+including grouped GPU-busy/cache-disabled controls and 300-check sync/cutoff
+controls. Analyses of the five changed production units are clean. The recipe
+reconstructs 195 generic adapted files; public CPU ABI/archives are unchanged.
+
+An earlier same-executable R216 pair covers 1,500 course presentations: legacy
+observes 38.36 FPS, median queued replay 16.46 ms and 897.52 precise queries/frame;
+grouped observes 43.28 FPS, 8.27 ms and 208.28 queries/frame. The title workloads
+average 897.52 versus 916.44 draws/frame; separate process/NPC/clock/scheduling
+variation remains. Late grouped windows reach 57–59 FPS, not a sustained-fullspeed
+claim. This pair precedes R217's ordinary-clear hardening and is provisional;
+the hardened long Stadium/results/Water Park flight is in progress. No release.
+
+See the [Vulkan query scope and sample-count rules](https://docs.vulkan.org/spec/latest/chapters/queries.html).
+
 A bounded async-2/pipeline-0/chunk-512 control passes the authored GPU tests but
 reaches the unchanged 6 GB guard at 6.22 GB after at least 3,360 presentations;
 recent course windows fall near 12 FPS. It is rejected. Default chunk 0 remains
@@ -157,8 +183,8 @@ Vulkan unit retains one inherited portability-chain dead-store warning. Those pi
 subsequent standalone 259-check probe and actual game readback pass as recorded
 above. Second-course gameplay remains unverified.
 
-The current source recipe is R213, reconstructing 193 generic adapted files.
-All 40 component suites and the 2,261-check native GPU fixture pass, plus a
+The current source recipe is R217, reconstructing 195 generic adapted files.
+All 40 component suites and the 2,327-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
 codec API probe passes 309 checks for 32 owned decoded pictures, actual picture
 IDs, planar pixel conversion, draining and mapped-memory revocation. The full

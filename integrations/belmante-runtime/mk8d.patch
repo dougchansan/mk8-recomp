@@ -5993,10 +5993,11 @@
 +}
 --- /dev/null
 +++ b/runtime/src/nvn/native_counters.cpp
-@@ -0,0 +1,342 @@
+@@ -0,0 +1,374 @@
 +#include "native_perf.h"
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "native_counters.h"
++#include "native_sample_query_scope.h"
 +#include "native_conditional.h"
 +#include "native_conditional_shader.h"
 +#include "native_counter_shaders.h"
@@ -6031,8 +6032,12 @@
 +    NativeCounterRatio ratio{};
 +    uint32_t slot=UINT32_MAX,active=invalid_query;
 +    VkCommandBuffer command=VK_NULL_HANDLE;
-+    bool initialized=false,enabled=false;
++    bool initialized=false,enabled=false,draw_scope=false;
 +} counters;
++bool coalesced_samples() {static const bool value=[] {const char* e=std::getenv("NX_COALESCE_SAMPLE_QUERIES");return e&&e[0]=='1';}();return value;}
++bool sample_query_stats() {static const bool value=[] {const char* e=std::getenv("NX_COUNTER_QUERY_STATS");return e&&e[0]=='1';}();return value;}
++uint64_t sample_draws=0,sample_queries=0,sample_ends=0;
++
 +void require(VkResult result,const char* operation) {
 +    if(result!=VK_SUCCESS)throw std::runtime_error(std::string("native counter ")+operation+" failed: "+std::to_string(result));
 +}
@@ -6109,6 +6114,17 @@
 +    p_vkCmdPushConstants(command,program.layout,VK_SHADER_STAGE_COMPUTE_BIT,0,bytes,push);
 +    p_vkCmdDispatch(command,1,1,1);
 +}
++void finish_samples(VkCommandBuffer command) {
++    if(counters.active==invalid_query)return;
++    auto& slot=context(command);
++    if(!pass_open()||counters.draw_scope)throw std::runtime_error("native grouped query closed outside pass or inside Draw");
++    const auto query=counters.active;
++    p_vkCmdEndQuery(command,slot.samples,query);
++    if(!slot.pending_count)slot.pending_first=query;
++    if(query!=slot.pending_first+slot.pending_count)throw std::runtime_error("native query results are not contiguous");
++    ++slot.pending_count;counters.active=invalid_query;
++    if(sample_query_stats())++sample_ends;
++}
 +void resolve(VkCommandBuffer command) {
 +    auto& slot=context(command);
 +    if(!slot.pending_count)return;
@@ -6141,7 +6157,7 @@
 +void native_counter_frame_begin(uint32_t index,VkCommandBuffer command) {
 +    const auto reset_started = perf::enabled() ? perf::now() : 0;
 +    if(counters.conditional_active)throw std::runtime_error("native conditional scope crossed frames");
-+    if(index>=slots_count||counters.active!=invalid_query)throw std::runtime_error("native counter frame lifecycle mismatch");
++    if(index>=slots_count||counters.active!=invalid_query||counters.draw_scope)throw std::runtime_error("native counter frame lifecycle mismatch");
 +    counters.slot=index;counters.command=command;counters.conditional_prepared=VK_NULL_HANDLE;
 +    auto& slot=counters.slots[index];
 +    if(slot.pending_count)throw std::runtime_error("native counter results escaped their command buffer");
@@ -6186,23 +6202,39 @@
 +    barrier(command,total,VK_ACCESS_TRANSFER_WRITE_BIT,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT);
 +    counters.enabled=true;
 +}
++void native_counter_end_render_pass(VkCommandBuffer command) {finish_samples(command);}
++void native_counter_before_helper_draw(VkCommandBuffer command) {
++    // An explicit counted Draw bracket may use the helper as authored geometry.
++    // Internal clears outside that bracket must never add title samples.
++    if(!counters.draw_scope)finish_samples(command);
++}
++void native_counter_log_queries(uint64_t frames) {
++    if(!frames||!sample_query_stats())return;
++    log("native sample queries over %llu: draws=%llu queries=%llu ended=%llu coalesced=%u",
++        (unsigned long long)frames,(unsigned long long)sample_draws,(unsigned long long)sample_queries,
++        (unsigned long long)sample_ends,unsigned(coalesced_samples()));
++    sample_draws=sample_queries=sample_ends=0;
++}
 +uint32_t native_counter_draw_begin(VkCommandBuffer command) {
 +    if(!counters.enabled)return invalid_query;
 +    auto& slot=context(command);
-+    if(!pass_open()||!slot.samples||counters.active!=invalid_query||slot.next_sample>=query_count||zero_draws_on())
++    if(!pass_open()||!slot.samples||counters.draw_scope||zero_draws_on())
++        throw std::runtime_error("native occlusion query scope mismatch");
++    if(sample_query_stats())++sample_draws;
++    if(coalesced_samples()&&counters.active!=invalid_query){counters.draw_scope=true;return counters.active;}
++    if(counters.active!=invalid_query||slot.next_sample>=query_count)
 +        throw std::runtime_error("native occlusion query scope/capacity mismatch");
 +    counters.active=slot.next_sample++;
 +    p_vkCmdBeginQuery(command,slot.samples,counters.active,VK_QUERY_CONTROL_PRECISE_BIT);
++    counters.draw_scope=true;if(sample_query_stats())++sample_queries;
 +    return counters.active;
 +}
 +void native_counter_draw_end(VkCommandBuffer command,uint32_t query) {
 +    if(query==invalid_query)return;
-+    auto& slot=context(command);
-+    if(counters.active!=query||!pass_open())throw std::runtime_error("native occlusion query end mismatch");
-+    p_vkCmdEndQuery(command,slot.samples,query);
-+    if(!slot.pending_count)slot.pending_first=query;
-+    if(query!=slot.pending_first+slot.pending_count)throw std::runtime_error("native query results are not contiguous");
-+    ++slot.pending_count;counters.active=invalid_query;
++    (void)context(command);
++    if(counters.active!=query||!pass_open()||!counters.draw_scope)throw std::runtime_error("native occlusion query end mismatch");
++    counters.draw_scope=false;
++    if(!coalesced_samples())finish_samples(command);
 +}
 +void native_counter_report(VkCommandBuffer command,uint32_t type,uint64_t address) {
 +    static std::array<uint64_t,8> phase_ns{};
@@ -6481,6 +6513,17 @@
 +#pragma once
 +#include <cstdint>
 +namespace nx::nvn {void set_native_origin(uint64_t,uint32_t);uint32_t native_window_origin();}
+--- /dev/null
++++ b/runtime/src/nvn/native_sample_query_scope.h
+@@ -0,0 +1,8 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn_vk.h"
++namespace nx::nvn {
++void native_counter_end_render_pass(VkCommandBuffer);
++void native_counter_before_helper_draw(VkCommandBuffer);
++void native_counter_log_queries(uint64_t frames);
++}
 --- /dev/null
 +++ b/runtime/src/nvn/native_sampled_profile.h
 @@ -0,0 +1,37 @@
@@ -6762,7 +6805,12 @@
  // BindImage(cmd, stage, index, NVNimageHandle), BindImages[Deferred](cmd, stage, first, count, const NVNimageHandle*)
 --- a/runtime/src/nvn/nvn_clears.cpp
 +++ b/runtime/src/nvn/nvn_clears.cpp
-@@ -9,6 +9,7 @@
+@@ -1,3 +1,4 @@
++#include "native_sample_query_scope.h"
+ // Clears (split from nvn_draw.cpp). A clear of targets other than the open pass's used to end it and begin a pass on
+ // the new targets with every attachment loaded, then clear with a vkCmdClearAttachments quad: ~36 passes per course
+ // frame, each a full-resolution load on a tile GPU for data the clear then overwrote. Such a clear is now kept
+@@ -9,6 +10,7 @@
  // with some channels masked off, is never a loadOp; it runs in the pass, with vkCmdClearAttachments on the scissor
  // rectangle, or, masked, a fullscreen draw with that write mask (nvn_mask_clear.cpp). NX_CLEARS_SCISSOR=1 (off: it broke the course) and
  // NX_CLEARS_NO_MASK=1: whole-target and all-channel clears, the old way (bisecting).
@@ -6770,7 +6818,7 @@
  #include <algorithm>
  #include <cstdlib>
  #include <cstdio>
-@@ -16,6 +17,8 @@
+@@ -16,6 +18,8 @@
  #include <string>
  
  #include "nvn_draw_state.h"
@@ -6779,7 +6827,7 @@
  #include "nvn_ultrawide.h"
  
  namespace nx::nvn {
-@@ -199,6 +202,8 @@
+@@ -199,6 +203,8 @@
  // targets: most of the ~25 ms per frame of GPU time "outside passes" (docs/nvn/DEBUG.md #31). Depth and stencil
  // clears honour the call's masks.
  void draw_clear(VkCommandBuffer cb, const Targets& t, const Cmd& c) {
@@ -6788,7 +6836,7 @@
      bool color = c.op == Cmd::ClearColor;
      uint64_t guest = color ? (c.n < 8 ? t.colors[c.n] : 0) : t.depth;
      GpuImage* img = guest ? image_of(guest) : nullptr;
-@@ -241,6 +246,38 @@
+@@ -241,6 +247,39 @@
          rect.offset.x || rect.offset.y || rect.extent.width < full.width || rect.extent.height < full.height;
      bool masked = color && !no_mask && (c.mask & 0xF) != 0xF;
      g_scissored += scissored, g_masked += masked;
@@ -6817,6 +6865,7 @@
 +                throw std::invalid_argument("native conditional masked clear unsupported for this format");
 +        } else {
 +            VkClearRect region{rect, 0, 1};
++            native_counter_before_helper_draw(cb); // Clears may contribute samples on some Vulkan drivers.
 +            p_vkCmdClearAttachments(cb, 1, &a, 1, &region);
 +        }
 +        native_conditional_end(cb);
@@ -6827,6 +6876,14 @@
      if (!transfer && !eager && !scissored && !masked && !pass_open_on(t)) {
          VkExtent2D e = targets_extent(t);
          if (full.width <= e.width && full.height <= e.height) {  // the pass covers it: a loadOp can clear it
+@@ -288,6 +327,7 @@
+     VkClearRect r{rect, 0, 1};  // unscissored: all of the target, which is the pass's area
+     replay::trace_pass("clear in pass: slot, mask | bound channel mask << 8", t, color ? c.n : 8,
+                        c.mask | (color ? uint32_t(replay::g_state.mask.mask[c.n]) << 8 : 0));
++    native_counter_before_helper_draw(cb); // Preserve title-only sample counts across native clears.
+     p_vkCmdClearAttachments(cb, 1, &a, 1, &r);
+     pass_mark_written(color ? 1u << c.n : 1u << 8);  // a later draw sampling it needs a fresh pass
+ }
 --- a/runtime/src/nvn/nvn_cmd.cpp
 +++ b/runtime/src/nvn/nvn_cmd.cpp
 @@ -1,3 +1,4 @@
@@ -7643,13 +7700,14 @@
 +NX_HLE("nvnDeviceGetWindowOriginMode",nx::nvn::DeviceGetOrigin);
 --- a/runtime/src/nvn/nvn_draw.cpp
 +++ b/runtime/src/nvn/nvn_draw.cpp
-@@ -1,3 +1,5 @@
+@@ -1,3 +1,6 @@
++#include "native_sample_query_scope.h"
 +#include "native_perf.h"
 +#include "native_draw_invocation.h"
  // Draws (docs/NVN.md, N6): replays the bind, state and draw commands of nvn_state.cpp into Vulkan. Everything a draw
  // reads from guest memory (vertices, indices, uniform and storage buffers, textures) is copied at replay time into
  // the submit's upload buffer: the replay runs right when the game submits and is waited for, so the memory holds
-@@ -11,11 +13,18 @@
+@@ -11,11 +14,18 @@
  #include <cstring>
  #include <set>
  
@@ -7668,7 +7726,7 @@
  
  using namespace nx::vk;
  
-@@ -150,8 +159,18 @@
+@@ -150,8 +160,18 @@
          colors[k].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
          colors[k].loadOp = fresh >> k & 1 ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
          colors[k].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -7689,7 +7747,7 @@
      }
      GpuImage* dimg = t.depth ? image_of(t.depth) : nullptr;
      g_pass_images[8] = dimg;
-@@ -200,6 +219,7 @@
+@@ -200,6 +220,7 @@
  // DispatchCompute: the bound program's compute stage over (x, y, z) groups, outside render passes, then a barrier
  // so what it wrote is visible to what follows.
  void dispatch(VkCommandBuffer cb, const Cmd& c) {
@@ -7697,7 +7755,7 @@
      static const bool off = std::getenv("NX_NO_COMPUTE") != nullptr;  // debug: skip compute dispatches
      if (off) return;
      const auto* shaders = program_shaders(g_state.program);
-@@ -207,20 +227,27 @@
+@@ -207,20 +228,27 @@
      if (shaders)
          for (const ShaderInfo* s : *shaders)
              if (s->stage == ShaderStage::Compute) cs = s;
@@ -7728,7 +7786,7 @@
      draw_end_rendering(cb, 2);
      gather_textures(stages);
      build_sets(cb, stages, layout);
-@@ -256,7 +283,15 @@
+@@ -256,7 +284,15 @@
  }
  
  bool draw(VkCommandBuffer cb, const Targets& t, uint32_t mode, bool indexed, const Cmd& c) {
@@ -7744,7 +7802,7 @@
      if (g_state.rasterizer_discard || !g_state.render_enable) return false;  // nothing reaches the targets
      const auto* shaders = program_shaders(g_state.program);
      if (!shaders || shaders->empty()) {
-@@ -311,12 +346,17 @@
+@@ -311,12 +347,17 @@
                      (unsigned long long)r.texture, (void*)img, img ? img->width : 0, img ? img->height : 0,
                      img ? int(img->format) : 0, img ? img->levels : 0, img ? img->layers : 0, img ? int(img->uploaded) : 0,
                      img ? int(img->rendered) : 0);
@@ -7768,7 +7826,7 @@
              }
          }
      }
-@@ -365,6 +405,30 @@
+@@ -365,6 +406,30 @@
          return false;
      }
      check_vertex_ranges(vs, fs, indexed, c, in);  // NX_CHECK_VERTS (nvn_written.cpp)
@@ -7799,7 +7857,7 @@
      if (!g_rendering) {
          if (gpu_profile_on()) {
              GpuImage* img = t.color_count && t.colors[0] ? image_of(t.colors[0]) : nullptr;
-@@ -381,6 +445,7 @@
+@@ -381,6 +446,7 @@
      std::memset(&key, 0, sizeof key);  // the key is compared byte for byte
      key.vs = vs, key.fs = fs;
      key.topology = mode;
@@ -7807,7 +7865,7 @@
      key.attrib_count = uint32_t(std::min<size_t>(g_state.attribs.size(), 16));
      std::copy_n(g_state.attribs.begin(), key.attrib_count, key.attribs);
      key.stream_count = uint32_t(std::min<size_t>(g_state.streams.size(), 16));
-@@ -502,13 +567,27 @@
+@@ -502,13 +568,27 @@
              p_vkCmdBindIndexBuffer(cb, in.index.buffer, in.index.offset, in.index_type);
              g_bound.has_index = true, g_bound.index = in.index, g_bound.index_type = in.index_type, g_state_set++;
          }
@@ -7839,6 +7897,14 @@
      }
      g_stats.done++;
      g_pass_written |= ((1u << t.color_count) - 1) | (g_state.depth.depth_write || g_state.depth.stencil_test ? 1u << 8 : 0);
+@@ -604,6 +684,7 @@
+ 
+ void pass_end_only(VkCommandBuffer cb, int reason) {
+     if (!g_rendering) return;
++    native_counter_end_render_pass(cb);
+     g_pass_ends[reason & 7]++, trace_pass("end: reason", g_pass, uint32_t(reason), 0);
+     if (g_render_pass)
+         p_vkCmdEndRenderPass(cb);
 --- a/runtime/src/nvn/nvn_draw_state.cpp
 +++ b/runtime/src/nvn/nvn_draw_state.cpp
 @@ -6,12 +6,15 @@
@@ -7944,7 +8010,12 @@
      // format, Metal writes Inf/NaN, and the NaN spread through every later pass (bloom, the dialog's frosted-glass
 --- a/runtime/src/nvn/nvn_frames.cpp
 +++ b/runtime/src/nvn/nvn_frames.cpp
-@@ -40,12 +40,14 @@
+@@ -1,3 +1,4 @@
++#include "native_sample_query_scope.h"
+ // Submits that are not waited for (the design, and what stays synchronous and why:
+ // private/wonder/patches/async_submit.md). The synchronous path waits for every submit's fence before returning to
+ // the game, so the submitting thread stalls for the whole GPU time of each frame. Here a submit or a present takes one
+@@ -40,12 +41,14 @@
  #include <vector>
  
  #include "nvn_vk.h"
@@ -7959,7 +8030,7 @@
  VkQueue vk_queue();                // nvn_vk.cpp
  std::recursive_mutex& gpu_lock();  // nvn_vk.cpp
  
-@@ -284,10 +286,12 @@
+@@ -284,10 +287,12 @@
  // buffer: the next pass on their targets takes them as load operations), queues it, and begins the next one.
  VkCommandBuffer next_part(Slot& s) {
      pass_end_only(s.cbs[s.part], 0);
@@ -7972,7 +8043,7 @@
      if (s.ok) gpu_busy_part_begin(uint32_t(&s - g_slots), s.part, s.cbs[s.part]);
      if (!s.ok) log("nvn/vk: a part of a submit could not begin: it is lost");
      g_chunk_from = UINT64_MAX;
-@@ -375,6 +379,7 @@
+@@ -375,6 +380,7 @@
      g_next = (g_next + 1) % g_slot_count;
      g_begin = g_head;
      s.replay = replay, s.part = s.queued = s.waited = 0, s.split_part = -1, s.ok = true;
@@ -7980,7 +8051,7 @@
      s.begin_ns = plat::monotonic_ns();
      g_plan_dispatches = g_seen_dispatches = 0;
      g_chunking = false;
-@@ -383,6 +388,7 @@
+@@ -383,6 +389,7 @@
          return VK_NULL_HANDLE;
      }
      g_current = &s;
@@ -7988,7 +8059,7 @@
      gpu_busy_part_begin(uint32_t(&s - g_slots), 0, s.cbs[0]);  // NX_GPU_PROFILE=3
      return s.cbs[0];
  }
-@@ -450,6 +456,10 @@
+@@ -450,6 +457,10 @@
  void frame_submit(VkSemaphore wait, VkSemaphore signal, std::vector<WriteBack> write_backs, bool wait_done) {
      if (!g_current) return;
      Slot& s = *g_current;
@@ -7999,6 +8070,14 @@
      g_current = nullptr;
      if (pipelined() && s.replay) {
          g_stats.submits++;
+@@ -512,6 +523,7 @@
+ 
+ void frame_log(uint64_t frames) {
+     gpu_busy_log(frames);
++    native_counter_log_queries(frames);
+     if (uint64_t waits = g_game_waits.exchange(0))
+         log("nvn/vk: the game's waits (syncs, finish, pool invalidate/finalize): %llu blocked, %.2f ms per frame",
+             (unsigned long long)waits, double(g_game_wait_ns.exchange(0)) / 1e6 / double(frames));
 --- a/runtime/src/nvn/nvn_gpu_busy.cpp
 +++ b/runtime/src/nvn/nvn_gpu_busy.cpp
 @@ -21,6 +21,9 @@
@@ -8153,6 +8232,21 @@
  
  bool resolve_cache_on() {
      static const bool on = [] {
+--- a/runtime/src/nvn/nvn_mask_clear.cpp
++++ b/runtime/src/nvn/nvn_mask_clear.cpp
+@@ -1,3 +1,4 @@
++#include "native_sample_query_scope.h"
+ // Colour clears with some channels masked off (docs/nvn/GLITCH-PLAN.md G6). NVN's ClearColor(index, rgba, mask)
+ // writes only the channels in the mask (an alpha-only clear keeps RGB), and vkCmdClearAttachments writes them all.
+ // Such a clear is a fullscreen triangle inside the open pass instead: the colour comes from a push constant, the
+@@ -263,6 +264,7 @@
+     p_vkCmdSetViewport(cb, 0, 1, &vp);
+     p_vkCmdSetScissor(cb, 0, 1, &rect);
+     p_vkCmdPushConstants(cb, layout(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16, rgba);
++    native_counter_before_helper_draw(cb);
+     p_vkCmdDraw(cb, 3, 1, 0, 0);
+     return true;
+ }
 --- a/runtime/src/nvn/nvn_objects.cpp
 +++ b/runtime/src/nvn/nvn_objects.cpp
 @@ -1,7 +1,10 @@
@@ -12937,7 +13031,7 @@
 +std::cout<<"native counter clock checks="<<count<<" PASS\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/native_counter_probe.h
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,143 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include "nvn/native_counters.h"
@@ -12976,12 +13070,12 @@
 +    auto current=[&]{api.x[0]=device;call("nvnDeviceGetCurrentTimestampInNanoseconds");return api.x[0];};
 +    auto timestamp=[&](uint32_t offset){api.x[0]=device;api.x[1]=memory+offset;call("nvnDeviceGetTimestampInNanoseconds");return api.x[0];};
 +    auto execute=[&](VkCommandBuffer command,const std::shared_ptr<CmdList>& list){Targets ignored{};replay_list(command,ignored,*list,0);};
-+    auto geometry=[&](VkCommandBuffer command){
++    auto geometry=[&](VkCommandBuffer command,bool end_pass=true){
 +        pass_begin(command,targets);
 +        const auto query=native_counter_draw_begin(command);
 +        const float red[]={1,0,0,1};VkRect2D rectangle{{0,0},{4,4}};
 +        check(mask_clear(command,targets,0,15,red,rectangle));
-+        native_counter_draw_end(command,query);pass_mark_written(1);draw_end_rendering(command);
++        native_counter_draw_end(command,query);pass_mark_written(1);if(end_pass)draw_end_rendering(command);
 +    };
 +    const auto before=current();
 +    if (std::getenv("NX_CLOCK_BENCH")) {
@@ -13021,6 +13115,50 @@
 +        frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,draw_take_write_backs(),false);
 +    }
 +    check(ld<uint64_t>(memory+128)==32);check(timestamp(128)>=last_time);
++    // An internal masked-clear draw between two counted title Draw brackets
++    // must not contribute to samples, even while the same render pass remains.
++    const auto helper_excluded=report_list(1,144);
++    {
++        std::lock_guard lock(gpu_lock());auto command=frame_begin(false);
++        clears_begin_submit();replay::written_reset();replay::dedup_reset();execute(command,reset_list);
++        geometry(command,false);
++        const float green[]={0,1,0,1};check(mask_clear(command,targets,0,15,green,{{0,0},{4,4}}));
++        geometry(command,false);execute(command,helper_excluded);
++        frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,draw_take_write_backs(),false);
++    }
++    check(ld<uint64_t>(memory+144)==32);
++    log("native samples golden: two counted draws + uncounted helper clear = 32");
++    // Consecutive Draw brackets share one render pass: exact sample totals
++    // must be unchanged regardless of query grouping or later resets/reports.
++    const std::array<unsigned,4> run_lengths={1,2,5,17};
++    std::array<std::shared_ptr<CmdList>,4> run_reports;
++    for(unsigned run=0;run<run_lengths.size();++run)run_reports[run]=report_list(1,160+run*16);
++    {
++        std::lock_guard lock(gpu_lock());auto command=frame_begin(false);
++        clears_begin_submit();replay::written_reset();replay::dedup_reset();
++        for(unsigned run=0;run<run_lengths.size();++run){
++            execute(command,reset_list);
++            for(unsigned draw=0;draw<run_lengths[run];++draw)geometry(command,false);
++            execute(command,run_reports[run]);
++        }
++        frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,draw_take_write_backs(),false);
++    }
++    for(unsigned run=0;run<run_lengths.size();++run)check(ld<uint64_t>(memory+160+run*16)==16*run_lengths[run]);
++    log("native samples consecutive runs: 1/2/5/17 draws return exact16/32/80/272");
++    // Vulkan clears may contribute implementation-dependent query samples.
++    // The original clear API between counted Draw brackets must contribute0.
++    const auto ordinary_clear_excluded=report_list(1,224);
++    {
++        std::lock_guard lock(gpu_lock());auto command=frame_begin(false);
++        clears_begin_submit();replay::written_reset();replay::dedup_reset();execute(command,reset_list);
++        geometry(command,false);
++        Cmd clear{Cmd::ClearColor};clear.n=0;clear.mask=15;clear.f[1]=clear.f[3]=1;
++        draw_clear(command,targets,clear);
++        geometry(command,false);execute(command,ordinary_clear_excluded);
++        frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,draw_take_write_backs(),false);
++    }
++    check(ld<uint64_t>(memory+224)==32);
++    log("native samples ordinary-clear exclusion: two counted draws + ClearColor = 32");
 +    // Reuse the frame-slot query pools with shrinking, empty and growing sets.
 +    // Unused queries must remain reset; used queries must not retain old values.
 +    for(unsigned frame=0;frame<24;++frame){

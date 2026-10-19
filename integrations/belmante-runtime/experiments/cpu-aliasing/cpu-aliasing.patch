@@ -1,0 +1,99 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -36,6 +36,10 @@
+ option(NX_TESTS "Build the standalone unit tests" OFF)
+ if(NX_TESTS AND NOT ANDROID)
+     enable_testing()
++    add_executable(native_cpu_memory_test tests/native_cpu_memory_test.cpp)
++    target_include_directories(native_cpu_memory_test PRIVATE runtime/include)
++    add_test(NAME native_cpu_memory COMMAND native_cpu_memory_test)
++    set_tests_properties(native_cpu_memory PROPERTIES TIMEOUT 5)
+     add_executable(native_texture_clear_test tests/native_texture_clear_test.cpp)
+     target_include_directories(native_texture_clear_test PRIVATE runtime/src)
+     add_test(NAME native_texture_clear COMMAND native_texture_clear_test)
+--- a/runtime/include/nx/cpu.h
++++ b/runtime/include/nx/cpu.h
+@@ -93,7 +93,13 @@
+ // reads; left to itself it kept adds32/adds64 as calls in the huge generated functions).
+ #if defined(_MSC_VER)
+ #define NX_INLINE __forceinline
++// clang-cl accepts restricted references, matching the non-Windows contract:
++// guest pointers never address the host-only CPU context.
++#if defined(__clang__)
++#define NX_RESTRICT __restrict
++#else
+ #define NX_RESTRICT
++#endif
+ #else
+ #define NX_INLINE inline __attribute__((always_inline))
+ // The generated functions' CPU context: guest memory never overlaps it (the guest cannot see the host heap), so the
+@@ -105,6 +111,11 @@
+ 
+ template <typename T>
+ NX_INLINE T ld(uint64_t a) {
++    // Integer guest loads can poll memory another title thread updates. Relaxed
++    // atomics keep those reads observable when CPU registers no longer alias
++    // guest memory; on x86 ordinary scalar loads still use MOV instructions.
++    if constexpr (std::is_integral_v<T> && sizeof(T)<=8)
++        return __atomic_load_n(reinterpret_cast<const T*>(a),__ATOMIC_RELAXED);
+     T v;
+     std::memcpy(&v, reinterpret_cast<const void*>(a), sizeof(T));
+     return v;
+@@ -112,7 +123,9 @@
+ 
+ template <typename T>
+ NX_INLINE void st(uint64_t a, T v) {
+-    std::memcpy(reinterpret_cast<void*>(a), &v, sizeof(T));
++    if constexpr (std::is_integral_v<T> && sizeof(T)<=8)
++        __atomic_store_n(reinterpret_cast<T*>(a),v,__ATOMIC_RELAXED);
++    else std::memcpy(reinterpret_cast<void*>(a), &v, sizeof(T));
+ }
+ 
+ template <typename T>
+--- /dev/null
++++ b/tests/native_cpu_memory_test.cpp
+@@ -0,0 +1,44 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Authored memory contract: no title instructions or assets.
++#include <nx/cpu.h>
++#include <array>
++#include <chrono>
++#include <cstdio>
++#include <thread>
++#include <stdexcept>
++namespace {
++unsigned checks=0;
++void check(bool ok){++checks;if(!ok)throw std::runtime_error("native CPU memory assertion");}
++template<class T>void scalar(T value){
++ for(unsigned offset=0;offset<8;++offset){
++  std::array<uint8_t,32> memory;memory.fill(0xcd);
++  const auto address=reinterpret_cast<uint64_t>(memory.data()+8+offset);
++  nx::st<T>(address,value);check(nx::ld<T>(address)==value);
++  for(unsigned i=0;i<memory.size();++i)if(i<8+offset||i>=8+offset+sizeof(T))check(memory[i]==0xcd);
++ }
++}
++#if defined(_MSC_VER)
++__declspec(noinline)
++#else
++__attribute__((noinline))
++#endif
++void poll(nx::CPU& __restrict c){
++ while((c.x[0]=nx::ld<uint32_t>(c.x[1]))==1)++c.x[2];
++}
++}
++int main(){
++ scalar<uint8_t>(0xa7);scalar<int8_t>(-37);
++ scalar<uint16_t>(0xa5c7);scalar<int16_t>(-12345);
++ scalar<uint32_t>(0x98765432);scalar<int32_t>(-123456789);
++ scalar<uint64_t>(0xfedcba9876543210ull);scalar<int64_t>(-123456789012345ll);
++ for(unsigned variant=0;variant<8;++variant){
++  uint32_t flag=1;nx::CPU cpu{};cpu.x[1]=reinterpret_cast<uint64_t>(&flag);
++  std::thread producer([&]{std::this_thread::sleep_for(std::chrono::milliseconds(2));nx::st<uint32_t>(reinterpret_cast<uint64_t>(&flag),0);});
++  poll(cpu);producer.join();check(cpu.x[0]==0);check(nx::ld<uint32_t>(reinterpret_cast<uint64_t>(&flag))==0);
++ }
++ std::array<uint8_t,48> bytes{};const auto a=reinterpret_cast<uint64_t>(bytes.data()+3);
++ const auto f=std::bit_cast<float>(uint32_t(0x7fc01234));nx::st<float>(a,f);check(std::bit_cast<uint32_t>(nx::ld<float>(a))==0x7fc01234);
++ const auto d=std::bit_cast<double>(uint64_t(0x7ff8000012345678));nx::st<double>(a,d);check(std::bit_cast<uint64_t>(nx::ld<double>(a))==0x7ff8000012345678);
++ nx::V128 v{};v.u64[0]=0x123456789abcdef0;v.u64[1]=0xfedcba9876543210;nx::st<nx::V128>(a,v);const auto read=nx::ld<nx::V128>(a);check(!std::memcmp(&v,&read,sizeof(v)));
++ std::printf("native CPU memory checks=%u unaligned-scalars/shared-poll/float-vector-bits PASS\n",checks);
++}

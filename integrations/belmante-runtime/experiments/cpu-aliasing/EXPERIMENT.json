@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "baseline_commit": "d223385",
+  "baseline_revision": "R235",
+  "candidate_revision": "R236",
+  "default_enabled": false,
+  "changed_files": [
+    "CMakeLists.txt",
+    "runtime/include/nx/cpu.h",
+    "tests/native_cpu_memory_test.cpp"
+  ],
+  "patch_sha256": "44854719ac04a0e439f029b5b94670879456abb20431d71975d597ba8963d585",
+  "requires_full_static_CPU_and_runtime_rebuild": true,
+  "original_generated_title_sources_unchanged": true,
+  "static_CPU_objects": 400,
+  "runtime_objects": 89,
+  "component_suites": 41,
+  "gpu_checks": 2507,
+  "allocation_gpu_checks": 2511,
+  "sync_checks": 300,
+  "cutoff_checks": 300,
+  "readback_checks": 259,
+  "native_game_scope": "Stadium first/15 points, GPU-fenced480x270 readback, WaterPark lap2/3; closed24600-target run",
+  "performance_regression_unresolved": true,
+  "performance_scope": "Short course57.45FPS; longer Stadium56.74/WaterPark40.53 with foreground changes; not isolated causal speedup",
+  "audio_scope": "Real mutedXAudio2 consumption,0 reported drops,2 underruns; no listening",
+  "smooth60_verified": false,
+  "correct120_verified": false,
+  "platform_validation": "Windows x64 clang-cl /O2 /arch:AVX2; other platforms untested",
+  "public_download": false
+}

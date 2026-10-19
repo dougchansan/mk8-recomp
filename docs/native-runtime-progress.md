@@ -4,6 +4,33 @@ Updated 2026-10-19. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
+R236 is available as an optional
+[CPU experiment](../integrations/belmante-runtime/experiments/cpu-aliasing/README.md),
+while the default source recipe remains R235. It enables clang-cl CPU-context
+aliasing annotations together with relaxed atomic integer guest memory accesses.
+An annotation-only polling control fails; the combined memory contract passes.
+All 400 static CPU and 89 runtime objects are rebuilt against the changed header,
+using the original generated title sources unchanged. The 41 suites, existing
+GPU/sync/readback matrix and changed-source analyses pass.
+
+The short new-CPU course range averages 57.45 FPS with 520 intervals above 20 ms.
+An 8-minute-21-second, 24,600-target flight verifies Stadium first/15 points,
+the real GPU-fenced 480x270 readback and Water Park lap 2/3. Source, executable
+and saved input remain unchanged; foreground changes during the flight. Its
+selected Stadium range averages 56.74 FPS (median reporting window 59.9), while
+Water Park averages 40.53 FPS (median 45.95). Real muted audio records zero
+dropped buffers and two underruns. The Water Park result remains unresolved;
+this is not a demonstrated smooth-60 or overall performance improvement.
+
+R238's optional maximum-early-submission control passes exact one/two/six-chunk
+GPU regressions with preserved samples and guarded readback. However, its
+chunk-512/one-early-split game experiment still reaches the unchanged 6 GiB
+process-memory guard after 1,860 reported presentations, with a stable 3072x1728
+swapchain and foreground. Fewer splits and retired-pool reclamation have not
+resolved this failure. Chunking remains disabled by default; the failed
+experiment is retained privately. Windows ETW CPU sampling is installed but
+blocked by system profiling policy; read-only owned-thread attribution continues.
+
 **R212 now advances into Water Park and completes its first lap.** A clean
 24,000-target flight finishes Stadium first/15 points, performs the real native
 480×270 RGBA8 readback, advances normally into the second Mushroom Cup race,

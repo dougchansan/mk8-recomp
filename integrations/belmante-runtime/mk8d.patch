@@ -6039,7 +6039,7 @@
 +}
 --- /dev/null
 +++ b/runtime/src/nvn/native_counters.cpp
-@@ -0,0 +1,377 @@
+@@ -0,0 +1,389 @@
 +#include "native_perf.h"
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "native_counters.h"
@@ -6311,7 +6311,11 @@
 +    p_vkCmdWriteTimestamp(command,type==16?VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT:VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,slot.timestamps,query);
 +    p_vkCmdCopyQueryPoolResults(command,slot.timestamps,query,1,result.buffer,result.offset+8,8,VK_QUERY_RESULT_64_BIT|VK_QUERY_RESULT_WAIT_BIT);
 +    phase(5);
-+    barrier(command,record,VK_ACCESS_TRANSFER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
++    // Diagnostic control for visibility of the timestamp copy to its conversion.
++    static const bool complete=[] {const char* e=std::getenv("NX_COUNTER_COMPLETE_VISIBILITY");return !e||e[0]!='0';}();
++    barrier(command,record,complete?VK_ACCESS_MEMORY_WRITE_BIT:VK_ACCESS_TRANSFER_WRITE_BIT,
++        VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT,
++        complete?VK_PIPELINE_STAGE_ALL_COMMANDS_BIT:VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 +    const uint64_t ratio[]={counters.ratio.numerator,counters.ratio.denominator};dispatch(command,counters.clock,&record,1,ratio,sizeof ratio);
 +    phase(6);
 +    barrier(command,record,VK_ACCESS_SHADER_WRITE_BIT,VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
@@ -6324,6 +6328,14 @@
 +    }
 +    slot.reports=true;
 +    static uint64_t types=0;if(!(types&(1ull<<type))){types|=1ull<<type;log("native GPU counter report type=%u",type);}
++}
++// Failure-only authored probe: read a completed raw query without modifying it.
++uint64_t native_counter_query_for_probe(uint32_t index) {
++    std::lock_guard lock(gpu_lock());uint64_t ticks=0;
++    if(counters.slot>=slots_count||index>=counters.slots[counters.slot].next_timestamp)return UINT64_MAX;
++    const auto status=p_vkGetQueryPoolResults(vk_device(),counters.slots[counters.slot].timestamps,index,1,sizeof ticks,&ticks,sizeof ticks,VK_QUERY_RESULT_64_BIT);
++    if(status!=VK_SUCCESS){log("native raw query probe status=%d",int(status));return UINT64_MAX;}
++    return ticks;
 +}
 +uint64_t native_counter_current_ns() {
 +    perf::Scope perf_scope(perf::Region::Timestamp);
@@ -8166,7 +8178,29 @@
  VkQueue vk_queue();                // nvn_vk.cpp
  std::recursive_mutex& gpu_lock();  // nvn_vk.cpp
  
-@@ -284,10 +287,12 @@
+@@ -95,6 +98,12 @@
+ // A command pool per slot, reset whole when the slot is taken again (PHASE3.md C2): resetting each part's command
+ // buffer was 6-9% of the replay thread on Adreno (it frees the driver's per-pass objects). NX_CB_RESET=1: as before.
+ bool g_slot_pools = false;
++uint64_t g_total_early_chunks = 0;
++VkCommandPoolResetFlags retired_pool_reset_flags() {
++    static const bool release=[] {const char* e=std::getenv("NX_RELEASE_RETIRED_POOLS");return e&&e[0]=='1';}();
++    return release?VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT:VkCommandPoolResetFlags(0);
++}
++
+ uint64_t g_chunk_draws = 0;           // NX_SUBMIT_CHUNK_DRAWS (frame_init); 0: no chunks
+ bool g_chunking = false;              // this submit is chunked (frame_plan_split)
+ uint64_t g_chunk_from = UINT64_MAX;   // the draw count at the last part's start (UINT64_MAX: the next call's)
+@@ -177,7 +186,7 @@
+     if (janitor_on()) {
+         s->reset_done.store(false, std::memory_order_relaxed);
+         janitor_run([s] {
+-            if (g_slot_pools && s->pool_used) p_vkResetCommandPool(vk_device(), s->pool, 0);
++            if (g_slot_pools && s->pool_used) p_vkResetCommandPool(vk_device(), s->pool, retired_pool_reset_flags());
+             if (s->descriptors_used) p_vkResetDescriptorPool(vk_device(), s->descriptors, 0);
+             s->pool_used = s->descriptors_used = false;
+             s->reset_done.store(true, std::memory_order_release);
+@@ -284,10 +293,12 @@
  // buffer: the next pass on their targets takes them as load operations), queues it, and begins the next one.
  VkCommandBuffer next_part(Slot& s) {
      pass_end_only(s.cbs[s.part], 0);
@@ -8179,7 +8213,13 @@
      if (s.ok) gpu_busy_part_begin(uint32_t(&s - g_slots), s.part, s.cbs[s.part]);
      if (!s.ok) log("nvn/vk: a part of a submit could not begin: it is lost");
      g_chunk_from = UINT64_MAX;
-@@ -375,6 +380,7 @@
+@@ -370,11 +381,12 @@
+     Slot& s = g_slots[g_next];
+     if (s.serial) retire_through(s.serial);
+     janitor_wait(s.reset_done);
+-    if (g_slot_pools && s.pool_used) p_vkResetCommandPool(vk_device(), s.pool, 0);  // none of its parts is in flight
++    if (g_slot_pools && s.pool_used) p_vkResetCommandPool(vk_device(), s.pool, retired_pool_reset_flags());  // none of its parts is in flight
+     s.pool_used = true;
      g_next = (g_next + 1) % g_slot_count;
      g_begin = g_head;
      s.replay = replay, s.part = s.queued = s.waited = 0, s.split_part = -1, s.ok = true;
@@ -8187,7 +8227,7 @@
      s.begin_ns = plat::monotonic_ns();
      g_plan_dispatches = g_seen_dispatches = 0;
      g_chunking = false;
-@@ -383,6 +389,7 @@
+@@ -383,6 +395,7 @@
          return VK_NULL_HANDLE;
      }
      g_current = &s;
@@ -8195,7 +8235,21 @@
      gpu_busy_part_begin(uint32_t(&s - g_slots), 0, s.cbs[0]);  // NX_GPU_PROFILE=3
      return s.cbs[0];
  }
-@@ -450,6 +457,10 @@
+@@ -423,9 +436,12 @@
+     if (g_chunk_from == UINT64_MAX) g_chunk_from = draws;
+     uint64_t since = draws - g_chunk_from;
+     if (since < g_chunk_draws || (pass_open && since < 2 * g_chunk_draws)) return cb;
+-    g_stats.chunks++;
++    g_stats.chunks++;++g_total_early_chunks;
+     return next_part(*s);
+ }
++
++// Probe reads hold gpu_lock after draining the worker. This never resets.
++uint64_t native_early_chunks_for_probe() {return g_total_early_chunks;}
+ 
+ VkCommandBuffer frame_after_dispatch(VkCommandBuffer cb) {
+     if (!g_plan_dispatches || ++g_seen_dispatches != g_plan_dispatches) return frame_cb(cb);
+@@ -450,6 +466,10 @@
  void frame_submit(VkSemaphore wait, VkSemaphore signal, std::vector<WriteBack> write_backs, bool wait_done) {
      if (!g_current) return;
      Slot& s = *g_current;
@@ -8206,7 +8260,7 @@
      g_current = nullptr;
      if (pipelined() && s.replay) {
          g_stats.submits++;
-@@ -512,6 +523,7 @@
+@@ -512,6 +532,7 @@
  
  void frame_log(uint64_t frames) {
      gpu_busy_log(frames);
@@ -10538,6 +10592,23 @@
          }
          serial = ++g_enqueued;
          g_jobs.push_back({serial, std::move(job)});
+--- a/runtime/src/nvn/nvn_written.cpp
++++ b/runtime/src/nvn/nvn_written.cpp
+@@ -131,7 +131,13 @@
+     uint64_t n = uint64_t(hi - lo), off = uint64_t(p - lo);
+     Region r;
+     r.size = n;
+-    r.cap = std::max(n + kTail, off + padded);
++    // Native counter records request exactly16 bytes. Reserve only their
++    // requested extent; a later larger reader composes its padded copy through
++    // written_read, preserving the GPU result and zero tail. Storage callers
++    // requesting64KB padding retain the existing allocation policy.
++    static const bool compact = [] {const char* e=std::getenv("NX_COMPACT_COUNTER_WRITES");return !e||e[0]!='0';}();
++    const uint64_t tail = compact && size==16 && padded==16 ? 0 : kTail;
++    r.cap = std::max(n + tail, off + padded);
+     r.up = alloc_anchored(r.cap, off);
+     std::memcpy(r.up.ptr, lo, n);
+     std::memset(r.up.ptr + n, 0, r.cap - n);
 --- /dev/null
 +++ b/runtime/src/nvn/sdk53_packaged_texture.h
 @@ -0,0 +1,16 @@
@@ -13310,10 +13381,12 @@
 +std::cout<<"native counter clock checks="<<count<<" PASS\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/native_counter_probe.h
-@@ -0,0 +1,143 @@
+@@ -0,0 +1,175 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include "nvn/native_counters.h"
++#include "nvn/native_counter_clock.h"
++namespace nx::nvn {uint64_t native_counter_query_for_probe(uint32_t);}
 +#include "nvn/nvn_draw_state.h"
 +#include <array>
 +#include <cstring>
@@ -13443,14 +13516,44 @@
 +    for(unsigned frame=0;frame<24;++frame){
 +        const unsigned count=frame%6;
 +        const auto low=current();
++        Upload padded_counter{};
++        const auto allocation_test=std::getenv("NX_COUNTER_ALLOCATION_TEST");
 +        {
 +            std::lock_guard lock(gpu_lock());auto command=frame_begin(false);
 +            replay::written_reset();replay::dedup_reset();
++            const auto upload_before=frame_upload_used();
 +            for(unsigned query=0;query<count;++query)native_counter_report(command,query%2?0:16,backing.gpu+256+16*query);
++            if(allocation_test&&frame==1) {
++                const auto bytes=frame_upload_used()-upload_before;
++                log("native counter allocation bytes=%llu expected=%s",(unsigned long long)bytes,allocation_test);
++                check(std::strcmp(allocation_test,"legacy")==0 ? bytes>=65536 : bytes<=1024);
++                check(replay::written_read(command,reinterpret_cast<const uint8_t*>(memory+256),16,65536,256,padded_counter));
++            }
 +            frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,draw_take_write_backs(),false);
 +        }
 +        const auto high=current();
-+        for(unsigned query=0;query<count;++query){const auto value=timestamp(256+16*query);check(value>=low&&value<=high);}
++        if(padded_counter.ptr) {
++            check(std::memcmp(padded_counter.ptr,reinterpret_cast<const void*>(memory+256),16)==0);
++            bool zero=true;for(unsigned i=16;i<65536;++i)zero&=padded_counter.ptr[i]==0;
++            check(zero);log("native counter padded GPU read exact16/zero-tail PASS");
++        }
++        for(unsigned query=0;query<count;++query){const auto value=timestamp(256+16*query);
++            if(!(value>=low&&value<=high))log("native timestamp bounds failure frame=%u query=%u low=%llu value=%llu high=%llu rawValue=%llu rawTime=%llu deltaLow=%lld deltaHigh=%lld",frame,query,
++                (unsigned long long)low,(unsigned long long)value,(unsigned long long)high,
++                (unsigned long long)ld<uint64_t>(memory+256+16*query),(unsigned long long)ld<uint64_t>(memory+264+16*query),
++                (long long)(value-low),(long long)(value-high));
++            if(!(value>=low&&value<=high)) {
++                const auto raw=native_counter_query_for_probe(query);VkPhysicalDeviceProperties properties{};vk::p_vkGetPhysicalDeviceProperties(vk_physical(),&properties);
++                const auto ratio=native_counter_ratio(properties.limits.timestampPeriod);
++                log("native raw query failure query=%u rawTicks=%llu expectedNativeTicks=%llu observedNativeTicks=%llu ratio=%llu/%llu",query,
++                    (unsigned long long)raw,(unsigned long long)native_gpu_counter_ticks(raw,ratio),
++                    (unsigned long long)ld<uint64_t>(memory+264+16*query),(unsigned long long)ratio.numerator,(unsigned long long)ratio.denominator);
++            }
++            check(value>=low&&value<=high);
++            const auto raw=native_counter_query_for_probe(query);check(raw!=UINT64_MAX);
++            VkPhysicalDeviceProperties properties{};vk::p_vkGetPhysicalDeviceProperties(vk_physical(),&properties);
++            check(ld<uint64_t>(memory+256+16*query)==0);
++            check(ld<uint64_t>(memory+264+16*query)==native_gpu_counter_ticks(raw,native_counter_ratio(properties.limits.timestampPeriod)));}
 +    }
 +    api.x[0]=command_key;call("nvnCommandBufferFinalize");api.x[0]=pool_key;call("nvnMemoryPoolFinalize");destroy(texture_key);
 +}
@@ -13640,9 +13743,11 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,773 @@
+@@ -0,0 +1,782 @@
++#include <source_location>
 +#include "nvn/native_readback_memory.h"
 +namespace nx::nvn {VkQueue vk_queue();uint32_t vk_queue_family();}
++namespace nx::nvn {uint64_t native_early_chunks_for_probe();}
 +#if defined(_WIN32)
 +#include <windows.h>
 +#include "native_failure.h"
@@ -13707,6 +13812,7 @@
 +#include "native_null_sampler_probe.h"
 +#include "native_conditional_probe.h"
 +#include "native_point_probe.h"
++#include "native_early_chunk_probe.h"
 +#include "native_depth_contract_probe.h"
 +#include "native_counter_sync_probe.h"
 +#include "native_wait_cancellation_probe.h"
@@ -13899,7 +14005,7 @@
 + const bool block_probe=argc==2&&std::string_view(argv[1])=="--gpu-block";
 + const bool gpu=block_probe||(argc==2&&std::string_view(argv[1])=="--gpu");if(argc>1&&!gpu)throw std::runtime_error("expected --gpu, --gpu-block or no arguments");
 + if(gpu){if(_putenv_s("NX_PIPELINED","1")||_putenv_s("NX_SNAP_RAW","1"))throw std::runtime_error("fixture pipeline/raw snapshot mode setup failed");}
-+ unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("native device assertion "+std::to_string(n));};
++ unsigned n=0;auto check=[&](bool b,const std::source_location site=std::source_location::current()){++n;if(!b)throw std::runtime_error("native device assertion "+std::to_string(n)+" at "+site.file_name()+":"+std::to_string(site.line()));};
 + for(const char* name:{"_ZN2nv20SetGraphicsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_","_ZN2nv28SetGraphicsDevtoolsAllocatorEPFPvmmS0_EPFvS0_S0_EPFS0_S0_mS0_ES0_"}){auto setter=nx::hle_lookup(name);check(setter!=nullptr);nx::CPU invalid_allocator{};bool rejected=false;try{setter(invalid_allocator);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
 + check(nx::find_symbol("nnMain")==0);nx::memory_init();native_span_cache_probe(check);native_texture_compare_read_probe(check);native_wait_cancellation_probe(check); {const auto mii_output=nx::kernel_alloc(6*sizeof(nx::mii::CharInfoElement),16);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);uint32_t creator_key=0;nx::IpcCtx mii_open{};mii_open.cmd=0;mii_open.in=reinterpret_cast<uint8_t*>(&creator_key);mii_open.in_size=4;auto mii_manager=nx::make_service("mii:u");check(mii_manager&&mii_manager->handle(mii_open)==0&&mii_open.out_objects.size()==1);auto database=mii_open.out_objects[0];for(uint32_t sources:{0u,1u,2u,3u}){nx::IpcCtx query{};query.cmd=2;query.in=reinterpret_cast<const uint8_t*>(&sources);query.in_size=4;check(database->handle(query)==0);uint32_t count=99;std::memcpy(&count,query.out.data(),4);check(count==((sources&2)?6u:0u));}uint32_t defaults_source=2;nx::IpcCtx list{};list.cmd=3;list.in=reinterpret_cast<const uint8_t*>(&defaults_source);list.in_size=4;list.b.push_back({mii_output,6*sizeof(nx::mii::CharInfoElement)});std::memset(reinterpret_cast<void*>(mii_output),0xcd,6*sizeof(nx::mii::CharInfoElement));check(database->handle(list)==0);check(nx::ld<uint8_t>(mii_output)==0xcd);check(list.validate_reply&&list.validate_reply());check(bool(list.commit_reply));list.commit_reply();nx::mii::CharInfoElement first{};std::memcpy(&first,reinterpret_cast<void*>(mii_output),sizeof first);check(first.source==1&&first.info.Verify()==nx::mii::ValidationResult::NoErrors);nx::IpcCtx revoked=list;revoked.out.clear();revoked.commit_reply={};revoked.validate_reply={};check(database->handle(revoked)==0);nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,1);check(!revoked.validate_reply());nx::vm_set(mii_output,6*sizeof(nx::mii::CharInfoElement),nx::kMemHeap,3);nx::IpcCtx short_list{};short_list.cmd=3;short_list.in=reinterpret_cast<const uint8_t*>(&defaults_source);short_list.in_size=4;short_list.b.push_back({mii_output,sizeof(nx::mii::CharInfoElement)});check(database->handle(short_list)==0x47e);uint32_t invalid_source=4;nx::IpcCtx invalid_mii{};invalid_mii.cmd=2;invalid_mii.in=reinterpret_cast<const uint8_t*>(&invalid_source);invalid_mii.in_size=4;check(database->handle(invalid_mii)==0xe401);}
 +const auto device=nx::kernel_alloc(7008,16);
@@ -14411,9 +14517,61 @@
 + native_conditional_probe(device,check);
 + native_point_probe(device,check);
 + native_depth_contract_probe(device,check);
++ if(std::getenv("NX_SUBMIT_CHUNK_DRAWS")&&std::atoi(std::getenv("NX_SUBMIT_CHUNK_DRAWS"))>0)native_early_chunk_probe(device);
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
++ if(gpu&&std::getenv("NX_SUBMIT_CHUNK_DRAWS")&&std::atoi(std::getenv("NX_SUBMIT_CHUNK_DRAWS"))>0) {
++  std::lock_guard guard(nx::nvn::gpu_lock());const auto chunks=nx::nvn::native_early_chunks_for_probe();
++  if(!chunks)throw std::runtime_error("forced native early chunks did not execute");
++  std::cout<<"native actual early chunks="<<chunks<<" PASS\n";
++ }
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/native_early_chunk_probe.h
+@@ -0,0 +1,43 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "native_point_test_shaders.h"
++#include "native_program_stages.h"
++#include "nvn/nvn_draw_state.h"
++#include <cstring>
++#include <iterator>
++#include <stdexcept>
++namespace nx::nvn {uint64_t native_early_chunks_for_probe();}
++inline void native_early_chunk_probe(uint64_t device) {
++ using namespace nx;using namespace nx::nvn;
++ auto require=[](bool ok){if(!ok)throw std::runtime_error("native replayed chunk assertion");};
++ auto alloc=[](uint64_t bytes){const auto p=kernel_alloc(bytes,4096);vm_set(p,bytes,kMemHeap,3);return p;};
++ static ShaderInfo vertex,fragment;
++ vertex.hash="authored-replayed-chunk-vertex";vertex.spirv.assign(std::begin(native_point_vertex),std::end(native_point_vertex));
++ fragment.hash="authored-replayed-chunk-fragment";fragment.spirv.assign(std::begin(native_point_fragment),std::end(native_point_fragment));
++ for(auto* shader:{&vertex,&fragment}){require(reflect_spirv(shader->spirv.data(),shader->spirv.size(),shader->refl));shader->stage=shader->refl.stage;}
++ const auto program=alloc(256),texture_key=alloc(256),memory=alloc(4096),pool_key=alloc(256),region=alloc(24),output=alloc(288);
++ auto& backing=make<MemoryPool>(pool_key);backing.memory=memory;backing.size=4096;backing.gpu=gpu_alloc(4096);pool_register(&backing);
++ auto& texture=make<Texture>(texture_key);texture.target=1;texture.format=0x25;texture.width=texture.height=8;texture.depth=texture.levels=texture.samples=1;
++ CPU api{};auto initialize=hle_lookup("nvnProgramInitialize");require(initialize!=nullptr);api.x[0]=program;api.x[1]=device;initialize(api);require(api.x[0]==1);
++ set_program_stages(program,{&vertex,&fragment});
++ std::lock_guard guard(gpu_lock());replay::g_state={};replay::g_state.program=program;replay::g_state.polygon.mode=2;replay::g_state.mask.mask[0]=15;
++ auto list=std::make_shared<CmdList>();Cmd targets{Cmd::SetRenderTargets};targets.n=1;targets.a[0]=texture_key;list->cmds.push_back(targets);
++ Cmd clear{Cmd::ClearColor};clear.mask=15;clear.f[3]=1;list->cmds.push_back(clear);
++ Cmd reset{Cmd::ResetCounter};reset.n=1;list->cmds.push_back(reset);
++ Cmd draw{Cmd::DrawArrays};draw.i[1]=draw.i[3]=1;
++ for(unsigned i=0;i<17;++i)list->cmds.push_back(draw);
++ Cmd report{Cmd::ReportCounter};report.n=1;report.a[0]=backing.gpu;list->cmds.push_back(report);
++ std::memset(reinterpret_cast<void*>(memory),0xcd,4096);
++ const auto before=native_early_chunks_for_probe();gpu_submit({list},{});frame_wait_all();
++ const auto chunks=native_early_chunks_for_probe()-before;
++ require(chunks>0);require(ld<uint64_t>(memory)==17);require(ld<uint64_t>(memory+8)>0);
++ for(unsigned i=16;i<4096;++i)require(ld<uint8_t>(memory+i)==0xcd);
++ const int32_t area[]={0,0,0,8,8,1};std::memcpy(reinterpret_cast<void*>(region),area,sizeof area);
++ std::memset(reinterpret_cast<void*>(output),0xa5,288);auto read=hle_lookup("nvnTextureReadTexels");require(read!=nullptr);
++ api={};api.x[0]=texture_key;api.x[2]=region;api.x[3]=output+16;read(api);
++ unsigned red=0;for(unsigned i=0;i<64;++i){const auto pixel=ld<uint32_t>(output+16+i*4);require(pixel==0xff000000u||pixel==0xff0000ffu);red+=pixel==0xff0000ffu;}require(red==1);
++ for(unsigned i=0;i<16;++i){require(ld<uint8_t>(output+i)==0xa5);require(ld<uint8_t>(output+272+i)==0xa5);}
++ replay::g_state={};destroy(texture_key);api={};api.x[0]=program;auto finalize=hle_lookup("nvnProgramFinalize");require(finalize!=nullptr);finalize(api);
++ api={};api.x[0]=pool_key;auto drop=hle_lookup("nvnMemoryPoolFinalize");require(drop!=nullptr);drop(api);
++ std::printf("native replayed chunks=%llu draws=17 samples=17 exact-red=1 guarded-readback PASS\n",(unsigned long long)chunks);
++}
 --- /dev/null
 +++ b/tests/native_empty_draw_probe.h
 @@ -0,0 +1,40 @@

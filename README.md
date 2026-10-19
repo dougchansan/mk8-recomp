@@ -27,7 +27,12 @@ control averages 52.36 FPS, with late windows at 60. The first R222 timing run w
 affected by an unrelated build; its longer flight now verifies Stadium first and
 Water Park lap 2/3. R223 reduces diagnostic readback stalls using cached coherent
 memory and passes a 6,000-target game check; that course window averages 53.93 FPS.
-Sustained smooth 60 and correct 120 remain unverified.
+R235 removes a 64 KiB allocation tail from exact 16-byte counter bindings and
+strengthens timestamp-result visibility. The measured report uses 512 rather
+than 66,048 upload bytes, with exact padded GPU-read regressions. Both allocation
+modes pass 6,000-presentation game controls; course averages of 51.87 and 50.80
+FPS show no demonstrated speed gain. The source recipe reconstructs 200 generic
+files. Sustained smooth 60 and correct 120 remain unverified.
 
 The following figures describe the earlier guarded-runtime research track; the current native race result is the Belmante integration above.
 

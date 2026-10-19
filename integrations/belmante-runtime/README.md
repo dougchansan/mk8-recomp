@@ -56,9 +56,13 @@ commit and exact game-produced-save reload to mode selection are verified.
 Audible audio, physical controls, broader gameplay and full-speed performance
 remain open; no release/tag/download is available.
 
-Windows integration now passes 40 CPU/component suites and a 2,327-check native
+Windows integration now passes 40 CPU/component suites and a 2,507-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R223 reconstructs 198 generic adapted files. Native sample counts
+entry point. R235 reconstructs 200 generic adapted files. Exact 16-byte counter
+bindings avoid an unnecessary 64 KiB allocation tail; authored GPU tests verify
+later padded reads preserve the result and zero tail. A stronger timestamp-record
+dependency passes repeated exact hardware-query controls. Pool resource release
+and chunked submission remain experiments; both are off by default. Native sample counts
 and GPU-clock reports replace host placeholders. GPU comparisons replace the
 inherited forced-on conditional renderer, including explicit gated clears and
 original counter-to-predicate chains; regressions verify accumulation,

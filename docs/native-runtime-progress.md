@@ -50,6 +50,54 @@ presentation/non-replay 0.05 ms/frame; class sums match their aggregate and all
 query results are available. These are queued intervals, not isolated shader work.
 The source recipe now reconstructs 193 generic adapted files.
 
+R235 reduces upload allocation for exact 16-byte counter bindings. The previous
+path reserved and cleared a 64 KiB storage-buffer tail even when the writer
+requested only 16 bytes. An authored regression first fails against R234's
+unchanged production code: one measured report consumes 66,048 upload bytes.
+R235 consumes 512 bytes, including allocator alignment, while requests for
+larger storage bindings retain their existing padding. `NX_COMPACT_COUNTER_WRITES=0`
+retains the old allocation control. A later 64 KiB padded GPU read returns the
+exact 16-byte result and a zero-filled tail in both modes; overlap, conditional,
+canary and readback checks remain enabled. This proves an allocation reduction,
+not an FPS gain. Same-executable 6,000-presentation controls subsequently close
+without fatal/crash, timeout, changed source/executable/input-save or foreground.
+Old allocations average 51.87 FPS across 3,840 course intervals, with 1,216
+intervals above 20 ms; compact allocations average 50.80 FPS with 1,424 above
+20 ms. Desktop and scene variability prevent assigning that difference to the
+allocation change. There is no demonstrated game-speed improvement.
+
+Read-only thread accounting over comparable 420-presentation sections records
+the main game thread using 7.94 and 8.84 CPU seconds over roughly 10.3 wall
+seconds, versus 3.31 and 3.14 CPU seconds for replay/presentation. These samples
+support investigating main-thread CPU work; they do not identify exclusive
+function costs or prove a particular scheduling cause.
+
+The same source strengthens the timestamp-record conversion dependency from
+transfer writes to all prior command writes. With retired command-pool resources
+released and the janitor disabled, the old barrier exposes stale converted
+timestamps even though a completed hardware query returns a fresh value.
+R233's exact-query stress passes 40/40 with the stronger dependency versus
+2/10 with the old barrier. After compact allocations, R235 repeats 40/40 versus
+1/10. These are same-executable controls. The exact driver-internal cause remains
+unproven; separate raw input and an extra field-order barrier failed their controls.
+
+All 40 component suites, 2,507 GPU checks, 300-check synchronization/cutoff
+controls and 259 native texture readback checks pass. Allocation-specific runs
+pass 2,511 checks. Actual command replay exercises six early submission parts,
+17 draws, exactly 17 samples and guarded texture readback; both retirement paths
+pass. Analysis of the three changed production files reports no warnings.
+The source recipe reconstructs 200 generic adapted files.
+
+Retired-pool resource release remains an optional experiment, default off.
+An R233 chunk-512/release flight reaches the unchanged 6 GiB process-memory guard
+after 1,620 reported presentations. Its window also grows from 3072x1728 to
+5760x3184, so the failure does not isolate allocation ownership or performance.
+A default-path R233 control completes 6,000 presentations in 125.4 seconds,
+with unchanged source/executable/input-save and no fatal/crash. Its 3,840-interval
+course range averages 56.34 FPS with 642 intervals above 20 ms. Foreground changes
+and shared-desktop variation remain limitations. Pool release and chunking are
+not established improvements and should remain off for normal runs.
+
 R223 removes the uncached CPU-read penalty from diagnostic image downloads.
 It prefers a host-visible, coherent and host-cached memory type, falls back to
 the existing coherent selection, and adds explicit transfer-to-host dependencies

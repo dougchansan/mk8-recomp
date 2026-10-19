@@ -36,8 +36,8 @@ R188 makes repeated routine NVN messages opt-in with `NX_TRACE_NVN_CALLS=1`.
 R202 also verifies real XAudio2 processing silently with zero source-voice gain
 (`NX_MUTED_AUDIO_DEVICE=1` plus `NX_MUTE=1`), including original game PCM and actual
 completion callbacks. Default mute/headless behavior is preserved. The generated
-10-second stereo capture is private; listening and full-race device coverage
-remain separate gates. Optional pipeline-2/chunk-150 mode hits the memory guard
+10-second stereo capture is private; full-race device coverage passes with 129,992 observed completions and first-place
+results. Subjective listening and physical controls remain separate gates. Optional pipeline-2/chunk-150 mode hits the memory guard
 and is not promoted; the verified race configuration is async 2 / pipeline 0.
 R201 keeps the first positive post-mark texture incarnation stable through one
 replay, including after finalization/cache eviction; misses and later replays

@@ -13,6 +13,17 @@ exact game-generated copy and reaches mode selection. Audible output, physical
 controls, broader gameplay and full-speed tuning remain open. No release or
 download is available.
 
+R202 also completes the three-lap race with the real XAudio2 device active at
+zero voice gain: Mario first, 15 points, target reached at 18,015 frames, closed
+intentionally after 663.8 seconds without a fatal/crash or changed source,
+executable, saved input or foreground. The last periodic sample records 130,000
+submitted / 129,992 completed native audio packets. All reported mixer windows
+have zero dropped buffers and zero underruns. The same 11,280-interval racing
+window averages 34.122 ms (about 29.3 FPS), median 21.3 ms; separate flights do
+not establish a controlled audio or version speedup. The original SDK mix and
+real device consumption are verified together with the race. Subjective
+listening, physical controls, sustained full speed and wider gameplay remain open.
+
 R201 adds a regression-backed lifetime correction alongside the performance work.
 A temporary texture first resolved after the replay mark could disappear after
 finalization and fast-cache eviction, despite its old object remaining deferred.

@@ -26,6 +26,17 @@ persisted race-stat fields and continued gameplay after restart were not decoded
 or established by that probe. Audible audio, physical controls, sustained full
 speed and broader gameplay/cup coverage remain open. No release/tag/download.
 
+R202 also completes the three-lap race with the real XAudio2 device active at
+zero voice gain: Mario first, 15 points, target reached at 18,015 frames, closed
+intentionally after 663.8 seconds without a fatal/crash or changed source,
+executable, saved input or foreground. The last periodic sample records 130,000
+submitted / 129,992 completed native audio packets. All reported mixer windows
+have zero dropped buffers and zero underruns. The same 11,280-interval racing
+window averages 34.122 ms (about 29.3 FPS), median 21.3 ms; separate flights do
+not establish a controlled audio or version speedup. The original SDK mix and
+real device consumption are verified together with the race. Subjective
+listening, physical controls, sustained full speed and wider gameplay remain open.
+
 The current source recipe is R202, reconstructing 192 generic adapted files.
 All 40 component suites and the 1,950-check native GPU fixture pass, plus a
 separate 300-check synchronous-submission regression. A production
@@ -45,7 +56,7 @@ This verifies device processing without claiming speaker/headphone listening.
 Buffer data remains owned until completion; rejected submissions now restore
 queue/packet ownership and renderer free blocks. Device-loss recovery is untested.
 The 40 suites, 1,950 GPU checks, sync/cutoff checks and failure probes pass; changed
-audio/Windows source analyses are clean. Full-race audio-device validation is next.
+audio/Windows source analyses are clean. Full-race audio-device validation now passes as recorded above.
 
 An optional combined pipelined/chunked control (`NX_ASYNC_GPU=0`, `NX_PIPELINED=2`,
 `NX_SUBMIT_CHUNK_DRAWS=150`) exceeds the 6 GB memory guard at frame 1,330 and stops.

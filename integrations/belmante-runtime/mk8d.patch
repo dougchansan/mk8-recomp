@@ -1321,10 +1321,16 @@
  
  namespace nx {
  
-@@ -43,6 +48,11 @@
+@@ -43,6 +48,17 @@
  
  using namespace kstate;
  
++// NX_SLOW_FRAME_LOG (native_frame_attribution.h), under g_k: the guest thread whose action last woke a thread (0: a
++// host thread), and the last thread that signalled a waitable object.
++static std::unordered_map<const KThread*, uint64_t> g_woken_by;
++static uint64_t g_last_notifier = 0;
++static thread_local std::unordered_map<uint64_t, uint64_t> t_presenter_waits;  // waker -> blocked ns
++
 +std::shared_ptr<KProcess> current_process() {
 +    static const auto process = std::make_shared<KProcess>(plat::current_process_id());
 +    return process;
@@ -1333,7 +1339,7 @@
  uint32_t handle_add(std::shared_ptr<KObject> o) {
      std::lock_guard lk(g_k);
      uint32_t h = g_next_handle++;
-@@ -53,6 +63,7 @@
+@@ -53,6 +69,7 @@
  std::shared_ptr<KObject> handle_get(uint32_t h) {
      std::lock_guard lk(g_k);
      if (h == kPseudoCurrentThread && t_self) return t_self->self.lock();
@@ -1341,7 +1347,15 @@
      auto it = g_handles.find(h);
      return it == g_handles.end() ? nullptr : it->second;
  }
-@@ -75,6 +86,7 @@
+@@ -67,6 +84,7 @@
+ // every waiting thread of the process on each signal (the engine's job system broadcasts all the time).
+ void notify_all() {
+     std::lock_guard lk(g_k);
++    if (frame_attribution_on()) g_last_notifier = t_self ? t_self->id : kWakerHost;
+     for (KThread* t : g_sync_waiters) t->cv.notify_one();
+ }
+ 
+@@ -75,6 +93,7 @@
  uint64_t heap_size() { return g_heap_size; }
  
  CPU& current_cpu() { return t_self->ctx; }
@@ -1349,7 +1363,15 @@
  
  uint64_t system_tick() { return plat::monotonic_ns() * 192 / 10000; }  // 19.2 MHz
  
-@@ -337,7 +349,8 @@
+@@ -127,6 +146,7 @@
+ 
+ // Wake a blocked thread (with g_k held).
+ static void wake(KThread* t) {
++    if (frame_attribution_on()) g_woken_by[t] = t_self ? t_self->id : kWakerHost;
+     t->wake = true;
+     t->wait_result = 0;
+     t->cv.notify_one();
+@@ -337,7 +357,8 @@
      };
      auto until = std::chrono::steady_clock::now() + std::chrono::nanoseconds(timeout < 0 ? 0 : timeout);
      KThread* self = t_self;
@@ -1359,7 +1381,7 @@
      g_sync_waiters.push_back(self);
      struct Leave {
          KThread* t;
-@@ -350,11 +363,12 @@
+@@ -350,11 +371,12 @@
              objs[i]->consume();
              return 0;
          }
@@ -1373,7 +1395,7 @@
          if (timeout < 0)
              self->cv.wait(lk);
          else if (self->cv.wait_until(lk, until) == std::cv_status::timeout && ready() < 0)
-@@ -364,13 +378,21 @@
+@@ -364,13 +386,21 @@
  
  // ---- threads --------------------------------------------------------------------------------------------------
  
@@ -1399,7 +1421,7 @@
      call(t->ctx, t->entry);
      // Returning from the entry point is like svcExitThread.
      std::lock_guard lk(g_k);
-@@ -407,7 +429,7 @@
+@@ -407,7 +437,7 @@
      auto t = new_thread(0, 0, stack + stack_size, 44, 0);
      t->started = true;
      t_self = t.get();
@@ -1408,7 +1430,7 @@
      return t->handle;
  }
  
-@@ -516,13 +538,18 @@
+@@ -516,13 +546,18 @@
              return;
          }
          case 0x0C: {  // GetThreadPriority(handle) -> prio
@@ -1428,7 +1450,7 @@
              break;
          }
          case 0x0E: {  // GetThreadCoreMask(handle) -> core, mask
-@@ -587,7 +614,8 @@
+@@ -587,7 +622,8 @@
          case 0x19: {  // CancelSynchronization(thread handle)
              auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[0])));
              std::lock_guard lk(g_k);
@@ -1438,7 +1460,7 @@
              notify_all();
              break;
          }
-@@ -616,9 +644,13 @@
+@@ -616,9 +652,13 @@
          case 0x22:  // SendSyncRequestWithUserBuffer(buf, size, handle)
              rc = ipc_request(c, uint32_t(c.x[2]), c.x[0], c.x[1]);
              break;
@@ -1455,7 +1477,7 @@
          case 0x25: {  // GetThreadId(handle) -> id
              auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[1])));
              c.x[1] = t ? t->id : 0;
-@@ -678,7 +710,7 @@
+@@ -678,7 +718,7 @@
              rc = unmap_transfer_memory(uint32_t(c.x[0]), c.x[1], c.x[2]);
              break;
          default:
@@ -1464,7 +1486,7 @@
                  (unsigned long long)c.x[0], (unsigned long long)c.x[1], (unsigned long long)c.x[2]);
              rc = 0;
      }
-@@ -691,14 +723,18 @@
+@@ -691,14 +731,18 @@
  namespace {
  thread_local int t_svc_role = 0;  // 1 game main, 2 the thread that presents
  std::mutex g_svc_lock;
@@ -1484,7 +1506,7 @@
  
  void svc_profile_report(uint64_t frames, int role) {
      if (!svc_profile_on()) return;
-@@ -706,28 +742,48 @@
+@@ -706,28 +750,127 @@
      std::vector<std::pair<uint64_t, std::tuple<int, uint32_t, uint64_t>>> v;
      uint64_t total = 0;
      for (auto& [k, val] : g_svc_prof)
@@ -1512,6 +1534,80 @@
          it = std::get<0>(it->first) == role ? g_svc_prof.erase(it) : std::next(it);
  }
  
++// ---- NX_SLOW_FRAME_LOG (native_frame_attribution.h): who woke the presenting thread, guest thread cycles ----------
++
++static void attribute_wait(uint32_t imm, uint64_t dt) {  // the presenting thread, after a blocking kernel call
++    uint64_t waker = kWakerTimeout;
++    {
++        std::lock_guard lk(g_k);
++        if (imm == 0x18) {
++            waker = kWakerEvent | g_last_notifier;
++        } else if (auto it = g_woken_by.find(t_self); it != g_woken_by.end()) {
++            waker = it->second;
++            g_woken_by.erase(it);
++        }
++    }
++    t_presenter_waits[waker] += dt;
++}
++
++void take_presenter_waits(std::vector<std::pair<uint64_t, uint64_t>>& out) {
++    out.assign(t_presenter_waits.begin(), t_presenter_waits.end());
++    t_presenter_waits.clear();
++}
++
++namespace {
++std::mutex g_cycle_lock;  // the host thread handles below, and the entry points by guest thread id
++std::unordered_map<int64_t, void*> g_cycle_handles;
++std::unordered_map<uint64_t, uint64_t> g_thread_entries;
++std::unordered_map<uint64_t, std::string> g_thread_labels;
++}  // namespace
++
++void guest_thread_cycles(std::vector<GuestCycles>& out) {
++    out.clear();
++#ifdef _WIN32
++    struct Live { uint64_t id, entry; int64_t tid; bool exited; };
++    std::vector<Live> live;
++    {
++        std::lock_guard lk(g_all_lock);
++        for (const auto& weak : g_all)
++            if (auto t = weak.lock()) live.push_back({t->id, t->entry, t->host_tid, t->exited});
++    }
++    std::lock_guard lk(g_cycle_lock);
++    for (const Live& t : live) {
++        if (!t.tid) continue;
++        g_thread_entries.emplace(t.id, t.entry);
++        auto it = g_cycle_handles.find(t.tid);
++        if (t.exited) {  // the final count is no longer needed
++            if (it != g_cycle_handles.end()) CloseHandle(it->second), g_cycle_handles.erase(it);
++            continue;
++        }
++        if (it == g_cycle_handles.end()) {
++            HANDLE h = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, DWORD(t.tid));
++            if (!h) continue;
++            it = g_cycle_handles.emplace(t.tid, h).first;
++        }
++        ULONG64 cycles = 0;
++        if (QueryThreadCycleTime(it->second, &cycles)) out.push_back({t.id, uint64_t(cycles)});
++    }
++#endif
++}
++
++std::string guest_thread_label(uint64_t id) {
++    if (id == kWakerHost) return "host";
++    if (id == kWakerTimeout) return "timeout/unrecorded";
++    const bool event = (id & kWakerEvent) != 0;
++    id &= ~kWakerEvent;
++    std::lock_guard lk(g_cycle_lock);
++    auto& label = g_thread_labels[id];
++    if (label.empty()) {
++        auto it = g_thread_entries.find(id);
++        char head[32];
++        std::snprintf(head, sizeof head, "g%llx", (unsigned long long)id);
++        label = std::string(head) + (it == g_thread_entries.end() ? "" : " " + describe(it->second));
++    }
++    return event ? "event, last signalled by " + label : label;
++}
++
  void svc(CPU& c, uint32_t imm, uint64_t pc) {
 -    if (!t_svc_role || !svc_profile_on()) return svc_impl(c, imm, pc);
 +    mk8_focus_gate();
@@ -1520,14 +1616,19 @@
 +    if (!svc_profile_on()) {  // attribution alone: wall time only
 +        const uint64_t t0 = plat::monotonic_ns();
 +        svc_impl(c, imm, pc);
-+        t_svc_wall_ns += plat::monotonic_ns() - t0;
++        const uint64_t dt = plat::monotonic_ns() - t0;
++        t_svc_wall_ns += dt;
++        if (dt >= 20000 && (imm == 0x18 || imm == 0x1A || imm == 0x1C || imm == 0x34)) attribute_wait(imm, dt);
 +        return;
 +    }
 +    uint64_t before_cycles=0;const bool before_valid=read_thread_cycles(before_cycles);
      uint64_t t0 = plat::monotonic_ns();
      svc_impl(c, imm, pc);
      uint64_t dt = plat::monotonic_ns() - t0;
-+    if (attribute) t_svc_wall_ns += dt;
++    if (attribute) {
++        t_svc_wall_ns += dt;
++        if (dt >= 20000 && (imm == 0x18 || imm == 0x1A || imm == 0x1C || imm == 0x34)) attribute_wait(imm, dt);
++    }
 +    uint64_t after_cycles=0;const bool cycles_valid=read_thread_cycles(after_cycles)&&before_valid&&after_cycles>=before_cycles;
      if (dt >= 30000) {
          std::lock_guard lk(g_svc_lock);
@@ -2327,7 +2428,7 @@
 +}
 --- /dev/null
 +++ b/runtime/src/native_frame_attribution.h
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,53 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +// NX_SLOW_FRAME_LOG=<ms> (1: 20 ms): one line per presentation interval longer than that, splitting the presenting
 +// thread's interval into its CPU time, waits on the replay worker, pacing sleep, waits on submits and kernel calls,
@@ -2338,6 +2439,9 @@
 +#include <cstdint>
 +#include <cstdlib>
 +#include <cstring>
++#include <string>
++#include <utility>
++#include <vector>
 +
 +namespace nx {
 +
@@ -2363,6 +2467,19 @@
 +}
 +
 +uint64_t svc_thread_wall_ns();  // kernel.cpp: this thread's wall time in kernel calls (presenting thread only)
++
++// kernel.cpp. The presenting thread's blocked time in mutex, condition-variable, address and object waits since the
++// last call, by the guest thread whose action woke it (kWakerHost: a host thread; kWakerTimeout: nobody, it timed
++// out or was woken without a record; kWakerEvent | id: an object wait, charged to the last thread that signalled
++// any object, an approximation). Cleared by the call.
++constexpr uint64_t kWakerHost = 0, kWakerTimeout = ~0ull, kWakerEvent = 1ull << 62;
++void take_presenter_waits(std::vector<std::pair<uint64_t, uint64_t>>& out);
++// Every live guest thread's CPU cycles so far (QueryThreadCycleTime: cycles, never converted to time).
++struct GuestCycles {
++    uint64_t id = 0, cycles = 0;
++};
++void guest_thread_cycles(std::vector<GuestCycles>& out);
++std::string guest_thread_label(uint64_t id);  // "g<id> <entry symbol>"
 +
 +}  // namespace nx
 --- /dev/null
@@ -10852,7 +10969,7 @@
      auto* p = get<Program>(program);
 --- a/runtime/src/nvn/nvn_queue.cpp
 +++ b/runtime/src/nvn/nvn_queue.cpp
-@@ -17,14 +17,22 @@
+@@ -17,14 +17,23 @@
  #include <atomic>
  #include <vector>
  #include <map>
@@ -10872,10 +10989,11 @@
  #include "nvn_ultrawide.h"
  #include "platform.h"
 +#include "native_frame_attribution.h"
++#include "native_cpu_cycles.h"
  
  namespace nx {
  void svc_profile_mark(int role);
-@@ -33,6 +41,7 @@
+@@ -33,6 +42,7 @@
  extern std::atomic<uint64_t> g_tick_calls, g_yield_calls, g_sleep_calls;
  }
  namespace nx::nvn {
@@ -10883,7 +11001,7 @@
  
  // Submits the game made and submits whose replay (and GPU work, write-backs) finished. The game records the next frame
  // on one thread while another submits the last one, and our replay runs inside nvnQueueSubmitCommands: a fence the
-@@ -76,6 +85,7 @@
+@@ -76,6 +86,7 @@
  
  // Where the game waits for the replay (docs/nvn/android-perf/PHASE3.md I1): calls, the ones that blocked and for how
  // long, per 600 presents; frame_ns is this main-thread frame's blocked time, for the hitch lines (frame_time_probe).
@@ -10891,7 +11009,7 @@
  struct WaitSite {
      const char* name;
      std::atomic<uint64_t> calls{0}, blocked{0}, ns{0}, frame_ns{0};
-@@ -97,6 +107,7 @@
+@@ -97,6 +108,7 @@
              (unsigned long long)g_sub_done);
      uint64_t dt = plat::monotonic_ns() - t0;
      w.blocked++, w.ns += dt, w.frame_ns += dt;
@@ -10899,7 +11017,7 @@
  }
  
  void log_wait_sites() {
-@@ -123,7 +134,14 @@
+@@ -123,7 +135,14 @@
  
  // ---- syncs ------------------------------------------------------------------------------------------------------
  
@@ -10914,7 +11032,7 @@
      std::atomic<bool> signaled{false};
      std::atomic<uint64_t> serial{0};  // NX_ASYNC_GPU: the submit it waits for (0: none; always 0 otherwise)
      std::atomic<uint64_t> job{0};     // the replay-thread job that fences it (0: none)
-@@ -138,27 +156,57 @@
+@@ -138,27 +157,57 @@
  void SyncFinalize(CPU& c) { destroy(c.x[0]); }
  
  void signal_sync(uint64_t guest) {
@@ -10982,7 +11100,7 @@
      plat::perf_hint_thread();  // this thread replays: part of every frame (perf_hint.cpp)
      std::vector<std::shared_ptr<CmdList>> lists;
      static uint64_t submitted = 0, missing = 0;
-@@ -184,45 +232,35 @@
+@@ -184,45 +233,35 @@
          std::lock_guard lk(g_sub_lock);
          g_sub_called++;
      }
@@ -11042,7 +11160,7 @@
  }
  
  void WindowFinalize(CPU& c) { destroy(c.x[0]); }
-@@ -238,6 +276,14 @@
+@@ -238,6 +277,14 @@
      if (c.x[2]) st<int32_t>(c.x[2], index);
      signal_sync(c.x[1]);
      c.x[0] = 0;
@@ -11057,7 +11175,7 @@
  }
  
  void WindowGetNumTextures(CPU& c) {
-@@ -489,12 +535,126 @@
+@@ -489,12 +536,179 @@
  // one. On the Switch the texture-available sync of the next acquire does this; ours is signaled at once, so without
  // it the game runs as fast as it can once it is faster than 60 fps. A late frame is not snapped to the next vsync
  // (an 18 ms frame stays 18 ms, not 33). NX_NO_FRAME_LIMIT=1: unpaced.
@@ -11105,6 +11223,13 @@
 +    uint64_t prev_w[11] = {};
 +    uint64_t intervals = 0, slow = 0;
 +    double sums[6] = {};  // slow intervals: cpu, worker-wait, pace, submit-wait, kernel, other (ms)
++    // R250: guest thread cycles at the start of this interval, and over slow intervals: blocked time by waker and
++    // cycles by thread (reported every 600 intervals).
++    std::map<uint64_t, uint64_t> prev_cycles;
++    uint64_t prev_self_cycles = 0;
++    std::map<uint64_t, uint64_t> slow_waits, slow_cycles;
++    std::vector<GuestCycles> cycles_now;
++    std::vector<std::pair<uint64_t, uint64_t>> waits;
 +
 +    static void snapshot(uint64_t (&out)[11]) {
 +        const WorkerTotals& w = worker_totals();
@@ -11122,6 +11247,10 @@
 +        const uint64_t now = plat::monotonic_ns(), svc = svc_thread_wall_ns(), sync = t_submit_wait_ns;
 +        uint64_t w[11];
 +        snapshot(w);
++        uint64_t self_cycles = 0;
++        read_thread_cycles(self_cycles);
++        guest_thread_cycles(cycles_now);
++        take_presenter_waits(waits);
 +        if (prev_wall) {
 +            const uint64_t interval = now - prev_wall;
 +            intervals++;
@@ -11147,17 +11276,59 @@
 +                        ms(d[4] > known ? d[4] - known : 0), ms(d[5]), (unsigned long long)d[7], ms(d[8]),
 +                        (unsigned long long)d[9], ms(d[10]), double(d[6]) / 1e6);
 +                }
++                // Who woke the presenting thread, and which guest threads ran, during this interval.
++                std::vector<std::pair<uint64_t, uint64_t>> busy;  // cycles, thread
++                for (const GuestCycles& g : cycles_now)
++                    if (auto it = prev_cycles.find(g.id); it != prev_cycles.end() && g.cycles > it->second)
++                        busy.push_back({g.cycles - it->second, g.id});
++                std::sort(busy.rbegin(), busy.rend());
++                std::sort(waits.begin(), waits.end(), [](auto& a, auto& b) { return a.second > b.second; });
++                for (const auto& [waker, ns] : waits) slow_waits[waker] += ns;
++                for (const auto& [c, id] : busy) slow_cycles[id] += c;
++                if (lines_left) {
++                    std::string woken, ran;
++                    for (size_t k = 0; k < waits.size() && k < 4; k++) {
++                        char b[32];
++                        std::snprintf(b, sizeof b, " %.2f ms", ms(waits[k].second));
++                        woken += (k ? " | " : "") + guest_thread_label(waits[k].first) + b;
++                    }
++                    for (size_t k = 0; k < busy.size() && k < 5; k++) {
++                        char b[32];
++                        std::snprintf(b, sizeof b, " %.2f Mcyc", double(busy[k].first) / 1e6);
++                        ran += (k ? " | " : "") + guest_thread_label(busy[k].second) + b;
++                    }
++                    log("slow frame threads: present %llu: self %.2f Mcyc; woken by: %s; busiest: %s",
++                        (unsigned long long)present, double(self_cycles - prev_self_cycles) / 1e6,
++                        woken.empty() ? "-" : woken.c_str(), ran.empty() ? "-" : ran.c_str());
++                }
 +            }
 +            if (intervals == 600) {
 +                log("slow frames over 600: %llu over %.1f ms; their totals: cpu %.1f, worker-wait %.1f, pace %.1f, "
 +                    "submit-wait %.1f, kernel %.1f, other %.1f ms",
 +                    (unsigned long long)slow, double(threshold) / 1e6, sums[0], sums[1], sums[2], sums[3], sums[4],
 +                    sums[5]);
++                auto top = [](const std::map<uint64_t, uint64_t>& m, double scale, const char* unit) {
++                    std::vector<std::pair<uint64_t, uint64_t>> v;
++                    for (const auto& [id, value] : m) v.push_back({value, id});
++                    std::sort(v.rbegin(), v.rend());
++                    std::string out;
++                    for (size_t k = 0; k < v.size() && k < 6; k++) {
++                        char b[40];
++                        std::snprintf(b, sizeof b, " %.1f %s", double(v[k].first) / scale, unit);
++                        out += (k ? " | " : "") + guest_thread_label(v[k].second) + b;
++                    }
++                    return out.empty() ? std::string("-") : out;
++                };
++                log("slow frames over 600: woken by: %s", top(slow_waits, 1e6, "ms").c_str());
++                log("slow frames over 600: busiest: %s", top(slow_cycles, 1e6, "Mcyc").c_str());
++                slow_waits.clear(), slow_cycles.clear();
 +                intervals = slow = 0;
 +                for (double& s : sums) s = 0;
 +            }
 +        }
-+        prev_wall = now, prev_cpu = cpu, prev_svc = svc, prev_sync = sync;
++        prev_wall = now, prev_cpu = cpu, prev_svc = svc, prev_sync = sync, prev_self_cycles = self_cycles;
++        prev_cycles.clear();
++        for (const GuestCycles& g : cycles_now) prev_cycles[g.id] = g.cycles;
 +        std::memcpy(prev_w, w, sizeof w);
 +        worker_wait = pace = 0;
 +    }
@@ -11185,7 +11356,7 @@
      static uint64_t presents = 0, at2 = 0;  // how often the game asks for 30 fps (interval 2), per 600 presents
      at2 += interval >= 2;
      if (++presents % 600 == 0)
-@@ -504,6 +664,10 @@
+@@ -504,6 +718,10 @@
  }
  
  void QueuePresentTexture(CPU& c) {
@@ -11196,7 +11367,7 @@
      // The frame's work, from the end of the last present's pacing to now (perf_hint.cpp: ADPF on Android).
      static uint64_t work_from = 0;
      uint64_t t_in = plat::monotonic_ns();
-@@ -520,7 +684,10 @@
+@@ -520,7 +738,10 @@
          // At most two presents queued: the game runs at most two frames ahead of the replay.
          static uint64_t queued[2] = {};
          static int next_slot = 0;
@@ -11207,7 +11378,7 @@
          if (int(c.x[2]) >= 0 && size_t(c.x[2]) < w->textures.size()) {
              uint64_t texture = w->textures[size_t(c.x[2])];
              std::array<int32_t, 4> crop{w->crop[0], w->crop[1], w->crop[2], w->crop[3]};
-@@ -561,6 +728,7 @@
+@@ -561,6 +782,7 @@
  }  // namespace
  
  NX_HLE("nvnWindowSetCrop", WindowSetCrop);
@@ -11215,7 +11386,7 @@
  NX_HLE("nvnSyncInitialize", SyncInitialize);
  NX_HLE("nvnSyncFinalize", SyncFinalize);
  NX_HLE("nvnSyncWait", SyncWait);
-@@ -572,6 +740,7 @@
+@@ -572,6 +794,7 @@
  NX_HLE("nvnQueueFenceSync", QueueFenceSync);
  NX_HLE("nvnQueueWaitSync", QueueWaitSync);
  NX_HLE("nvnQueuePresentTexture", QueuePresentTexture);

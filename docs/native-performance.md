@@ -602,3 +602,47 @@ R248's, with the desktop in use), and which guest thread the presenter waits
 on. Next: record the signalling thread of the condition variables the
 presenting thread waits on and that thread's CPU cycles per interval, then
 optimize whichever guest thread is the critical path.
+
+## Critical-path thread of slow presentations (R250)
+
+With `NX_SLOW_FRAME_LOG`, R250 also records which guest thread woke the
+presenting thread after each blocking mutex, condition-variable, address or
+object wait (object waits are charged to the last thread that signalled any
+object, an approximation), and samples every guest thread's CPU cycles
+(`QueryThreadCycleTime`; reported in cycles, never converted to time) at each
+presentation. Each slow interval gets a second line naming the wakers and the
+five busiest threads; every 600 intervals a summary aggregates both.
+
+Two closed flights (warm driver cache, recipes on, course window presents
+2,100–5,940; the foreground changed in both):
+
+| Flight | Slow intervals | Presenter blocked (kernel) | Charged to g50 | g50 share of listed cycles | Next busiest |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 2,991 | 50,639 ms | 50,635 ms (100%) | 53.7% | g51 19.3%, g55 11.2%, g56 10.0% |
+| 2 | 1,884 | 15,712 ms | 15,706 ms (100%) | 43.5% | g51 23.1%, g56 14.1%, g55 13.1% |
+
+Measured:
+
+- The presenting thread is g51 (its own cycles equal g51's), a thread the title
+  creates through `nn::os` at startup. Every blocked millisecond of it in slow
+  intervals was ended by g50, the first guest thread (the title's main thread,
+  entry 0). No job-worker, host or timeout wake appears.
+- g50 is also the busiest guest thread during slow intervals, ahead of the
+  presenter and the job workers (g55, g56, g6b).
+- So late presentations are g50's frame work running long: the render thread
+  waits for the main thread, which the replay worker and GPU never delay.
+
+Limits:
+
+- R250's attribution is too heavy for absolute timing: these flights averaged
+  32.8 and 45.7 FPS in the course window against about 55 in R249, with the
+  desktop in use. Per-wake bookkeeping under the kernel lock and per-present
+  cycle sampling cost time on every thread. The thread structure is the result;
+  the magnitudes are inflated.
+- Cycle shares cover only each interval's five busiest threads.
+
+Next: sample g50's host and guest program counters during slow intervals
+(the existing `plat::profile` sampler) to find which game or runtime code runs
+long on the main thread, then optimize that code. Keep the attribution off for
+timing comparisons.
+

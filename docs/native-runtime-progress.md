@@ -4,6 +4,15 @@ Updated 2026-10-20. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
+R250 names the critical path of late presentations: in two flights every
+blocked millisecond of the presenting thread (g51) in intervals over 20 ms was
+ended by the title's main thread (g50), which is also the busiest guest thread
+(44–54% of listed cycles, ahead of the job workers). The render thread waits for
+the main thread; replay, GPU and pipelines are not on that path. The attribution
+itself slows the game (32.8/45.7 FPS course windows), so it stays off for timing.
+Next: profile which code runs long on g50. All regressions pass; the recipe
+reconstructs 208 files.
+
 R249 adds opt-in slow-presentation attribution (`NX_SLOW_FRAME_LOG=1`,
 diagnostic only). In six flights the replay worker never back-pressured the
 game in any interval over 20 ms; the presenting thread instead waited in guest

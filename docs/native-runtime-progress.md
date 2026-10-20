@@ -22,18 +22,33 @@ reflections return on the kart. A Grand Prix flight to frame 5,460 renders
 without visible regression (AI races diverge between runs, so frames are not
 pixel-compared).
 
-Mario's diffuse shading at kart select is still too dark. The screen-space shadow
-mask covers about 32,000 pixels of the character, including the top of the cap
-(which an earlier note under-read as small), and is the same with or without the
-fix. The D16 shadow map itself is correct: a top-down light view with the cap
-nearest the light. The game sets a polygon offset of factor 0.15, units 100 for
-that pass. Multiplying the units (`NX_DEPTH_BIAS_UNITS`) removes the false
-shadowing progressively (32,258 shadowed pixels at x1, 17,938 at x8, 5,976 at
-x16, none at x64) and relights the face, but that also deletes real shadows, so
-it is a probe, not a fix. The game never calls `nvnDeviceSetDepthMode` (the
-default -1..1 clip space applies). The error at lit surfaces is up to about 0.02
-of the shadow map's range, which points at a mismatch between the shadow caster
-and the reconstructed surface, not at depth precision. Open.
+Mario's diffuse shading at kart select is still too dark, and R266 shows the
+shadow mask is not the cause. The mask shader (a screen-space pass that rebuilds
+each pixel from scene depth, transforms it into light space and does a hardware
+depth compare) was reproduced on the CPU from the bound uniform block and raw
+dumps of the scene depth and D16 shadow map: 32,254 shadowed pixels against
+32,258 on the GPU. Every input agrees. The mask's light matrix equals
+bias x light projection x light view x inverse camera, built from the shadow
+pass's own constants, to float precision. The prepass camera is the exact
+inverse of the mask's camera. Static meshes bind identical model matrices in
+the shadow pass and the prepass, and the skinned meshes bind the same bone
+palette in the shadow, prepass and colour passes. Every shadow draw has the
+game's polygon offset (factor 0.15, units 100). Reference minus stored depth is
+bimodal: most surfaces sit 0.004-0.005 in front of the map (the bias: lit), and
+the shadowed pixels form a tail 0.004-0.05 behind it, which is geometry
+genuinely between them and the light (the cap brim over the face, the driver
+over the kart floor). The R264 note that called this false shadowing and blamed
+a caster/surface mismatch was wrong: scaling the bias only "fixed" it by
+deleting real shadows. What remains is how dark the shadowed areas are, which
+comes from the ambient term: the character samples a 32x32 irradiance cube that
+reads a flat 0.3 on every face, built at frame 628 from inputs whose guest
+memory does not change. Whether that level is right needs a reference capture.
+The game never calls `nvnDeviceSetDepthMode` (the default -1..1 clip space
+applies).
+
+R265 adds `NX_DUMP_FS_UNIFORMS=<hash>[,...]@<draw>` (capture the bound uniform
+blocks of the first two draws at or after that draw) and R266 adds the polygon
+offset in effect to `NX_TRACE_FRAME` draw traces.
 
 New diagnostics: `NX_TRACE_BIAS=1` (each distinct polygon offset and every
 pipeline built with depth bias), native `nvnDeviceSetDepthMode` and

@@ -1787,48 +1787,73 @@
  }
  
  uint64_t hle_address_or(const char* name, HleFn fallback) {
-@@ -160,7 +215,14 @@
+@@ -160,7 +215,32 @@
  FastModule g_fast[4];
  size_t g_fast_count = 0;
  
+-void call(CPU& c, uint64_t t) {
 +bool compiled_callback_target(uint64_t target){
 + if(auto* module=module_at(target)){const auto off=target-module->base;return !(off&3)&&off<module->info->text_size&&module->table[off/4];}
 + const auto off=target-kThunkBase;return off<kThunkSize&&!(off&15)&&off/16<g_thunks.size()&&g_thunks[off/16].fn;
 +}
++namespace {
++[[gnu::noinline]] void trace_compiled_call(CPU& c, uint64_t t, Fn fn) {
++    const char* codec_operation=nullptr;uint64_t codec_name=0;
++    static const uint64_t master=find_symbol("_ZN7android9OMXMaster21makeComponentInstanceEPKcPK16OMX_CALLBACKTYPEPvPP17OMX_COMPONENTTYPE");
++    static const uint64_t soft=find_symbol("_ZN7android13SoftOMXPlugin21makeComponentInstanceEPKcPK16OMX_CALLBACKTYPEPvPP17OMX_COMPONENTTYPE");
++    static const uint64_t list=find_symbol("_ZNK7android14MediaCodecList15findCodecByNameEPKc");
++    static const uint64_t proxy=find_symbol("_ZNK7android16BpMediaCodecList15findCodecByNameEPKc");
++    static const uint64_t factory=find_symbol("_Z30SoftAVC_createSoftOMXComponentPKcPK16OMX_CALLBACKTYPEPvPP17OMX_COMPONENTTYPE");
++    if(t==master)codec_operation="master-make",codec_name=c.x[1];
++    else if(t==soft)codec_operation="soft-make",codec_name=c.x[1];
++    else if(t==list||t==proxy)codec_operation="codec-list-find",codec_name=c.x[1];
++    else if(t==factory)codec_operation="soft-avc-factory",codec_name=c.x[0];
++    // These watched APIs take a live, NUL-terminated component name by contract.
++    // Snapshot it before the original call can release its temporary String8.
++    std::string codec_text;
++    if(codec_operation&&codec_name)for(size_t n=0;n<64;++n){const auto ch=ld<uint8_t>(codec_name+n);if(!ch)break;codec_text+=char(ch);}
++    fn(c);
++    if(codec_operation)log("movie: native-call operation=%s component=%s result=%016llx",codec_operation,codec_text.c_str(),(unsigned long long)c.x[0]);
++}
 +
- void call(CPU& c, uint64_t t) {
-+    CallProfile call_profile(t);
++void dispatch(CPU& c, uint64_t t) {
 +    mk8_focus_gate();
      for (size_t k = 0; k < g_fast_count; k++) {
          const FastModule& m = g_fast[k];
          uint64_t off = t - m.base;
-@@ -174,7 +236,25 @@
+@@ -174,7 +254,9 @@
                  backtrace(c);
                  fatal("call into the middle of a function: %s (lr %s)", describe(t).c_str(), describe(c.x[30]).c_str());
              }
-+            static const bool trace_codec=std::getenv("NX_TRACE_CODEC")!=nullptr;
-+            const char* codec_operation=nullptr;uint64_t codec_name=0;
-+            if(trace_codec){
-+                static const uint64_t master=find_symbol("_ZN7android9OMXMaster21makeComponentInstanceEPKcPK16OMX_CALLBACKTYPEPvPP17OMX_COMPONENTTYPE");
-+                static const uint64_t soft=find_symbol("_ZN7android13SoftOMXPlugin21makeComponentInstanceEPKcPK16OMX_CALLBACKTYPEPvPP17OMX_COMPONENTTYPE");
-+                static const uint64_t list=find_symbol("_ZNK7android14MediaCodecList15findCodecByNameEPKc");
-+                static const uint64_t proxy=find_symbol("_ZNK7android16BpMediaCodecList15findCodecByNameEPKc");
-+                static const uint64_t factory=find_symbol("_Z30SoftAVC_createSoftOMXComponentPKcPK16OMX_CALLBACKTYPEPvPP17OMX_COMPONENTTYPE");
-+                if(t==master)codec_operation="master-make",codec_name=c.x[1];
-+                else if(t==soft)codec_operation="soft-make",codec_name=c.x[1];
-+                else if(t==list||t==proxy)codec_operation="codec-list-find",codec_name=c.x[1];
-+                else if(t==factory)codec_operation="soft-avc-factory",codec_name=c.x[0];
-+            }
-+            // These watched APIs take a live, NUL-terminated component name by contract.
-+            // Snapshot it before the original call can release its temporary String8.
-+            std::string codec_text;
-+            if(codec_operation&&codec_name)for(size_t n=0;n<64;++n){const auto ch=ld<uint8_t>(codec_name+n);if(!ch)break;codec_text+=char(ch);}
-             fn(c);
-+            if(codec_operation)log("movie: native-call operation=%s component=%s result=%016llx",codec_operation,codec_text.c_str(),(unsigned long long)c.x[0]);
+-            fn(c);
++            static const bool trace_codec = std::getenv("NX_TRACE_CODEC") != nullptr;
++            if (trace_codec) trace_compiled_call(c, t, fn);
++            else fn(c);
              return;
          }
      }
-@@ -270,8 +350,8 @@
+@@ -189,6 +271,20 @@
+         return;
+     }
+     fatal("call to %llx (%s), lr %s", (unsigned long long)t, describe(t).c_str(), describe(c.x[30]).c_str());
++}
++[[gnu::noinline]] void profiled_call(CPU& c, uint64_t t) {
++    CallProfile profile(t);
++    dispatch(c, t);
++}
++}  // namespace
++
++void call(CPU& c, uint64_t t) {
++    static const bool profile = [] {
++        const auto* value = std::getenv("NX_CPU_CALL_PROFILE");
++        return value && value[0] == '1';
++    }();
++    if (profile) profiled_call(c, t);
++    else dispatch(c, t);
+ }
+ 
+ void trace_sp(CPU& c, uint64_t pc) {
+@@ -270,8 +366,8 @@
              }
              if (!target && !s.imported) target = lm.base + s.value;
              if (!target) {
@@ -15769,7 +15794,7 @@
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/loader_symbol_test.cpp
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,61 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +// Exercise real module relocation and indirect dispatch with an authored module image.
 +#include <nx/runtime.h>
@@ -15780,9 +15805,10 @@
 +#include <iostream>
 +#include <stdexcept>
 +#include <cstdlib>
-+namespace {alignas(4096) std::array<uint8_t,4096> memory{};struct FatalExit{};}
++#include <chrono>
++namespace {alignas(4096) std::array<uint8_t,4096> memory{};struct FatalExit{};uint64_t focus_calls{};}
 +namespace nx {
-+void mk8_focus_gate(){}
++void mk8_focus_gate(){++focus_calls;}
 +bool commit(uint64_t a,uint64_t n){return a==reinterpret_cast<uint64_t>(memory.data())&&n<=memory.size();}
 +void vm_set(uint64_t,uint64_t,uint32_t,uint32_t){}
 +void backtrace(CPU&){}
@@ -15811,6 +15837,18 @@
 + check(slot(128)==0);check(slot(136)==0);check(slot(144)==0);check(slot(176)==8);
 + check(slot(152)!=0);check(slot(160)!=0);check(slot(168)==module.base+4);
 + nx::CPU c{};nx::call(c,slot(160));check(c.x[0]==77);nx::call(c,slot(168));check(c.x[0]==99);
++ check(focus_calls==2);
++ if(const auto* value=std::getenv("NX_DISPATCH_BENCH")){
++  const auto count=std::strtoull(value,nullptr,10);check(count>0&&count<=100000000);
++  for(const auto target:{slot(168),slot(160)}){
++   const auto before=focus_calls;c.x[1]=0x12345678;
++   const auto begin=std::chrono::steady_clock::now();
++   for(uint64_t i=0;i<count;++i)nx::call(c,target);
++   const auto ns=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-begin).count();
++   check(focus_calls-before==count);check(c.x[1]==0x12345678);check(c.x[0]==(target==slot(168)?99:77));
++   std::cout<<"dispatch_bench "<<(target==slot(168)?"compiled":"hle")<<" calls="<<count<<" ns_per_call="<<double(ns)/count<<'\n';
++  }
++ }
 + if(std::getenv("NX_CPU_CALL_PROFILE")){
 +  for(unsigned count=0;count<4093*8;++count){if(count==4093*7)nx::g_frame=120;nx::call(c,slot(168));}
 +  check(c.x[0]==99);

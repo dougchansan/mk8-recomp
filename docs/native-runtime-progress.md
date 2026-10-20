@@ -4,6 +4,15 @@ Updated 2026-10-20. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
+R282 removes optional profiling state and codec string handling from the ordinary
+indirect-dispatch path. Authored alternating measurements reduce median compiled
+dispatch from 6.65 to 3.52 ns and HLE dispatch from 7.04 to 4.55 ns, with one focus
+check per call retained. These are not whole-game speedup ratios. The four-hour
+R280 sweep covered 17 distinct courses before its deadline; detailed hitch logs
+were capped, so later zero-hitch counts were incorrect. See
+[dispatch optimization and sweep attribution](native-dispatch-optimization.md)
+for the measured costs, capped-log reporting tool and remaining coverage limits.
+
 R277-R280 come from an unattended sweep of every cup at 200cc with the frame
 pacing uncapped (`NX_DISPLAY_HZ`), driven by a closed-loop menu driver that
 classifies the screen from small grayscale thumbnails. Two courses stopped the

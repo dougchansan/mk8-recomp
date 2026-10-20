@@ -40,7 +40,7 @@ prewarm the graphics pipelines a previous local flight used: with a covering
 recipe file, draw-path pipeline creation falls from 0.7-1.1 s (warm driver cache)
 or 12.9 s (cold) to 116 ms, and the worst course-load presentation from about
 1.2 s to 0.5 s. No steady-FPS gain is established. The default source recipe now
-reconstructs 207 files. Sustained smooth 60 and correct 120 remain unverified.
+reconstructs 208 files. Sustained smooth 60 and correct 120 remain unverified.
 
 The following figures describe the earlier guarded-runtime research track; the current native race result is the Belmante integration above.
 

@@ -4,7 +4,7 @@
   "license": "MIT",
   "license_sha256": "7f728cfaa94ff27c2a40c906dac12564a216077ceb017fb2d01cc29ba6697720",
   "local_changes_license": "GPL-3.0-or-later",
-  "patch_sha256": "be1af83a5976ab213fae9ee15e9a5a74c09f255462013efa71bba19022a6f528",
+  "patch_sha256": "493eebff8a26125e15c9808fae0c98163a7cf509341cb60c3b6e12c783194172",
   "changed_files": [
     "CMakeLists.txt",
     "games/mk8d/game.cpp",
@@ -43,6 +43,7 @@
     "runtime/src/native_exit_policy.h",
     "runtime/src/native_failure.h",
     "runtime/src/native_font_bundle.h",
+    "runtime/src/native_frame_attribution.h",
     "runtime/src/native_hid_policy.h",
     "runtime/src/native_memory_epoch.h",
     "runtime/src/native_mf_avc.h",

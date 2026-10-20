@@ -58,7 +58,7 @@ remain open; no release/tag/download is available.
 
 Windows integration now passes 43 CPU/component suites and a 3,212-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R248 reconstructs 207 generic adapted files. Optional pipeline
+entry point. R249 reconstructs 208 generic adapted files. Optional pipeline
 recipes (`NX_PIPELINE_RECIPES=1`/`capture`, off by default) prewarm the graphics
 pipelines a previous local flight used on bounded background workers; no recipe,
 shader or driver cache is published. See `docs/native-pipeline-recipes.md`. Native worker creation

@@ -4,6 +4,17 @@ Updated 2026-10-20. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
+R249 adds opt-in slow-presentation attribution (`NX_SLOW_FRAME_LOG=1`,
+diagnostic only). In six flights the replay worker never back-pressured the
+game in any interval over 20 ms; the presenting thread instead waited in guest
+condition variables (svc `0x1c`, 2–18 ms per frame in course reports) and spent
+the rest outside measured waits. Late frames therefore follow another guest
+thread's work, not replay, GPU or pipeline creation. Desktop activity changed the
+foreground in five flights; the attribution overhead is unmeasured. All 43 suites,
+3,212 GPU checks (also with attribution on), sync/cutoff/readback controls and
+eight analyses pass, apart from a pre-existing dead store in `nvn_vk.cpp`. The
+recipe reconstructs 208 files. See `docs/native-performance.md`.
+
 R248 adds opt-in serialized graphics pipeline recipes with bounded background
 prewarming (`NX_PIPELINE_RECIPES=1`, or `capture` to record only; default off).
 A recipe names both stages by shader hash plus a SHA-1 of their SPIR-V and

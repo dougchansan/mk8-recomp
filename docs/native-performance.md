@@ -562,3 +562,43 @@ count, and the renderer recycles rejected blocks. Hotplug/recovery is unverified
 
 See the XAudio2 contracts for [zero-gain silence](https://learn.microsoft.com/en-us/windows/win32/api/xaudio2/nf-xaudio2-ixaudio2voice-setvolume)
 and [data lifetime through OnBufferEnd](https://learn.microsoft.com/en-us/windows/win32/api/xaudio2/nf-xaudio2-ixaudio2sourcevoice-submitsourcebuffer).
+
+## Slow presentation attribution (R249)
+
+`NX_SLOW_FRAME_LOG=1` (or a threshold in ms; default 20) logs one line per
+presentation interval over the threshold. It splits the presenting thread's
+interval into thread CPU time, waits on the replay worker (back-pressure),
+pacing sleep, waits on replayed submits, wall time in kernel calls and the
+remainder, next to what the replay worker did meanwhile (replay, encode, fence
+waits, presents, pipelines, ASTC, uploads). It is diagnostic only: no wait,
+submission or synchronization changes. With `NX_SVC_PROFILE=1` the existing
+per-call kernel profile names the calls.
+
+Six closed R249 flights (6,000 presentations, warm driver cache, recipes off and
+on). The foreground window changed during five of them, so their frame rates
+are not isolated comparisons. In the course window (presents 2,100–5,940):
+
+| Flights | Slow intervals | Mean slow interval | Worker-wait | Kernel | CPU + other |
+| --- | --- | --- | --- | --- | --- |
+| recipes off (2) | 940–1,390 | 25.3–26.7 ms | 0.00 ms | 8.3–8.6 ms | 16.5–17.5 ms |
+| recipes on (2) | 701–775 | 23.6–23.7 ms | 0.00 ms | 0.8–5.7 ms | 17.4–22.1 ms |
+
+Measured:
+
+- The replay worker never held the game back: worker-wait is zero in every
+  slow interval of every flight. Replay, GPU fences, presentation and
+  pipeline creation (present in 39 of 1,390 slow intervals at most) are not the
+  critical path of the late intervals.
+- The presenting thread's kernel time is almost entirely svc `0x1c`
+  (`WaitProcessWideKeyAtomic`, a guest condition-variable wait): 2–18 ms per
+  frame averaged over each 600-presentation course report. The presenting
+  thread waits for another guest thread to signal it.
+- Windows thread CPU time has scheduler-tick granularity (15.625 ms), so the
+  per-interval CPU column cannot separate CPU from preemption; "CPU + other" is
+  the presenting thread's time outside the measured waits.
+
+Not established: the attribution's own cost (these flights averaged lower than
+R248's, with the desktop in use), and which guest thread the presenter waits
+on. Next: record the signalling thread of the condition variables the
+presenting thread waits on and that thread's CPU cycles per interval, then
+optimize whichever guest thread is the critical path.

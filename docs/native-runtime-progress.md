@@ -4,6 +4,35 @@ Updated 2026-10-20. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
+R274 fixes the dark characters and the white bloom (glider, kart lamps, lights
+shining through walls) with one change: MK8D's CPU-written lighting tables are
+read as linear rows. The game fills a 256x1 RG16F specular table (exponent and
+scale per gloss value), a 128x32 R8 table and a 32x32 RGBA32F table (inputs of
+the ambient irradiance cube) on the CPU, in linear order. Their textures are
+unpackaged, have no stride and no image flag, and the runtime untiled them as
+block-linear: the specular table came out as a staircase of its first 32 entries
+and zeros, and the ambient inputs were scrambled. With exponent 0, the light
+pass's `exp2(exponent * log2(N.H))` gave NaN where N.H is 0 (2,316 NaN pixels in
+the specular light buffer at one frame; 0 now), materials then shaded the kart,
+glider and lamps to the HDR clamp (127), and bloom spread them; the scrambled
+ambient inputs left characters dark. Measured on the raw guest bytes: read
+linearly, each table is smooth (the specular exponent falls from 120 to 0.55);
+untiled, it is not. Textures with NVN's image flag (shader-written, such as the
+128x128 BC4 ones) untile cleanly and stay untiled. Which driver rule makes the
+tables linear is not known; the flag test is the measured discriminator.
+`NX_LINEAR_UNPACKAGED=0` restores untiling. Compared with suyu on the same save
+and course: Mario at kart select (crop mean 95/128/145 in suyu, 62/104/123
+before, matching now by eye), a clean glider, no orbs through walls, normal
+kart lamps.
+
+Along the way the shadow-mask investigation also found a false lead: the game's
+shaders use no FMZ multiplies (none of 7,365 cached modules contains the
+translator's FMZ select), so FMZ emulation was not the cause. Diagnostics added:
+`NX_SNAP_FROM_FRAME` (frame-anchored `NX_SNAP_FS`), guest-byte dumps for
+`NX_TRACE_ALIAS` and `NX_LINEAR_UNPACKAGED_DUMP`, and `NX_TRACE_BUILDER=<formats>`
+(raw texture builder bytes and pool flags). All 44 suites and 3,212 GPU checks
+pass.
+
 R264 fixes the black image-based lighting on characters. agl re-initializes one
 scratch texture struct about fifteen times within a single boot command list (a
 128x128 cube, a 2D array, mip chains) and renders into each shape in turn. The

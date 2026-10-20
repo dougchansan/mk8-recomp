@@ -4,6 +4,46 @@ Updated 2026-10-20. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
+R264 fixes the black image-based lighting on characters. agl re-initializes one
+scratch texture struct about fifteen times within a single boot command list (a
+128x128 cube, a 2D array, mip chains) and renders into each shape in turn. The
+replay resolves every struct as it was when the submit's lists ended recording, so
+all of those draws landed in the last shape. The cube the environment generator
+samples was never written, the generator output zero, and the GPU-compressed BC3
+environment cube that the character materials sample was all zero.
+`SetRenderTargets` now records each target's storage (memory, format, target,
+size, levels, samples) with the command. A replay whose struct has another shape
+renders into a live texture over exactly the recorded storage (live textures over
+one storage share one image), checked as the draw resolves it at the replay's mark. It is on by default; `NX_TARGET_RECORDED_SHAPE=0`
+restores the previous resolution, and `NX_TRACE_TARGET_SHAPES=1` logs each
+substitution. Measured at kart select: the six faces of the environment cube go
+from all zero to the lit room (8-bit snapshot means 72-232 of 255 per face), and
+reflections return on the kart. A Grand Prix flight to frame 5,460 renders
+without visible regression (AI races diverge between runs, so frames are not
+pixel-compared).
+
+Mario's diffuse shading at kart select is still too dark. The screen-space shadow
+mask covers about 32,000 pixels of the character, including the top of the cap
+(which an earlier note under-read as small), and is the same with or without the
+fix. The D16 shadow map itself is correct: a top-down light view with the cap
+nearest the light. The game sets a polygon offset of factor 0.15, units 100 for
+that pass. Multiplying the units (`NX_DEPTH_BIAS_UNITS`) removes the false
+shadowing progressively (32,258 shadowed pixels at x1, 17,938 at x8, 5,976 at
+x16, none at x64) and relights the face, but that also deletes real shadows, so
+it is a probe, not a fix. The game never calls `nvnDeviceSetDepthMode` (the
+default -1..1 clip space applies). The error at lit surfaces is up to about 0.02
+of the shadow map's range, which points at a mismatch between the shadow caster
+and the reconstructed surface, not at depth precision. Open.
+
+New diagnostics: `NX_TRACE_BIAS=1` (each distinct polygon offset and every
+pipeline built with depth bias), native `nvnDeviceSetDepthMode` and
+`nvnDeviceGetDepthMode` (mode 1 makes pipelines use Vulkan's 0..1 clip space;
+`NX_IGNORE_DEPTH_MODE=1` keeps -1..1), and raw D16/D32F depth snapshots under
+`NX_SNAP_RAW` with `NX_DUMP_DRAW_TEXTURES`. R253-R257 add `NX_TRACE_ALIAS`,
+`NX_TRACE_RT_CLEARS`, `NX_TRACE_C8` and `NX_TRACE_COPIES` (texture copies keep their
+recorded shape under `NX_COPY_RECORDED_SHAPE=1`; no copies occur during boot). All
+44 suites and 3,212 GPU checks pass. The recipe reconstructs 211 files.
+
 R252 adds an opt-in metrics overlay (`NX_OVERLAY=1`) and frame-scoped draw traces.
 The overlay copies a CPU-drawn panel into the top-left of each displayed frame:
 FPS (game presents), VPS (frames shown), average and worst frame time, frames over

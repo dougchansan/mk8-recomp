@@ -8557,11 +8557,16 @@
      static const bool off = std::getenv("NX_NO_COMPUTE") != nullptr;  // debug: skip compute dispatches
      if (off) return;
      const auto* shaders = program_shaders(g_state.program);
-@@ -207,20 +232,27 @@
+@@ -207,20 +232,32 @@
      if (shaders)
          for (const ShaderInfo* s : *shaders)
              if (s->stage == ShaderStage::Compute) cs = s;
 -    if (!cs) return;
++    if (!cs && shaders && shaders->empty() && std::getenv("NX_SKIP_MISSING_SHADERS")) {
++        static uint64_t skipped = 0;  // NX_SKIP_MISSING_SHADERS: a program without a translation (nvn_program.cpp)
++        if (++skipped == 1 || skipped % 1000 == 0) log("nvn: %llu dispatches skipped: no translation", (unsigned long long)skipped);
++        return;
++    }
 +    if (!cs) fatal("native compute dispatch requires a compute shader");
      uint32_t x = uint32_t(c.i[0]), y = uint32_t(c.i[1]), z = uint32_t(c.i[2]);
      const uint8_t* args = c.n == 1 ? guest_bytes(c.a[0]) : nullptr;  // indirect: {x, y, z}
@@ -8588,7 +8593,7 @@
      draw_end_rendering(cb, 2);
      gather_textures(stages);
      build_sets(cb, stages, layout);
-@@ -256,7 +288,15 @@
+@@ -256,7 +293,15 @@
  }
  
  bool draw(VkCommandBuffer cb, const Targets& t, uint32_t mode, bool indexed, const Cmd& c) {
@@ -8604,7 +8609,7 @@
      if (g_state.rasterizer_discard || !g_state.render_enable) return false;  // nothing reaches the targets
      const auto* shaders = program_shaders(g_state.program);
      if (!shaders || shaders->empty()) {
-@@ -311,12 +351,17 @@
+@@ -311,12 +356,17 @@
                      (unsigned long long)r.texture, (void*)img, img ? img->width : 0, img ? img->height : 0,
                      img ? int(img->format) : 0, img ? img->levels : 0, img ? img->layers : 0, img ? int(img->uploaded) : 0,
                      img ? int(img->rendered) : 0);
@@ -8628,7 +8633,7 @@
              }
          }
      }
-@@ -365,6 +410,30 @@
+@@ -365,6 +415,30 @@
          return false;
      }
      check_vertex_ranges(vs, fs, indexed, c, in);  // NX_CHECK_VERTS (nvn_written.cpp)
@@ -8659,7 +8664,7 @@
      if (!g_rendering) {
          if (gpu_profile_on()) {
              GpuImage* img = t.color_count && t.colors[0] ? image_of(t.colors[0]) : nullptr;
-@@ -381,6 +450,7 @@
+@@ -381,6 +455,7 @@
      std::memset(&key, 0, sizeof key);  // the key is compared byte for byte
      key.vs = vs, key.fs = fs;
      key.topology = mode;
@@ -8667,7 +8672,7 @@
      key.attrib_count = uint32_t(std::min<size_t>(g_state.attribs.size(), 16));
      std::copy_n(g_state.attribs.begin(), key.attrib_count, key.attribs);
      key.stream_count = uint32_t(std::min<size_t>(g_state.streams.size(), 16));
-@@ -502,13 +572,27 @@
+@@ -502,13 +577,27 @@
              p_vkCmdBindIndexBuffer(cb, in.index.buffer, in.index.offset, in.index_type);
              g_bound.has_index = true, g_bound.index = in.index, g_bound.index_type = in.index_type, g_state_set++;
          }
@@ -8699,7 +8704,7 @@
      }
      g_stats.done++;
      g_pass_written |= ((1u << t.color_count) - 1) | (g_state.depth.depth_write || g_state.depth.stencil_test ? 1u << 8 : 0);
-@@ -519,7 +603,11 @@
+@@ -519,7 +608,11 @@
                                            ? std::strtoull(snap_fs.c_str() + snap_fs.find('@') + 1, nullptr, 10) : 0;
      static int snap_count = 0;
      static const int snap_max = std::getenv("NX_SNAP_FS_MAX") ? std::atoi(std::getenv("NX_SNAP_FS_MAX")) : 8;
@@ -8712,7 +8717,7 @@
                        ((fs && snap_fs.find(fs->hash) != std::string::npos) ||
                         snap_fs.find(vs->hash) != std::string::npos) &&
                        ++snap_count;  // the vertex shader's hash matches too
-@@ -604,6 +692,7 @@
+@@ -604,6 +697,7 @@
  
  void pass_end_only(VkCommandBuffer cb, int reason) {
      if (!g_rendering) return;
@@ -11569,7 +11574,22 @@
  
  namespace nx::nvn {
  
-@@ -36,9 +37,10 @@
+@@ -18,6 +19,14 @@
+ struct Program : Object {
+     std::vector<const ShaderInfo*> shaders;  // a stage with no translation is left out (and logged once)
+ };
++
++bool skip_missing_shaders() {
++    static const bool on = [] {
++        const char* e = std::getenv("NX_SKIP_MISSING_SHADERS");
++        return e && e[0] == '1';
++    }();
++    return on;
++}
+ 
+ void ProgramInitialize(CPU& c) {  // NVNboolean (NVNprogram*, NVNdevice*)
+     make<Program>(c.x[0]);
+@@ -36,9 +45,19 @@
          if (!pool || !control) {
              log("nvn: program %llx stage %d: code %llx control %llx not found", (unsigned long long)c.x[0], k,
                  (unsigned long long)code, (unsigned long long)control);
@@ -11577,11 +11597,20 @@
 +            fatal("native program shader pool/control is missing");
          }
          if (const ShaderInfo* s = shader_for(pool->memory + offset, control)) shaders.push_back(s);
-+        else fatal("required offline shader translation is missing or unsupported");
++        else if (skip_missing_shaders()) {
++            // NX_SKIP_MISSING_SHADERS=1: the whole program is left without stages, so its draws and dispatches are
++            // skipped (a program missing one stage would otherwise run with the others alone).
++            static uint64_t programs = 0;
++            log("nvn: program %llx stage %d has no offline translation: its draws are skipped (%llu programs so far)",
++                (unsigned long long)c.x[0], k, (unsigned long long)++programs);
++            set_program_stages(c.x[0], {});
++            c.x[0] = 1;
++            return;
++        } else fatal("required offline shader translation is missing or unsupported");
      }
      static const bool trace = std::getenv("NX_TRACE_PROGRAMS") != nullptr;  // each program's stages when set
      if (trace) {
-@@ -46,7 +48,7 @@
+@@ -46,7 +65,7 @@
          for (const ShaderInfo* s : shaders) line += " " + s->hash;
          log("nvn: program %llx set:%s", (unsigned long long)c.x[0], line.c_str());
      }
@@ -11590,7 +11619,7 @@
      c.x[0] = 1;
  }
  
-@@ -54,6 +56,12 @@
+@@ -54,6 +73,12 @@
  void ProgramSetShadersExt(CPU& c) { set_shaders(c, 0x18); }
  
  }  // namespace
@@ -13496,7 +13525,18 @@
  // Windows host: memory, threads, time, files, the game window (F11 / Alt+Enter fullscreen), XInput + keyboard,
  // XAudio2, the Vulkan loader and win32 surface, crash handler, hardware watchpoints (NX_WATCH) and main().
  #include <algorithm>
-@@ -22,6 +25,10 @@
+@@ -12,6 +15,10 @@
+ #include <windows.h>
+ #include <xaudio2.h>
+ #include <xinput.h>
++#include <setupapi.h>
++#include <string>
++#include <vector>
++#include <cwctype>
+ 
+ #define VK_NO_PROTOTYPES
+ #define VK_USE_PLATFORM_WIN32_KHR
+@@ -22,6 +29,10 @@
  
  #include "kernel.h"
  #include "platform.h"
@@ -13507,7 +13547,7 @@
  
  namespace nx {
  HWND g_window = nullptr;
-@@ -33,15 +40,20 @@
+@@ -33,15 +44,20 @@
  // ---- memory ---------------------------------------------------------------------------------------------------
  
  bool reserve(uint64_t addr, uint64_t size) {
@@ -13529,7 +13569,7 @@
  
  // ---- threads and time -----------------------------------------------------------------------------------------
  
-@@ -53,20 +65,74 @@
+@@ -53,20 +69,74 @@
  static DWORD WINAPI thread_entry(void* p) {
      ThreadStart s = *static_cast<ThreadStart*>(p);
      delete static_cast<ThreadStart*>(p);
@@ -13610,7 +13650,7 @@
  float default_render_scale() { return 1.0f; }
  void release_window(void*) {}
  uint64_t window_generation() { return 1; }
-@@ -78,6 +144,7 @@
+@@ -78,6 +148,7 @@
      const char* v = std::getenv(env.c_str());
      return v ? v : "";
  }
@@ -13618,7 +13658,7 @@
  int64_t current_thread_id() { return int64_t(GetCurrentThreadId()); }
  bool profile(const int64_t*, const uint64_t* const*, size_t, int, const std::string&) { return false; }
  
-@@ -148,9 +215,10 @@
+@@ -148,9 +219,10 @@
  
  static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM w, LPARAM l) {
      switch (msg) {
@@ -13631,7 +13671,7 @@
          case WM_KEYDOWN:
              if (w == VK_F11) toggle_fullscreen(h);
              break;
-@@ -188,10 +256,11 @@
+@@ -188,10 +260,11 @@
      int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2, y = (sh - h) / 2;
      // NX_HEADLESS: created hidden (the surface still needs a window), never brought to the front.
      const DWORD style = headless() ? (kWindowed & ~WS_VISIBLE) : kWindowed;
@@ -13645,7 +13685,133 @@
      *ready = true;
      MSG m;
      while (GetMessageW(&m, nullptr, 0, 0) > 0) {
-@@ -278,12 +347,15 @@
+@@ -228,6 +301,117 @@
+     static const bool on = std::getenv("NX_HEADLESS") != nullptr;
+     return on;
+ }
++
++// ---- input: wired Switch-layout USB pads (HID) ---------------------------------------------------------------------
++// PowerA (VID 20D6) and HORI (VID 0F0D) wired pads are HID gamepads, not XInput devices. Their input report (after
++// the report ID) is: u16 buttons (Y B A X L R ZL ZR - + LS RS Home Capture), a hat (0 up .. 7 up-left, 8+ none), then
++// LX LY RX RY as bytes centred on 0x80 (Y down). hid.dll and setupapi.dll are loaded at run time; a reader thread
++// keeps the newest report and reopens a pad plugged in later. NX_HID_PADS=0: off.
++
++namespace {
++
++std::atomic<uint64_t> g_hid_buttons{0};
++std::atomic<uint32_t> g_hid_sticks{0x80808080u};  // LX LY RX RY, one byte each
++std::atomic<bool> g_hid_live{false};
++
++std::wstring find_switch_pad() {
++    HMODULE hid = LoadLibraryW(L"hid.dll"), setup = LoadLibraryW(L"setupapi.dll");
++    if (!hid || !setup) return {};
++    using GetGuid = void(WINAPI*)(GUID*);
++    using GetDevs = HANDLE(WINAPI*)(const GUID*, PCWSTR, HWND, DWORD);
++    using EnumIf = BOOL(WINAPI*)(HANDLE, void*, const GUID*, DWORD, SP_DEVICE_INTERFACE_DATA*);
++    using IfDetail = BOOL(WINAPI*)(HANDLE, SP_DEVICE_INTERFACE_DATA*, SP_DEVICE_INTERFACE_DETAIL_DATA_W*, DWORD, DWORD*, void*);
++    using Destroy = BOOL(WINAPI*)(HANDLE);
++    auto get_guid = reinterpret_cast<GetGuid>(GetProcAddress(hid, "HidD_GetHidGuid"));
++    auto get_devs = reinterpret_cast<GetDevs>(GetProcAddress(setup, "SetupDiGetClassDevsW"));
++    auto enum_if = reinterpret_cast<EnumIf>(GetProcAddress(setup, "SetupDiEnumDeviceInterfaces"));
++    auto detail = reinterpret_cast<IfDetail>(GetProcAddress(setup, "SetupDiGetDeviceInterfaceDetailW"));
++    auto destroy = reinterpret_cast<Destroy>(GetProcAddress(setup, "SetupDiDestroyDeviceInfoList"));
++    if (!get_guid || !get_devs || !enum_if || !detail || !destroy) return {};
++    GUID guid{};
++    get_guid(&guid);
++    HANDLE devs = get_devs(&guid, nullptr, nullptr, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
++    if (devs == INVALID_HANDLE_VALUE) return {};
++    std::wstring found;
++    for (DWORD i = 0; found.empty(); i++) {
++        SP_DEVICE_INTERFACE_DATA d{};
++        d.cbSize = sizeof d;
++        if (!enum_if(devs, nullptr, &guid, i, &d)) break;
++        DWORD need = 0;
++        detail(devs, &d, nullptr, 0, &need, nullptr);
++        if (!need) continue;
++        std::vector<uint8_t> buf(need);
++        auto* det = reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_W*>(buf.data());
++        det->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
++        if (!detail(devs, &d, det, need, nullptr, nullptr)) continue;
++        std::wstring path = det->DevicePath;
++        std::wstring low = path;
++        for (auto& ch : low) ch = wchar_t(towlower(ch));
++        if (low.find(L"&ig_") != std::wstring::npos) continue;  // XInput's own HID face
++        if (low.find(L"vid_20d6") != std::wstring::npos || low.find(L"vid_0f0d") != std::wstring::npos) found = path;
++    }
++    destroy(devs);
++    return found;
++}
++
++void hid_pad_thread() {
++    for (;;) {
++        std::wstring path = find_switch_pad();
++        HANDLE h = path.empty() ? INVALID_HANDLE_VALUE
++                                : CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
++                                              OPEN_EXISTING, 0, nullptr);
++        if (h == INVALID_HANDLE_VALUE) {
++            std::this_thread::sleep_for(std::chrono::seconds(2));
++            continue;
++        }
++        log("input: wired Switch-layout pad opened (HID)");
++        uint8_t r[64];
++        DWORD got = 0;
++        while (ReadFile(h, r, sizeof r, &got, nullptr) && got >= 8) {
++            const uint8_t* q = got >= 9 ? r + 1 : r;  // skip the report ID when there is one
++            const uint32_t b = q[0] | (q[1] << 8);
++            static constexpr uint64_t bit[14] = {kY, kB, kA, kX, kL, kR, kZL, kZR, kMinus, kPlus, kStickL, kStickR, 0, 0};
++            uint64_t out = 0;
++            for (int k = 0; k < 14; k++)
++                if (b & (1u << k)) out |= bit[k];
++            static constexpr uint64_t hat[8] = {kUp, kUp | kRight, kRight, kDown | kRight, kDown, kDown | kLeft, kLeft,
++                                                kUp | kLeft};
++            if (q[2] < 8) out |= hat[q[2]];
++            g_hid_buttons.store(out, std::memory_order_relaxed);
++            g_hid_sticks.store(uint32_t(q[3]) | uint32_t(q[4]) << 8 | uint32_t(q[5]) << 16 | uint32_t(q[6]) << 24,
++                               std::memory_order_relaxed);
++            g_hid_live.store(true, std::memory_order_release);
++        }
++        g_hid_live.store(false, std::memory_order_release);
++        g_hid_buttons.store(0);
++        CloseHandle(h);
++        log("input: wired Switch-layout pad closed");
++    }
++}
++
++void read_hid_pad(PadState& p) {
++    static const bool on = [] {
++        const char* e = std::getenv("NX_HID_PADS");
++        if (e && e[0] == '0') return false;
++        std::thread(hid_pad_thread).detach();
++        return true;
++    }();
++    if (!on || !g_hid_live.load(std::memory_order_acquire)) return;
++    p.buttons |= g_hid_buttons.load(std::memory_order_relaxed);
++    const uint32_t s = g_hid_sticks.load(std::memory_order_relaxed);
++    auto axis = [](uint32_t v, bool flip) {  // 0..255 around 0x80 -> -32767..32767, small dead zone
++        int a = int(v & 0xFF) - 128;
++        if (a > -16 && a < 16) return 0;
++        a = std::max(-127, a) * kStickMax / 127;
++        return flip ? -a : a;
++    };
++    if (int v = axis(s, false)) p.lx = v;
++    if (int v = axis(s >> 8, true)) p.ly = v;
++    if (int v = axis(s >> 16, false)) p.rx = v;
++    if (int v = axis(s >> 24, true)) p.ry = v;
++}
++
++}  // namespace
+ 
+ void read_pad(PadState& p) {
+     XINPUT_STATE xs{};
+@@ -270,6 +454,7 @@
+     if (key('C')) p.buttons |= kZR;
+     if (key(VK_RETURN)) p.buttons |= kPlus;
+     if (key(VK_ESCAPE)) p.buttons |= kMinus;
++    read_hid_pad(p);
+     input_script(p);  // NX_INPUT_SCRIPT (input_script.cpp): unattended runs
+ }
+ 
+@@ -278,12 +463,15 @@
  namespace {
  
  std::atomic<uint32_t> g_queued{0};
@@ -13661,7 +13827,7 @@
          g_done(p->first);
          delete p;
      }
-@@ -292,7 +364,7 @@
+@@ -292,7 +480,7 @@
      void STDMETHODCALLTYPE OnStreamEnd() noexcept override {}
      void STDMETHODCALLTYPE OnBufferStart(void*) noexcept override {}
      void STDMETHODCALLTYPE OnLoopEnd(void*) noexcept override {}
@@ -13670,7 +13836,7 @@
  };
  
  IXAudio2* g_xa = nullptr;
-@@ -302,35 +374,58 @@
+@@ -302,35 +490,58 @@
  }  // namespace
  
  bool audio_open(AudioDone done) {
@@ -13755,7 +13921,7 @@
      return true;
  }
  
-@@ -392,7 +487,7 @@
+@@ -392,7 +603,7 @@
      if (e->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP || !g_watch) return EXCEPTION_CONTINUE_SEARCH;
      nx::log("WATCH: %llx written (now %llx) at %s.exe+%llx (tools/symbolize.py)", (unsigned long long)g_watch,
              (unsigned long long)nx::ld<uint64_t>(g_watch), nx::game::kInfo.id, (unsigned long long)exe_va(e->ExceptionRecord->ExceptionAddress));
@@ -13764,7 +13930,7 @@
      static int hits = 0;
      if (++hits >= 30) e->ContextRecord->Dr7 = 0;
      return EXCEPTION_CONTINUE_EXECUTION;
-@@ -440,8 +535,9 @@
+@@ -440,8 +651,9 @@
      nx::log("CRASH: exception %08lx at %s (tools/symbolize.py for the exe), data address %llx", r->ExceptionCode,
              host_where(uint64_t(r->ExceptionAddress)).c_str(), (unsigned long long)info);
      host_backtrace(*e->ContextRecord);
@@ -13775,7 +13941,7 @@
      return EXCEPTION_EXECUTE_HANDLER;
  }
  
-@@ -462,9 +558,31 @@
+@@ -462,9 +674,31 @@
      return EXCEPTION_CONTINUE_SEARCH;
  }
  

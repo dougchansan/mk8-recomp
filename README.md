@@ -1,12 +1,12 @@
 # mk8-recomp
 
-The current goal is a standalone native Mario Kart 8 Deluxe application: statically recompiled CPU code connected to native graphics, platform services, audio, input and storage. The Belmante-based native runtime now completes a three-lap Mario Kart Stadium race and renders first place with 15 points. It also advances normally into Water Park and completes its first lap, including underwater driving. Full-speed performance, audible audio, physical controls and broader gameplay verification remain in progress.
+The current goal is a standalone native Mario Kart 8 Deluxe application: statically recompiled CPU code connected to native graphics, platform services, audio, input and storage. The Belmante-based native runtime now completes a three-lap Mario Kart Stadium race and renders first place with 15 points. It also advances normally into Water Park and completes its first lap, including underwater driving. Interactive play now works with a keyboard, XInput pads and wired Switch-layout USB pads (PowerA, HORI). Full-speed performance, audible audio and broader gameplay verification remain in progress.
 
 See [native runtime progress](docs/native-runtime-progress.md) for verified results and remaining work. This repository is `dougchansan/mk8-recomp`.
 
 **Release policy:** all five native-foundations prereleases, their 15 download assets and their tags have been removed. No new native release, tag or download will be published until the full native game is working: static CPU execution, live native graphics, platform services, audio, controls, saves and restart. Development builds and verification receipts remain local. See [development build notes](docs/native-builds.md).
 
-The [Belmante runtime integration](integrations/belmante-runtime/README.md) uses static CPU modules and native Vulkan. R201 completes all three laps, the FINISH sequence and the results table without a fatal error. The native game commits its post-race save; a fresh process reloads an exact copy and reaches mode selection. A measured 11,280-frame racing window averages about 25 FPS (26.5 ms median interval), with profiling disabled and sparse readbacks enabled. Forty component suites, 2,327 native GPU checks and separate 300-check sync/cutoff regressions pass. The offline cache holds 7,365 stages. No native release, tag or download is available. See [native runtime progress](docs/native-runtime-progress.md) for the remaining verification gates.
+The [Belmante runtime integration](integrations/belmante-runtime/README.md) uses static CPU modules and native Vulkan. R201 completes all three laps, the FINISH sequence and the results table without a fatal error. The native game commits its post-race save; a fresh process reloads an exact copy and reaches mode selection. A measured 11,280-frame racing window averages about 25 FPS (26.5 ms median interval), with profiling disabled and sparse readbacks enabled. Forty component suites, 2,327 native GPU checks and separate 300-check sync/cutoff regressions pass. The offline cache held 7,365 stages at the time (see R276 below for current coverage). No native release, tag or download is available. See [native runtime progress](docs/native-runtime-progress.md) for the remaining verification gates.
 
 R202 repeats the full race with the real native audio device processing at zero gain: first place, 15 points, over 129,000 completed audio packets and no reported mixer drops or underruns. Its observed racing window averages about 29 FPS; sustained full speed and subjective listening remain unverified.
 
@@ -41,6 +41,26 @@ recipe file, draw-path pipeline creation falls from 0.7-1.1 s (warm driver cache
 or 12.9 s (cold) to 116 ms, and the worst course-load presentation from about
 1.2 s to 0.5 s. No steady-FPS gain is established. The default source recipe now
 reconstructs 210 files. `NX_OVERLAY=1` shows an FPS/frame-time overlay. Sustained smooth 60 and correct 120 remain unverified.
+
+R249-R276 (October 2026) turn to what the game looks like and how it is played.
+R249/R250 attribute slow presentations: late frames wait on the title's main
+thread, not on GPU work. R252 adds a metrics overlay (FPS, frames shown, frame
+time, render size) and whole-frame draw traces. R264 renders each target into
+the storage it was recorded with, so the environment cube that character
+materials reflect is no longer black. R274 fixes the dark characters and the
+white bloom (glider glow, glowing kart lamps, lights shining through walls): the
+game's CPU-written lighting tables are linear in memory and had been untiled as
+block-linear, which zeroed most of the specular table and produced NaN in the
+light pass. Compared side by side with suyu on the same save and course, kart
+select and the race now match. R275 reads wired Switch-layout USB pads directly
+(PowerA, HORI) alongside XInput and the keyboard. Offline shader coverage now
+includes every course effect file and every compressed archive (karts, drivers,
+courses, UI): 14,046 translated stages in all. R276 adds an opt-in
+`NX_SKIP_MISSING_SHADERS=1` for collection sessions, which skips the draws of a
+shader still missing and dumps it for translation instead of stopping. All 44
+suites and 3,212 GPU checks pass. The default source recipe reconstructs 211
+files. Sustained smooth 60, first-visit pipeline hitches on courses outside the
+recorded flights, and full gameplay verification remain open.
 
 The following figures describe the earlier guarded-runtime research track; the current native race result is the Belmante integration above.
 
@@ -127,7 +147,7 @@ Broader per-title coverage (late-loaded modules and unimplemented opcodes are wh
 ## What this repository contains
 
 Our own code, build tooling and documentation. It contains no game data, no
-Nintendo code, no keys, no firmware, and no generated C â€” that material is
+Nintendo code, no keys, no firmware, and no generated C — that material is
 produced locally and gitignored. The screenshots above are of our own tooling;
 no frame of any game appears in this repository.
 
@@ -152,7 +172,7 @@ third_party/  suyu submodule, pinned to a commit on our fork
 The existing host setup scripts below install the toolchain,
 clone with submodules and build. Neither fetches a game, keys, or firmware. These instructions do not verify a clean build of the new native checkpoint.
 
-**Linux** â€” any distro with `apt`, `dnf`/`yum`, `pacman`, `zypper`, `apk`,
+**Linux** — any distro with `apt`, `dnf`/`yum`, `pacman`, `zypper`, `apk`,
 `xbps` or `eopkg`. Package names are per-distro; unknown ones are reported and
 skipped rather than aborting the install:
 
@@ -160,10 +180,10 @@ skipped rather than aborting the install:
 curl -fsSL https://raw.githubusercontent.com/dougchansan/mk8-recomp/main/scripts/setup-linux.sh | bash
 ```
 
-The script is bash, and Alpine and Void do not ship bash â€” install it first there
+The script is bash, and Alpine and Void do not ship bash — install it first there
 (`apk add bash`, `xbps-install -y bash`). Every other distro tested has it.
 
-**Windows** â€” an Administrator PowerShell, because the MSVC C++ toolset needs
+**Windows** — an Administrator PowerShell, because the MSVC C++ toolset needs
 one. Everything comes from `winget`; an existing Visual Studio with the C++
 workload is reused rather than duplicated:
 
@@ -182,7 +202,7 @@ install without touching the system.
 
 The setup scripts are a wrapper around three steps. Clone with submodules, then
 on Linux install Qt 6, GCC, nasm, glslang and the codec/Boost development
-packages and run the build script â€” it needs CMake 3.31 or newer, and tells you
+packages and run the build script — it needs CMake 3.31 or newer, and tells you
 where to put one if yours is older:
 
 ```bash
@@ -213,14 +233,14 @@ locally:
 
 ## Start here
 
-1. [`docs/suyu-recompiler-findings.md`](docs/suyu-recompiler-findings.md) â€” what
+1. [`docs/suyu-recompiler-findings.md`](docs/suyu-recompiler-findings.md) — what
    suyu v0.0.4's recompiler actually is, verified against source rather than
    against its release notes. Read this before anything else.
-2. [`docs/bootstrap.md`](docs/bootstrap.md) â€” machine and toolchain verification
+2. [`docs/bootstrap.md`](docs/bootstrap.md) — machine and toolchain verification
    for this workspace.
-3. [`docs/architecture.md`](docs/architecture.md) â€” the pipeline as it exists and
+3. [`docs/architecture.md`](docs/architecture.md) — the pipeline as it exists and
    where we intend to extend it.
-4. [`docs/aarch32.md`](docs/aarch32.md) â€” the one hard limit on what can be
+4. [`docs/aarch32.md`](docs/aarch32.md) — the one hard limit on what can be
    targeted, and how to check a title before spending an export on it.
 
 ## The emulator
@@ -241,7 +261,7 @@ git -C third_party/suyu diff d1d09321d7ab84252291e05b3efbc8a8dfa57481..mk8-recom
 ```
 
 Several of those commits fix defects in suyu itself and are not
-recompiler-specific â€” most notably that no installed update or DLC was ever
+recompiler-specific — most notably that no installed update or DLC was ever
 indexed in NAND, for any title.
 
 `externals/dynarmic` inside that fork points at
@@ -257,3 +277,35 @@ suyu changes it could reasonably go upstream as a PR.
 ## Licence
 
 GPL-3.0-or-later, matching upstream.
+
+## References
+
+Software this work builds on, studies or compares against. Each keeps its own licence; versions are the ones
+recorded in this repository or its build inputs.
+
+1. **SuperMarioWonderRecomp**, BelmanteGu (Projeto Belmante).
+   <https://github.com/BelmanteGu/SuperMarioWonderRecomp>, MIT. The native runtime and AArch64-to-C++
+   recompiler the [Belmante integration](integrations/belmante-runtime/README.md) adapts, pinned at
+   `010ed7a596a621c15d3a8dfa5795ca8c3668b066` (`UPSTREAM.json`, `LICENSE.upstream`).
+2. **suyu v0.0.4**, suyu-emu, base commit `d1d09321d7ab84252291e05b3efbc8a8dfa57481`, continued as
+   [`dougchansan/suyu-v0.0.4`][fork], GPL-3.0-or-later (with GPL-2.0-or-later files inherited from yuzu; see its
+   [`PROVENANCE.md`][prov]). The emulator host of the historical static-recompiler track, the reference
+   implementation for Switch GPU behaviour, and the side-by-side reference for native visual checks.
+3. **Eden** <https://git.eden-emu.dev/eden-emu/eden> and **yuzu**, the emulators the current suyu line descends
+   from; its `shader_recompiler` (Maxwell to SPIR-V) is used offline to translate MK8D's shaders.
+4. **sirit**, the SPIR-V emitter used by that translator: Eden's fork <https://github.com/eden-emulator/sirit>
+   (from ReinUsesLisp's original sirit); its v1.0.5 source carries GPL-3.0 and AGPL-3.0 licence texts.
+5. **Ryujinx shader translator** (`Ryujinx.Graphics.Shader`, MIT), as maintained by Ryubing
+   <https://codeberg.org/Software_arch/Ryubing> (upstream build input `a82350bb77`), used by upstream's offline
+   SPIR-V harness with upstream's patches; MK8D's shader cache comes from item 3.
+6. **dynarmic**, the ARM recompiler inside the suyu fork, via [`dougchansan/dynarmic`][dyn].
+7. **Vulkan** headers and loader, The Khronos Group, Apache-2.0 / MIT; **SDL 3** <https://libsdl.org>, zlib, and
+   **MoltenVK** <https://github.com/KhronosGroup/MoltenVK>, Apache-2.0, on the upstream runtime's non-Windows hosts.
+8. **envytools** <https://github.com/envytools/envytools> and **Switchbrew** <https://switchbrew.org>: Maxwell GPU
+   and Switch system documentation used by upstream and by this work.
+9. *Sony Computer Entertainment v. Connectix* (9th Cir. 2000) and *Sony Computer Entertainment v. Bleem*
+   (9th Cir. 2000), cited in [LEGAL.md](LEGAL.md).
+
+Nintendo, Nintendo Switch and Mario Kart are trademarks of Nintendo. This project is not affiliated with or
+endorsed by Nintendo. As upstream states, the NVN API is reverse engineered from binaries; no leaked NVN headers
+are used.

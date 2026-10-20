@@ -4,6 +4,30 @@ Updated 2026-10-20. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
+R275 and R276 make longer interactive sessions possible. R275 reads wired
+Switch-layout USB pads (PowerA VID 20D6, HORI VID 0F0D) directly: they are HID
+gamepads, not XInput devices, so the runtime had not seen them. A reader thread
+opens the pad through `hid.dll`/`setupapi.dll` loaded at run time (no link
+change), decodes its report (16 buttons, a hat for the D-pad, four 8-bit axes
+centred on 0x80) and merges it with XInput and the keyboard; a pad plugged in
+later is picked up. `NX_HID_PADS=0` turns it off. The mapping was confirmed on a
+PowerA wired controller in live play.
+
+Interactive play exposed shader coverage gaps the scripted flights never
+reached. Missing translations stopped the game at Battle Stadium effects and at
+Luigi's Mansion. The earlier inventories read only the uncompressed common
+containers. Inventory r4 adds every uncompressed `.ptcl`, `.bfres`, `.sarc` and
+shader archive (1,399 new course-effect shaders); inventory r5 decompresses all
+1,412 Yaz0 `.szs` archives (karts, drivers, courses, UI) with an authored local
+decoder and runs the same container parsers (6,197 more, 915 already cached).
+Every shader found is translated by the same offline tool: 14,046 stages in the
+cache now, with no unsupported vertex or pixel stage; the single geometry stage
+found is not translated. R276 adds `NX_SKIP_MISSING_SHADERS=1` for collection
+sessions: a program with an untranslated stage gets no stages, so its draws and
+dispatches are skipped and the shader is dumped (`NX_DUMP_SHADER_MISSES`)
+instead of stopping the process. It is off by default. All 44 suites and 3,212
+GPU checks pass; the recipe reconstructs 211 files.
+
 R274 fixes the dark characters and the white bloom (glider, kart lamps, lights
 shining through walls) with one change: MK8D's CPU-written lighting tables are
 read as linear rows. The game fills a 256x1 RG16F specular table (exponent and

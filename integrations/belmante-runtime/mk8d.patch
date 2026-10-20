@@ -8915,6 +8915,134 @@
          log("  viewport %d %d %d %d (%d) scissor %d %d %d %d (%d) cull %u front %u depth %g..%g test %u", g_state.viewport[0],
              g_state.viewport[1], g_state.viewport[2], g_state.viewport[3], g_state.has_viewport, g_state.scissor[0],
              g_state.scissor[1], g_state.scissor[2], g_state.scissor[3], g_state.has_scissor, g_state.polygon.cull,
+--- a/runtime/src/nvn/nvn_dummy.cpp
++++ b/runtime/src/nvn/nvn_dummy.cpp
+@@ -1,7 +1,11 @@
+ // The 1x1 stand-in images sampled where a texture has no usable image (nvn_pipeline.h). Split from nvn_pipeline.cpp
+ // (700-line rule).
++#include <algorithm>
+ #include <cstdlib>
+ #include <map>
++#include <stdexcept>
++#include <tuple>
++#include <vector>
+ 
+ #include "nvn_pipeline.h"
+ 
+@@ -66,4 +70,113 @@
+     return d.view;
+ }
+ 
++// A depth-compare lookup of a one-channel 32-bit colour texture (R32F; nvn_sets.cpp decides): Maxwell compares the
++// stored value, Vulkan compares depth formats only. The lookup reads a D32F image of the same shape holding the same
++// bits, copied from the texture's image through a buffer before every draw that reads it (that draw ends the pass).
++// One companion per shape: draws read it in command order, each after its own copy. Shy Guy Falls binds a 4x4 R32F
++// array to a shadow sampler. Without VK_EXT_depth_range_unrestricted, stored values outside [0, 1] are undefined.
++namespace {
++struct ShadowCompanion {
++    GpuImage img;
++    VkBuffer buffer = VK_NULL_HANDLE;
++    VkDeviceMemory buffer_memory = VK_NULL_HANDLE;
++    std::map<std::tuple<VkImageViewType, uint32_t, uint32_t, uint32_t, uint32_t>, VkImageView> views;
++};
++
++void memory_barrier(VkCommandBuffer cb, VkAccessFlags src, VkAccessFlags dst) {
++    VkMemoryBarrier m{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
++    m.srcAccessMask = src;
++    m.dstAccessMask = dst;
++    p_vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &m, 0,
++                           nullptr, 0, nullptr);
++}
++}  // namespace
++
++VkImageView shadow_companion_view(VkCommandBuffer cb, uint64_t texture, const ImageShape& shape, const ViewInfo& view,
++                                  VkImageLayout* layout) {
++    GpuImage* src = ensure_contents(cb, texture);
++    if (!src || src->aspect != VK_IMAGE_ASPECT_COLOR_BIT || src->view_type == VK_IMAGE_VIEW_TYPE_3D ||
++        (src->format != VK_FORMAT_R32_SFLOAT && src->format != VK_FORMAT_R32_UINT && src->format != VK_FORMAT_R32_SINT)) {
++        log("CRASH: shadow companion source texture=%llx image=%p format=%d aspect=%u", (unsigned long long)texture,
++            (void*)src, src ? int(src->format) : 0, src ? unsigned(src->aspect) : 0u);
++        throw std::invalid_argument("native shadow companion needs a one-channel 32-bit colour image");
++    }
++    static std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>, ShadowCompanion> companions;
++    auto& c = companions[{src->width, src->height, src->layers, src->levels}];
++    GpuImage& d = c.img;
++    VkDeviceSize bytes = 0;
++    std::vector<VkBufferImageCopy> regions;
++    for (uint32_t l = 0; l < src->levels; l++) {
++        VkBufferImageCopy r{};
++        r.bufferOffset = bytes;
++        r.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l, 0, src->layers};
++        r.imageExtent = {std::max(1u, src->width >> l), std::max(1u, src->height >> l), 1};
++        bytes += VkDeviceSize(r.imageExtent.width) * r.imageExtent.height * src->layers * 4;
++        regions.push_back(r);
++    }
++    if (!d.image) {
++        VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
++        ci.imageType = VK_IMAGE_TYPE_2D;
++        ci.format = VK_FORMAT_D32_SFLOAT;
++        ci.extent = {src->width, src->height, 1};
++        ci.mipLevels = src->levels;
++        ci.arrayLayers = src->layers;
++        ci.samples = VK_SAMPLE_COUNT_1_BIT;
++        ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
++        p_vkCreateImage(vk_device(), &ci, nullptr, &d.image);
++        VkMemoryRequirements req{};
++        p_vkGetImageMemoryRequirements(vk_device(), d.image, &req);
++        VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
++        ai.allocationSize = req.size;
++        ai.memoryTypeIndex = memory_type(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
++        p_vkAllocateMemory(vk_device(), &ai, nullptr, &d.memory);
++        p_vkBindImageMemory(vk_device(), d.image, d.memory, 0);
++        d.format = ci.format, d.aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
++        d.width = src->width, d.height = src->height, d.levels = src->levels, d.layers = src->layers;
++        VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
++        bi.size = bytes;
++        bi.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
++        p_vkCreateBuffer(vk_device(), &bi, nullptr, &c.buffer);
++        p_vkGetBufferMemoryRequirements(vk_device(), c.buffer, &req);
++        ai.allocationSize = req.size;
++        ai.memoryTypeIndex = memory_type(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
++        p_vkAllocateMemory(vk_device(), &ai, nullptr, &c.buffer_memory);
++        p_vkBindBufferMemory(vk_device(), c.buffer, c.buffer_memory, 0);
++        static uint64_t made = 0;
++        if (made++ < 8)
++            log("nvn/vk: shadow companion D32F %ux%u x%u, %u levels, for a depth-compare lookup of a 32-bit colour texture",
++                d.width, d.height, d.layers, d.levels);
++    }
++    // Earlier writes of the source (a pass, an upload) and earlier reads of the buffer and the companion first.
++    memory_barrier(cb, VK_ACCESS_MEMORY_WRITE_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
++    const VkImageLayout back = src->layout;
++    if (src->layout != VK_IMAGE_LAYOUT_GENERAL) transition(cb, *src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
++    p_vkCmdCopyImageToBuffer(cb, src->image, src->layout, c.buffer, uint32_t(regions.size()), regions.data());
++    memory_barrier(cb, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT);
++    transition(cb, d, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
++    for (auto& r : regions) r.imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
++    p_vkCmdCopyBufferToImage(cb, c.buffer, d.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, uint32_t(regions.size()),
++                             regions.data());
++    transition(cb, d, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
++    if (back != VK_IMAGE_LAYOUT_UNDEFINED) transition(cb, *src, back);
++    // The view the slot asks for (levels and layers; a depth view's swizzle stays identity for the comparison).
++    const VkImageViewType type = view_type(shape);
++    const uint32_t base = std::min(view.base_level, d.levels - 1);
++    const uint32_t levels = view.levels ? std::min(view.levels, d.levels - base) : d.levels - base;
++    const uint32_t first = std::min(view.min_layer, d.layers - 1);
++    uint32_t layers = view.layers ? std::min(view.layers, d.layers - first) : d.layers - first;
++    if (type != VK_IMAGE_VIEW_TYPE_2D_ARRAY) layers = 1;
++    VkImageView& v = c.views[{type, base, levels, first, layers}];
++    if (!v) {
++        VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
++        vi.image = d.image;
++        vi.viewType = type;
++        vi.format = VK_FORMAT_D32_SFLOAT;
++        vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, base, levels, first, layers};
++        p_vkCreateImageView(vk_device(), &vi, nullptr, &v);
++    }
++    *layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++    return v;
++}
++
+ }  // namespace nx::nvn
 --- a/runtime/src/nvn/nvn_format.cpp
 +++ b/runtime/src/nvn/nvn_format.cpp
 @@ -43,7 +43,7 @@
@@ -10379,6 +10507,15 @@
  void upload_texture(VkCommandBuffer cb, const Texture& t, GpuImage& img, uint64_t lo = 0, uint64_t hi = UINT64_MAX);
  // Every level and layer to zero (colour; magenta with `magenta`), depth and stencil to 0. Leaves TRANSFER_DST.
  void clear_image(VkCommandBuffer cb, GpuImage& img, bool magenta = false);
+@@ -140,5 +142,8 @@
+ bool dummy_ready(const ImageShape& shape);
+ // A 1x1 black texture of the shape, for bindings with nothing behind them.
+ VkImageView dummy_view(VkCommandBuffer cb, const ImageShape& shape);
++// A D32F copy of a one-channel 32-bit colour texture, for a depth-compare lookup of it (nvn_dummy.cpp).
++VkImageView shadow_companion_view(VkCommandBuffer cb, uint64_t texture, const ImageShape& shape, const ViewInfo& view,
++                                  VkImageLayout* layout);
+ 
+ }  // namespace nx::nvn
 --- a/runtime/src/nvn/nvn_pipeline_cache.cpp
 +++ b/runtime/src/nvn/nvn_pipeline_cache.cpp
 @@ -2,13 +2,18 @@
@@ -12409,15 +12546,26 @@
          g_handle_used++, g_handle_misses++;
          return &s;
      }
-@@ -403,6 +435,7 @@
+@@ -402,7 +434,18 @@
+ // gather_textures left them), storage images (set 3). Records uploads and layout changes, so it runs outside render
  // passes when textures or images need them. A set is allocated when its first binding is written: the sets no stage
  // declares anything in (usually two of the four) are neither allocated nor bound.
++// A depth-compare 2D lookup of an R32F texture (one layer, or an array for an arrayed lookup): Maxwell compares the
++// stored float, Vulkan depth formats only, so it reads the texture's D32F companion (nvn_dummy.cpp), copied before
++// the draw. Shy Guy Falls binds a 4x4 R32F array to a shadow sampler.
++bool reads_shadow_companion(const ImageShape& shape, const Texture* t, uint32_t format, const SamplerInfo& s) {
++    return t && shape.depth && shape.dim == 1 && format == 0xa && t->samples <= 1 &&
++           (shape.arrayed ? (t->target == 4 && t->depth > 0) || (t->target == 1 && t->depth == 1)
++                          : t->target == 1 && t->depth == 1) &&
++           s.compare_mode == 1 && s.compare_func >= 1 && s.compare_func <= 8;
++}
++
  void build_sets(VkCommandBuffer cb, const std::vector<const ShaderInfo*>& shaders, const ProgramLayout& layout) {
 +    perf::Scope perf_scope(perf::Region::Sets);
      Descriptors& d = g_sets;
      if (draw_slow(kSlowScratch))
          d = Descriptors{};
-@@ -451,6 +484,33 @@
+@@ -451,6 +494,42 @@
          return s->stage == ShaderStage::Compute &&
                 (all_write_backs() || (b.binding < 64 && written_storage_bindings(s) >> b.binding & 1));
      };
@@ -12443,15 +12591,24 @@
 +            if(native_shader_uses_graphics_buffer_profile(shader)&&writable)fatal("graphics storage writes require native integration");
 +            if(!storage_binding&&binding.set==1&&binding.binding<64&&((writes>>binding.binding)&1))fatal("native compute writes through a uniform descriptor are unsupported");
 +            const uint64_t limit=storage_binding?16ull<<20:0x10000;
-+            if(!pool||!pool->memory||!native_compute_buffer_extent_valid(offset,range.size,pool->size,limit)||
-+               offset>UINT64_MAX-pool->memory||!native_guest_span(pool->memory+offset,range.size,writable?3:1))
-+                fatal("required native compute buffer is missing or outside supported backing index=%d storage=%d address=%llx bytes=%llu",index,int(storage_binding),static_cast<unsigned long long>(range.address),static_cast<unsigned long long>(range.size));
++            // The host bytes the binding will read (guest_bytes): a virtual pool's through its mappings, which must
++            // cover the whole range contiguously.
++            // A read-only range of a physical pool may run past the pool's end (the game binds whole blocks near
++            // it): the binding reads those guest bytes as they are, so they must only be readable guest memory.
++            const bool in_pool=pool&&native_compute_buffer_extent_valid(offset,range.size,pool->size,limit);
++            const bool past_end_read=pool&&pool->memory&&!writable&&range.size>0&&range.size<=limit&&offset<pool->size;
++            const uint64_t host=in_pool||past_end_read?pool_host(*pool,offset):0;
++            const bool contiguous=host&&range.size&&(pool->memory||pool_host(*pool,offset+range.size-1)==host+range.size-1);
++            if(past_end_read&&!in_pool&&contiguous){static uint64_t noted=0;if(noted++<8)log("nvn: read-only buffer binding index=%d runs %llu bytes past its pool (offset %llx of %llx): read as guest memory",index,static_cast<unsigned long long>(offset+range.size-pool->size),static_cast<unsigned long long>(offset),static_cast<unsigned long long>(pool->size));}
++            if(!contiguous||!native_guest_span(host,range.size,writable?3:1))
++                fatal("required native compute buffer is missing or outside supported backing index=%d storage=%d address=%llx bytes=%llu pool=%s offset=%llx pool_size=%llx mappings=%zu host=%llx",index,int(storage_binding),static_cast<unsigned long long>(range.address),static_cast<unsigned long long>(range.size),
++                      !pool?"none":pool->memory?"physical":"virtual",static_cast<unsigned long long>(offset),static_cast<unsigned long long>(pool?pool->size:0),pool?pool->mappings.size():size_t(0),static_cast<unsigned long long>(host));
 +        }
 +    }
      // The written ranges first (nvn_written.cpp): two bindings of one dispatch that meet get one copy, and bindings
      // that read what the dispatch writes see it, as on the GPU.
      for (const ShaderInfo* s : shaders)
-@@ -522,6 +582,38 @@
+@@ -522,6 +601,38 @@
                  }
                  default: info = buffer_of(cb, nullptr, 0x1000, 16, false, false); break;
              }
@@ -12490,15 +12647,19 @@
              VkDescriptorType type = VkDescriptorType(b.type);
              if (b.set == 0 && b.binding < 64 && layout.dynamic >> b.binding & 1) {  // the offset goes with the bind
                  d.dynamic |= 1ull << b.binding, d.dynamic_offset[b.binding] = uint32_t(info.offset);
-@@ -543,8 +635,19 @@
+@@ -543,8 +654,23 @@
          const ResolvedTexture r = k < t.resolved.size() ? t.resolved[k] : ResolvedTexture{};
          VkDescriptorImageInfo ii{};
          ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 -        ii.imageView = r.texture ? sampled_view(cb, r.texture, b->image, &r.view, &ii.imageLayout)
 -                                 : dummy_view(cb, b->image);
 +        const bool native_null=!r.texture&&vk_null_descriptors()&&native_shader_uses_sampled_float_profile(s);
++        const Texture* companion_source=r.texture&&b->image.depth&&native_shader_uses_sampled_float_profile(s)?get<Texture>(r.texture):nullptr;
++        const bool companion=companion_source&&!native_sampled_shadow_compatible(b->image.arrayed,companion_source->target,companion_source->depth,companion_source->samples,r.view.format?r.view.format:companion_source->format,companion_source->depth_stencil_mode,r.sampler.compare_mode,r.sampler.compare_func)&&
++            reads_shadow_companion(b->image,companion_source,r.view.format?r.view.format:companion_source->format,r.sampler);
 +        try {
-+            ii.imageView = native_null?VK_NULL_HANDLE:r.texture ? sampled_view(cb, r.texture, b->image, &r.view, &ii.imageLayout, native_shader_uses_sampled_float_profile(s))
++            ii.imageView = native_null?VK_NULL_HANDLE:companion ? shadow_companion_view(cb, r.texture, b->image, r.view, &ii.imageLayout)
++                                     : r.texture ? sampled_view(cb, r.texture, b->image, &r.view, &ii.imageLayout, native_shader_uses_sampled_float_profile(s))
 +                                     : dummy_view(cb, b->image);
 +        } catch(...) {
 +            const auto& draw=current_draw_invocation;
@@ -12512,7 +12673,7 @@
          ii.sampler = r.vk_sampler ? r.vk_sampler : sampler_for(r.sampler, b->image.depth);
          images.push_back(ii);
          VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-@@ -614,6 +717,7 @@
+@@ -614,6 +740,7 @@
  // Texture bindings of a program's stages and their handles, into g_textures. kNeedBreak: one needs a transfer or a
  // layout change (so no render pass may be open while the sets are built); kSampledPending: one has a pending clear.
  uint32_t gather_textures(const std::vector<const ShaderInfo*>& shaders) {
@@ -12520,15 +12681,16 @@
      DrawTextures& t = g_textures;
      if (draw_slow(kSlowScratch))
          t = DrawTextures{};
-@@ -642,6 +746,7 @@
+@@ -642,6 +769,8 @@
          t.handles[k] = handle;
          ResolvedTexture& r = t.resolved[k];
          uint64_t texture = 0;
 +        bool native_null_binding=false;
++        bool shadow_companion=false;
          // A pool entry naming a texture that no longer exists samples the dummy, like no texture: it ended the
          // render pass at every draw (~1.4M times in a run, docs/nvn/DEBUG.md #34).
          if (HandleSlot* slot = handle_slot(handle)) {
-@@ -657,7 +762,48 @@
+@@ -657,7 +786,52 @@
              else
                  texture = 0;
          }
@@ -12538,7 +12700,10 @@
 +            bool compatible=false;
 +            if(actual){
 +                if(b->image.dim==2)compatible=native_volume_ready_for_sample(*actual);
-+                else if(b->image.depth)compatible=native_sampled_shadow_compatible(b->image.arrayed,actual->target,actual->depth,actual->samples,format,actual->depth_stencil_mode,r.sampler.compare_mode,r.sampler.compare_func);
++                else if(b->image.depth){
++                    compatible=native_sampled_shadow_compatible(b->image.arrayed,actual->target,actual->depth,actual->samples,format,actual->depth_stencil_mode,r.sampler.compare_mode,r.sampler.compare_func);
++                    if(!compatible)compatible=shadow_companion=reads_shadow_companion(b->image,actual,format,r.sampler);
++                }
 +                else if(b->image.arrayed&&b->image.dim==3)compatible=native_sampled_cube_array_float_compatible(actual->target,actual->width,actual->height,actual->depth,actual->samples,format);
 +                else if(b->image.arrayed)compatible=native_sampled_array_float_compatible(actual->target,actual->depth,actual->samples,format)||native_sampled_depth_float_compatible(true,actual->target,actual->depth,actual->samples,format,actual->depth_stencil_mode,r.sampler.compare_mode);
 +                else if(b->image.dim==3)compatible=native_sampled_cube_float_compatible(actual->target,actual->width,actual->height,actual->samples,format);
@@ -12574,6 +12739,7 @@
 +        }
          r.texture = texture;
 +        if(native_null_binding)continue; // No upload, layout transition or dummy image.
++        if(shadow_companion)out |= kNeedBreak; // its copy
          if (texture ? !sampled_ready(texture) : !dummy_ready(b->image)) out |= kNeedBreak;
          if (!texture) continue;
          GpuImage* img = image_of(texture);
@@ -13671,24 +13837,59 @@
          case WM_KEYDOWN:
              if (w == VK_F11) toggle_fullscreen(h);
              break;
-@@ -188,10 +260,11 @@
-     int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2, y = (sh - h) / 2;
+@@ -180,18 +252,42 @@
+     // The render resolution's aspect (NX_RESOLUTION, default 16:9), about 80% of the screen height, centred.
+     unsigned rw = 16, rh = 9;
+     if (const char* r = std::getenv("NX_RESOLUTION")) std::sscanf(r, "%ux%u", &rw, &rh);
+-    int sh = GetSystemMetrics(SM_CYSCREEN);
++    // NX_WINDOW_MONITOR=secondary|<n>: that monitor's work area instead of the primary screen.
++    RECT area{0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)};
++    if (const char* want = std::getenv("NX_WINDOW_MONITOR")) {
++        struct Pick {
++            const char* want;
++            int index = 0;
++            bool found = false;
++            RECT work{};
++        } pick{want};
++        EnumDisplayMonitors(nullptr, nullptr, [](HMONITOR m, HDC, LPRECT, LPARAM p) -> BOOL {
++            auto& k = *reinterpret_cast<Pick*>(p);
++            MONITORINFO mi{sizeof mi};
++            GetMonitorInfoW(m, &mi);
++            const bool primary = mi.dwFlags & MONITORINFOF_PRIMARY;
++            const bool hit = std::strcmp(k.want, "secondary") == 0 ? !primary : std::atoi(k.want) == k.index;
++            k.index++;
++            if (hit && !k.found) k.found = true, k.work = mi.rcWork;
++            return TRUE;
++        }, reinterpret_cast<LPARAM>(&pick));
++        if (pick.found) area = pick.work;
++        log("window: NX_WINDOW_MONITOR=%s -> %s (%ld,%ld %ldx%ld)", want, pick.found ? "found" : "not found, primary",
++            area.left, area.top, area.right - area.left, area.bottom - area.top);
++    }
++    int sh = area.bottom - area.top;
+     int ch = std::max(540, sh * 8 / 10), cw = int(int64_t(ch) * rw / std::max(1u, rh));
+     RECT r{0, 0, cw, ch};
+     AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
+     int w = r.right - r.left, h = r.bottom - r.top;
+-    int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2, y = (sh - h) / 2;
++    int x = area.left + (area.right - area.left - w) / 2, y = area.top + (sh - h) / 2;
      // NX_HEADLESS: created hidden (the surface still needs a window), never brought to the front.
      const DWORD style = headless() ? (kWindowed & ~WS_VISIBLE) : kWindowed;
 -    g_window = CreateWindowW(wc.lpszClassName, (widen(nx::game::kInfo.title) + L" (Switch recomp)  -  F11: fullscreen").c_str(), style,
+-                             std::max(0, x), std::max(0, y), w, h, nullptr, nullptr, wc.hInstance, nullptr);
 +    const bool inactive=std::getenv("NX_SHOW_INACTIVE")!=nullptr;
 +    g_window = CreateWindowExW(inactive?WS_EX_NOACTIVATE:0,wc.lpszClassName, (widen(nx::game::kInfo.title) + L" (Switch recomp)  -  F11: fullscreen").c_str(), style,
-                              std::max(0, x), std::max(0, y), w, h, nullptr, nullptr, wc.hInstance, nullptr);
++                             std::max(int(area.left), x), std::max(int(area.top), y), w, h, nullptr, nullptr, wc.hInstance, nullptr);
      if (const char* f = std::getenv("NX_FULLSCREEN"); f && *f == '1' && !headless()) toggle_fullscreen(g_window);
 -    if (!headless()) SetForegroundWindow(g_window);
 +    if (!headless()&&!inactive) SetForegroundWindow(g_window);
      *ready = true;
      MSG m;
      while (GetMessageW(&m, nullptr, 0, 0) > 0) {
-@@ -228,6 +301,117 @@
+@@ -227,6 +323,142 @@
+ bool headless() {  // NX_HEADLESS (platform.h)
      static const bool on = std::getenv("NX_HEADLESS") != nullptr;
      return on;
- }
++}
 +
 +// ---- input: wired Switch-layout USB pads (HID) ---------------------------------------------------------------------
 +// PowerA (VID 20D6) and HORI (VID 0F0D) wired pads are HID gamepads, not XInput devices. Their input report (after
@@ -13800,18 +14001,43 @@
 +}
 +
 +}  // namespace
++
++// NX_INPUT_SHM=<name>: a pad written by a test driver into the shared memory "Local\<name>", read without focus:
++// struct { u32 magic 'NXPD'; u32 sequence; u64 NpadButton bits; s32 lx, ly, rx, ry (-32767..32767) }.
++void read_shm_pad(PadState& p) {
++    struct Shared {
++        uint32_t magic, sequence;
++        uint64_t buttons;
++        int32_t lx, ly, rx, ry;
++    };
++    static const Shared* shared = [] {
++        const char* name = std::getenv("NX_INPUT_SHM");
++        if (!name || !*name) return static_cast<const Shared*>(nullptr);
++        const std::string full = std::string("Local\\") + name;
++        HANDLE m = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(Shared), full.c_str());
++        if (!m) return static_cast<const Shared*>(nullptr);
++        log("input: shared-memory pad %s", full.c_str());
++        return static_cast<const Shared*>(MapViewOfFile(m, FILE_MAP_READ, 0, 0, sizeof(Shared)));
++    }();
++    if (!shared || shared->magic != 0x4450584eu) return;  // 'NXPD'
++    p.buttons |= shared->buttons;
++    if (shared->lx) p.lx = shared->lx;
++    if (shared->ly) p.ly = shared->ly;
++    if (shared->rx) p.rx = shared->rx;
++    if (shared->ry) p.ry = shared->ry;
+ }
  
  void read_pad(PadState& p) {
-     XINPUT_STATE xs{};
-@@ -270,6 +454,7 @@
+@@ -270,6 +502,8 @@
      if (key('C')) p.buttons |= kZR;
      if (key(VK_RETURN)) p.buttons |= kPlus;
      if (key(VK_ESCAPE)) p.buttons |= kMinus;
 +    read_hid_pad(p);
++    read_shm_pad(p);
      input_script(p);  // NX_INPUT_SCRIPT (input_script.cpp): unattended runs
  }
  
-@@ -278,12 +463,15 @@
+@@ -278,12 +512,15 @@
  namespace {
  
  std::atomic<uint32_t> g_queued{0};
@@ -13827,7 +14053,7 @@
          g_done(p->first);
          delete p;
      }
-@@ -292,7 +480,7 @@
+@@ -292,7 +529,7 @@
      void STDMETHODCALLTYPE OnStreamEnd() noexcept override {}
      void STDMETHODCALLTYPE OnBufferStart(void*) noexcept override {}
      void STDMETHODCALLTYPE OnLoopEnd(void*) noexcept override {}
@@ -13836,7 +14062,7 @@
  };
  
  IXAudio2* g_xa = nullptr;
-@@ -302,35 +490,58 @@
+@@ -302,35 +539,58 @@
  }  // namespace
  
  bool audio_open(AudioDone done) {
@@ -13921,7 +14147,7 @@
      return true;
  }
  
-@@ -392,7 +603,7 @@
+@@ -392,7 +652,7 @@
      if (e->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP || !g_watch) return EXCEPTION_CONTINUE_SEARCH;
      nx::log("WATCH: %llx written (now %llx) at %s.exe+%llx (tools/symbolize.py)", (unsigned long long)g_watch,
              (unsigned long long)nx::ld<uint64_t>(g_watch), nx::game::kInfo.id, (unsigned long long)exe_va(e->ExceptionRecord->ExceptionAddress));
@@ -13930,7 +14156,7 @@
      static int hits = 0;
      if (++hits >= 30) e->ContextRecord->Dr7 = 0;
      return EXCEPTION_CONTINUE_EXECUTION;
-@@ -440,8 +651,9 @@
+@@ -440,8 +700,9 @@
      nx::log("CRASH: exception %08lx at %s (tools/symbolize.py for the exe), data address %llx", r->ExceptionCode,
              host_where(uint64_t(r->ExceptionAddress)).c_str(), (unsigned long long)info);
      host_backtrace(*e->ContextRecord);
@@ -13941,7 +14167,7 @@
      return EXCEPTION_EXECUTE_HANDLER;
  }
  
-@@ -462,9 +674,31 @@
+@@ -462,9 +723,31 @@
      return EXCEPTION_CONTINUE_SEARCH;
  }
  

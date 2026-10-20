@@ -4,6 +4,35 @@ Updated 2026-10-20. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
+R277-R280 come from an unattended sweep of every cup at 200cc with the frame
+pacing uncapped (`NX_DISPLAY_HZ`), driven by a closed-loop menu driver that
+classifies the screen from small grayscale thumbnails. Two courses stopped the
+game. Sweet Sweet Canyon binds a 1,872-byte uniform block 0x350 bytes before the
+end of its 128 KB physical pool. R277 only made the fatal message say where;
+R278 accepts a read-only binding (uniform, or storage the shader does not write)
+that runs past its physical pool when the whole range is readable guest memory,
+and reads exactly those bytes, as Maxwell reads what follows. Writable storage
+keeps the in-pool rule. Shy Guy Falls samples a 4x4 R32F texture array through
+a depth-compare (shadow) sampler. Maxwell compares the stored float; Vulkan
+compares depth formats only. R280 reads such a lookup through a D32F companion
+image of the same shape, holding the same bits, copied from the texture through
+a buffer before every draw that reads it (the draw ends the render pass for the
+copy). The draw is kept and its result matches the hardware comparison; stored
+values outside [0, 1] are undefined without `VK_EXT_depth_range_unrestricted`.
+
+R279 lets the game run beside other work. `NX_WINDOW_MONITOR=secondary` (or a
+monitor index) centres the window on that monitor's work area, and
+`NX_INPUT_SHM=<name>` merges a pad that a test driver writes into the shared
+memory `Local\<name>` (magic, sequence, button bits, four stick axes), so menus
+can be driven without keyboard focus. With `NX_SHOW_INACTIVE` the window never
+takes focus. All 44 suites and 3,212 GPU checks pass on R280; the recipe
+reconstructs 212 files.
+
+Uncapped sweep measurements (Mushroom Cup, R278): median 72-100 FPS in races,
+menus 180-300 FPS, the cc and character-select screens with video panels
+13-26 FPS. Every course still has late frames, up to 3.3 s on Sweet Sweet Canyon
+and 2.9 s on Thwomp Ruins; those hitches are not yet attributed.
+
 R275 and R276 make longer interactive sessions possible. R275 reads wired
 Switch-layout USB pads (PowerA VID 20D6, HORI VID 0F0D) directly: they are HID
 gamepads, not XInput devices, so the runtime had not seen them. A reader thread

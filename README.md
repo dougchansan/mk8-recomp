@@ -42,7 +42,7 @@ or 12.9 s (cold) to 116 ms, and the worst course-load presentation from about
 1.2 s to 0.5 s. No steady-FPS gain is established. The default source recipe now
 reconstructs 210 files. `NX_OVERLAY=1` shows an FPS/frame-time overlay. Sustained smooth 60 and correct 120 remain unverified.
 
-R249-R276 (October 2026) turn to what the game looks like and how it is played.
+R249-R280 (October 2026) turn to what the game looks like and how it is played.
 R249/R250 attribute slow presentations: late frames wait on the title's main
 thread, not on GPU work. R252 adds a metrics overlay (FPS, frames shown, frame
 time, render size) and whole-frame draw traces. R264 renders each target into
@@ -57,9 +57,13 @@ select and the race now match. R275 reads wired Switch-layout USB pads directly
 includes every course effect file and every compressed archive (karts, drivers,
 courses, UI): 14,046 translated stages in all. R276 adds an opt-in
 `NX_SKIP_MISSING_SHADERS=1` for collection sessions, which skips the draws of a
-shader still missing and dumps it for translation instead of stopping. All 44
-suites and 3,212 GPU checks pass. The default source recipe reconstructs 211
-files. Sustained smooth 60, first-visit pipeline hitches on courses outside the
+shader still missing and dumps it for translation instead of stopping. An
+unattended 200cc sweep of every cup found two stops: R278 reads a uniform block
+that runs past its memory pool (Sweet Sweet Canyon), and R280 samples an R32F
+texture through a shadow sampler via a D32F copy with the same bits (Shy Guy
+Falls). R279 can place the window on a second monitor and take scripted input
+without keyboard focus. All 44 suites and 3,212 GPU checks pass. The default
+source recipe reconstructs 212 files. Sustained smooth 60, first-visit pipeline hitches on courses outside the
 recorded flights, and full gameplay verification remain open.
 
 The following figures describe the earlier guarded-runtime research track; the current native race result is the Belmante integration above.

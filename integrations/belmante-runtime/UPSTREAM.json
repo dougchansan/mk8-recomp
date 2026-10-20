@@ -4,7 +4,7 @@
   "license": "MIT",
   "license_sha256": "7f728cfaa94ff27c2a40c906dac12564a216077ceb017fb2d01cc29ba6697720",
   "local_changes_license": "GPL-3.0-or-later",
-  "patch_sha256": "62714c4d92c8c10e04a5d02deae30b83d93f96dba637b042c38945c07ca3353d",
+  "patch_sha256": "a61b05830c4f355374f78a4b6fe38cc57e97a1cd9385870531c7ef18be1e12ae",
   "changed_files": [
     "CMakeLists.txt",
     "games/mk8d/game.cpp",
@@ -98,6 +98,7 @@
     "runtime/src/nvn/nvn_draw_state.cpp",
     "runtime/src/nvn/nvn_draw_state.h",
     "runtime/src/nvn/nvn_draw_trace.cpp",
+    "runtime/src/nvn/nvn_dummy.cpp",
     "runtime/src/nvn/nvn_format.cpp",
     "runtime/src/nvn/nvn_frames.cpp",
     "runtime/src/nvn/nvn_gpu_busy.cpp",

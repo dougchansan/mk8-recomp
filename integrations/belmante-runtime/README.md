@@ -56,9 +56,12 @@ commit and exact game-produced-save reload to mode selection are verified.
 Audible audio, physical controls, broader gameplay and full-speed performance
 remain open; no release/tag/download is available.
 
-Windows integration now passes 42 CPU/component suites and a 2,507-check native
+Windows integration now passes 43 CPU/component suites and a 3,212-check native
 GPU fixture on an RX 9070 XT, plus 300 checks through the synchronous submission
-entry point. R245 reconstructs 202 generic adapted files. Native worker creation
+entry point. R248 reconstructs 207 generic adapted files. Optional pipeline
+recipes (`NX_PIPELINE_RECIPES=1`/`capture`, off by default) prewarm the graphics
+pipelines a previous local flight used on bounded background workers; no recipe,
+shader or driver cache is published. See `docs/native-pipeline-recipes.md`. Native worker creation
 handles are released, thread descriptions are applied and concurrent priority
 metadata access is synchronized. `NX_NATIVE_THREAD_PRIORITY=1` enables an
 experimental bounded Windows priority mapping; it remains off by default after

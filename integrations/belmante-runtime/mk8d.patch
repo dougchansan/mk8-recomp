@@ -167,7 +167,16 @@
      runtime/src/nvn/nvn_janitor.cpp
      runtime/src/nvn/nvn_trace.cpp
      runtime/src/nvn/nvn_device.cpp
-@@ -185,7 +306,7 @@
+@@ -147,6 +268,8 @@
+     runtime/src/nvn/nvn_pipeline.cpp
+     runtime/src/nvn/nvn_dummy.cpp
+     runtime/src/nvn/nvn_pipeline_cache.cpp
++    runtime/src/nvn/nvn_pipeline_prewarm.cpp
++    runtime/src/nvn/nvn_pipeline_recipes.cpp
+     runtime/src/nvn/nvn_upload.cpp
+     runtime/src/nvn/nvn_astc.cpp
+     runtime/src/nvn/nvn_spirv_patch.cpp
+@@ -185,7 +308,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -176,7 +185,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +317,7 @@
+@@ -196,7 +319,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -185,7 +194,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,19 +329,63 @@
+@@ -208,19 +331,64 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -218,6 +227,7 @@
 +        target_link_libraries(native_device_fixture PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt mfplat mfuuid wmcodecdspuuid mfreadwrite)
 +        target_link_options(native_device_fixture PRIVATE /STACK:67108864 /HIGHENTROPYVA:NO /MAP)
 +        add_test(NAME native_device_cpu COMMAND native_device_fixture)
++        add_test(NAME native_pipeline_recipes COMMAND native_device_fixture --pipeline-recipes)
 +        add_test(NAME native_thread_host_default COMMAND native_device_fixture --thread-policy)
 +        set_tests_properties(native_thread_host_default PROPERTIES ENVIRONMENT "NX_NATIVE_THREAD_PRIORITY=0" TIMEOUT 15)
 +        add_test(NAME native_thread_host_priorities COMMAND native_device_fixture --thread-policy)
@@ -268,7 +278,7 @@
 +}
 --- /dev/null
 +++ b/recomp/lz4_checked.py
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,33 @@
 +# SPDX-License-Identifier: GPL-3.0-or-later
 +# Local checked reader; not part of the upstream MIT code.
 +import struct
@@ -301,6 +311,7 @@
 +        for _ in range(n): out.append(out[-offset])
 +    require(pos==len(src) and len(out)==size,'LZ4 exact size')
 +    return bytes(out)
++
 --- a/recomp/nso.py
 +++ b/recomp/nso.py
 @@ -5,7 +5,7 @@
@@ -2217,6 +2228,26 @@
 +    ~DrawInvocationScope(){current_draw_invocation=previous;}
 +};
 +}
+--- /dev/null
++++ b/runtime/src/native_exit_hooks.h
+@@ -0,0 +1,17 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Work to quiesce before the process exits through plat::exit_process (background pipeline workers leave the driver
++// first). Hooks run in registration order on the exiting thread; each must return within a bounded time.
++#pragma once
++#include <mutex>
++#include <vector>
++namespace nx {
++using ExitHook = void (*)();
++inline std::mutex& exit_hook_lock() { static std::mutex m; return m; }
++inline std::vector<ExitHook>& exit_hooks() { static std::vector<ExitHook> v; return v; }
++inline void add_exit_hook(ExitHook h) { std::lock_guard g(exit_hook_lock()); exit_hooks().push_back(h); }
++inline void run_exit_hooks() {
++    std::vector<ExitHook> hooks;
++    { std::lock_guard g(exit_hook_lock()); hooks = exit_hooks(); }
++    for (ExitHook h : hooks) h();
++}
++}  // namespace nx
 --- /dev/null
 +++ b/runtime/src/native_exit_policy.h
 @@ -0,0 +1,18 @@
@@ -9062,7 +9093,7 @@
  // Pipelines and sampled resources (nvn_pipeline.h). Everything is cached for the life of the process: layouts by
  // their bindings, pipelines by their full state, samplers by their state, views by (image, type).
  #include <algorithm>
-@@ -15,9 +16,13 @@
+@@ -15,9 +16,14 @@
  #include <tuple>
  #include <unordered_map>
  
@@ -9070,13 +9101,14 @@
 +#include "native_point_size_patch.h"
 +#include "native_guest_span.h"
  #include "nvn_pipeline.h"
++#include "nvn_pipeline_recipes.h"
  #include "nvn_ultrawide.h"
  #include "platform.h"
 +#include "native_bc3_block_view.h"
  
  namespace nx::nvn {
  
-@@ -27,6 +32,11 @@
+@@ -27,6 +33,11 @@
  // blends in linear) and samples them the same way. Ignoring it lost one conversion per draw: far too much contrast
  // and saturation (docs/nvn/DEBUG.md #29).
  VkFormat view_format(const GpuImage& img, uint32_t nvn) {
@@ -9088,26 +9120,37 @@
      if (VkFormat f; bc_view_format(img, nvn, f)) return f;  // decoded BC (nvn_bc.cpp)
      if (!nvn || nvn == img.nvn_format || img.alpha_from_r || img.aspect != VK_IMAGE_ASPECT_COLOR_BIT) return img.format;
      VkFormat f = vk_format(nvn);
-@@ -79,14 +89,15 @@
+@@ -77,17 +88,22 @@
+                                         : VK_SHADER_STAGE_COMPUTE_BIT;
+ }
  
- // `kinds`: per vertex input location, 0 float or the integer kind of its attribute format (vertex_int_kind).
- // `unwritten`: fragment input locations the vertex stage does not write (default_unwritten_inputs).
+-// `kinds`: per vertex input location, 0 float or the integer kind of its attribute format (vertex_int_kind).
+-// `unwritten`: fragment input locations the vertex stage does not write (default_unwritten_inputs).
 -VkShaderModule module_of(const ShaderInfo* s, const uint8_t* kinds = nullptr, uint32_t unwritten = 0) {
 -    static std::map<std::tuple<const ShaderInfo*, std::string, uint32_t>, VkShaderModule> cache;
-+VkShaderModule module_of(const ShaderInfo* s, const uint8_t* kinds = nullptr, uint32_t unwritten = 0, float point_size = 0) {
-+    static std::map<std::tuple<const ShaderInfo*, std::string, uint32_t, uint32_t>, VkShaderModule> cache;
++}  // namespace
++
++// The integer kinds a module is made with: 16 bytes, all zero when none apply (or NX_INT_ATTRIBS=0).
++std::string module_kinds(const uint8_t* kinds) {
      // The integer-vertex-input patch (skinned models' bone indices; without it Metal refuses every character's
      // pipeline, DEBUG.md #25/#26). NX_INT_ATTRIBS=0 turns it off.
      static const char* int_env = std::getenv("NX_INT_ATTRIBS");
      static const bool off = int_env && int_env[0] == '0';
-     std::string k = kinds && !off ? std::string(reinterpret_cast<const char*>(kinds), 16) : std::string(16, '\0');
+-    std::string k = kinds && !off ? std::string(reinterpret_cast<const char*>(kinds), 16) : std::string(16, '\0');
 -    auto& m = cache[{s, k, unwritten}];
-+    uint32_t point_bits = 0; std::memcpy(&point_bits, &point_size, sizeof point_bits);
-+    auto& m = cache[{s, k, unwritten, point_bits}];
-     if (!m) {
+-    if (!m) {
++    return kinds && !off ? std::string(reinterpret_cast<const char*>(kinds), 16) : std::string(16, '\0');
++}
++
++// A new module of a stage with every patch that applies (nvn_pipeline_recipes.h). `k`: module_kinds.
++VkShaderModule make_module(const ShaderInfo* s, const std::string& k, uint32_t unwritten, float point_size,
++                           bool* patched) {
++    VkShaderModule m = VK_NULL_HANDLE;
++    {
          bool is_patched = false;
          const uint8_t* int_kinds = k != std::string(16, '\0') ? reinterpret_cast<const uint8_t*>(k.data()) : nullptr;
-@@ -97,6 +108,12 @@
+         std::vector<uint32_t> code = patched_spirv(s, int_kinds, unwritten, &is_patched);
+@@ -97,6 +113,12 @@
              else log("nvn/vk: shader %s: ultrawide x scale not patched", s->hash.c_str());
          }
          if (s->stage == ShaderStage::Vertex) clip_z_module(s, code);  // NX_CLIP_Z_PATCH (nvn_spirv_clip.cpp)
@@ -9120,7 +9163,45 @@
          if (const char* opt = std::getenv("NX_SPIRV_OPT"); opt || std::getenv("NX_SPIRV_TOOL")) {  // diagnostic: each module through `spirv-opt <flags>` (NX_SPIRV_OPT) or `<tool> in out` (NX_SPIRV_TOOL) first
              static int n = 0;
              std::string in = "/tmp/nx_spv_" + std::to_string(process_id()) + "_" + std::to_string(n++) + ".spv", out = in + ".out";
-@@ -169,7 +186,7 @@
+@@ -119,14 +141,37 @@
+         ci.codeSize = code.size() * 4;
+         ci.pCode = code.data();
+         if (p_vkCreateShaderModule(vk_device(), &ci, nullptr, &m) != VK_SUCCESS) log("nvn/vk: shader %s rejected", s->hash.c_str());
++        if (patched) *patched = is_patched;
++    }
++    return m;
++}
++
++namespace {
++
++// `kinds`: per vertex input location, 0 float or the integer kind of its attribute format (vertex_int_kind).
++// `unwritten`: fragment input locations the vertex stage does not write (default_unwritten_inputs).
++VkShaderModule module_of(const ShaderInfo* s, const uint8_t* kinds = nullptr, uint32_t unwritten = 0, float point_size = 0) {
++    static std::map<std::tuple<const ShaderInfo*, std::string, uint32_t, uint32_t>, VkShaderModule> cache;
++    std::string k = module_kinds(kinds);
++    uint32_t point_bits = 0; std::memcpy(&point_bits, &point_size, sizeof point_bits);
++    auto& m = cache[{s, k, unwritten, point_bits}];
++    if (!m) {
++        bool is_patched = false;
++        m = make_module(s, k, unwritten, point_size, &is_patched);
+         static int logged = 0;
+         if (is_patched && logged++ < 20) log("nvn/vk: shader %s: integer vertex inputs", s->hash.c_str());
+     }
+     return m;
+ }
+ 
++VkShaderModule draw_module(void*, const ShaderInfo* s, const uint8_t* kinds, uint32_t unwritten, float point_size) {
++    return module_of(s, kinds, unwritten, point_size);
++}
++
+ VkDescriptorSetLayout set_layout(const std::vector<VkDescriptorSetLayoutBinding>& bindings) {
+     static std::map<std::string, VkDescriptorSetLayout> cache;
++    static std::mutex lock;  // prewarm workers (nvn_pipeline_prewarm.cpp) make layouts too
++    std::lock_guard guard(lock);
+     std::string key(reinterpret_cast<const char*>(bindings.data()), bindings.size() * sizeof(bindings[0]));
+     auto& l = cache[key];
+     if (!l) {
+@@ -169,7 +214,7 @@
      bool img1d = img.view_type == VK_IMAGE_VIEW_TYPE_1D || img.view_type == VK_IMAGE_VIEW_TYPE_1D_ARRAY;
      switch (type) {
          case VK_IMAGE_VIEW_TYPE_CUBE:
@@ -9129,7 +9210,7 @@
          case VK_IMAGE_VIEW_TYPE_3D: return img3d;
          case VK_IMAGE_VIEW_TYPE_1D:
          case VK_IMAGE_VIEW_TYPE_1D_ARRAY: return img1d;
-@@ -213,11 +230,18 @@
+@@ -213,11 +258,18 @@
          if (type == VK_IMAGE_VIEW_TYPE_CUBE) layers = 6;
          if (type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) layers -= layers % 6;
          if (!view_compatible(img, type, layers)) return VK_NULL_HANDLE;
@@ -9149,9 +9230,63 @@
      }
      if (v) hit = {key, v};  // never a null one: those are tried again
      return v;
-@@ -289,6 +313,21 @@
+@@ -240,6 +292,19 @@
+     if (last && last->first == stages) return last->second;  // runs of draws use one program
+     auto it = cache.find(stages);
+     if (it != cache.end()) return (last = &*it)->second;
++    const bool timed = recipes::stats_enabled();
++    const uint64_t t0 = timed ? plat::monotonic_ns() : 0;
++    ProgramLayout pl;
++    program_set_layouts(stages, pl);
++    VkPipelineLayoutCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
++    ci.setLayoutCount = 4;
++    ci.pSetLayouts = pl.sets;
++    p_vkCreatePipelineLayout(vk_device(), &ci, nullptr, &pl.layout);
++    if (timed) recipes::note_layout_created(plat::monotonic_ns() - t0);
++    return cache[stages] = pl;
++}
++
++void program_set_layouts(const std::vector<const ShaderInfo*>& stages, ProgramLayout& pl) {
+     std::map<uint32_t, VkDescriptorSetLayoutBinding> sets[4];
+     for (const ShaderInfo* s : stages)
+         for (const DescriptorBinding& b : s->refl.bindings) {
+@@ -250,7 +315,6 @@
+             vb.descriptorCount = std::max(1u, b.count);
+             vb.stageFlags |= stage_bit(s->stage);
+         }
+-    ProgramLayout pl;
+     // On by default on Android only (NX_DYNAMIC_UBO=0/1 overrides): on the Mac (MoltenVK) every frame came out black
+     // and the GPU hung a few thousand frames in (2026-10-01), cause not found yet.
+     static const uint32_t max_dynamic = [] {
+@@ -279,16 +343,42 @@
+         for (auto& [n, b] : sets[k]) v.push_back(b);
+         pl.sets[k] = set_layout(v);
+     }
+-    VkPipelineLayoutCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+-    ci.setLayoutCount = 4;
+-    ci.pSetLayouts = pl.sets;
+-    p_vkCreatePipelineLayout(vk_device(), &ci, nullptr, &pl.layout);
+-    return cache[stages] = pl;
+ }
+ 
  // ---- graphics pipelines ---------------------------------------------------------------------------------------------
  
++bool graphics_key_admitted(const PipelineKey& key) {  // the checks graphics_pipeline makes fatal, for prewarm
++    if (key.topology == 0) {
++        VkPhysicalDeviceProperties properties{};
++        p_vkGetPhysicalDeviceProperties(vk_physical(), &properties);
++        if (!native_point_size_supported(key.point_size, vk_features().largePoints,
++                properties.limits.pointSizeRange[0], properties.limits.pointSizeRange[1]))
++            return false;
++    }
++    if (key.fs) for (const auto& output : key.fs->refl.outputs) {
++        if (output.location >= key.color_count || key.color_formats[output.location] == VK_FORMAT_UNDEFINED) continue;
++        const bool integer = key.color_formats[output.location] == VK_FORMAT_R32G32B32A32_UINT;
++        if ((integer && output.type != ScalarType::Uint) || (!integer && output.type == ScalarType::Uint)) return false;
++    }
++    return true;
++}
++
  VkPipeline graphics_pipeline(const PipelineKey& key, const ProgramLayout& layout) {
 +    perf::Scope perf_scope(perf::Region::Pipeline);
 +    if (key.topology == 0) {
@@ -9171,16 +9306,63 @@
      // By the key's bytes, as before, but hashed (nvn_pipeline.h) instead of a ~700-byte std::string built and
      // compared down a tree per draw; and the last entry first: consecutive draws mostly share their state.
      using Key = ByteKey<sizeof(PipelineKey)>;
-@@ -326,7 +365,7 @@
+@@ -298,13 +388,13 @@
+     Key k;
+     std::memcpy(k.b, &key, sizeof key);
+     if (auto it = cache.find(k); it != cache.end()) return (last = &*it)->second;
+-
+-    VkPipelineShaderStageCreateInfo stages[2]{};
+-    VkSpecializationInfo spec_info{};
+-    float uw_x_value = 1.0f;
+-    uint32_t nstages = 0;
+-    uint8_t int_kinds[16] = {};
+-    for (uint32_t a = 0; a < key.attrib_count && a < 16; a++) int_kinds[a] = uint8_t(vertex_int_kind(key.attribs[a].format));
++    recipes::Miss miss;
++    if (VkPipeline adopted = recipes::begin_miss(key, layout, miss)) {
++        if (g_trace) log("nvn/vk: pipeline %zu: %s + %s (prewarmed)", cache.size() + 1, key.vs ? key.vs->hash.c_str() : "-", key.fs ? key.fs->hash.c_str() : "-");
++        return (last = &*cache.emplace(k, adopted).first)->second;
++    }
++    const uint64_t miss_t0 = miss.active ? plat::monotonic_ns() : 0;
++
+     // NX_TRACE_PIPELINES=1: every new pipeline's shaders, and each vertex shader's inputs once.
+     static std::set<const ShaderInfo*> logged_vs;
+     static const bool trace = std::getenv("NX_TRACE_PIPELINES") != nullptr;
+@@ -320,13 +410,33 @@
+         }
+         log("nvn/vk: vs %s inputs (location:format/stream+offset)%s", key.vs->hash.c_str(), line.c_str());
+     }
++    uint64_t create_ns = 0;
++    recipes::Feedback fb{};
++    VkPipeline p = create_graphics_pipeline(key, layout.layout, draw_module, nullptr, &create_ns,
++                                            recipes::stats_enabled() ? &fb : nullptr);
++    note_pipeline_created(create_ns);
++    if (miss.active) recipes::end_miss(miss, layout, p, plat::monotonic_ns() - miss_t0, fb);
++    else if (recipes::stats_enabled()) recipes::note_graphics_feedback(fb);
++    if (p != VK_NULL_HANDLE && g_trace)
++        log("nvn/vk: pipeline %zu: %s + %s", cache.size() + 1, key.vs ? key.vs->hash.c_str() : "-", key.fs ? key.fs->hash.c_str() : "-");
++    return (last = &*cache.emplace(k, p).first)->second;
++}
++
++VkPipeline create_graphics_pipeline(const PipelineKey& key, VkPipelineLayout layout, ModuleSource modules,
++                                    void* modules_ctx, uint64_t* create_ns, recipes::Feedback* made) {
++    VkPipelineShaderStageCreateInfo stages[2]{};
++    VkSpecializationInfo spec_info{};
++    float uw_x_value = 1.0f;
++    uint32_t nstages = 0;
++    uint8_t int_kinds[16] = {};
++    for (uint32_t a = 0; a < key.attrib_count && a < 16; a++) int_kinds[a] = uint8_t(vertex_int_kind(key.attribs[a].format));
+     uint32_t unwritten = unwritten_inputs(key.vs, key.fs);
+     for (const ShaderInfo* s : {key.vs, key.fs}) {
+         if (!s) continue;
          auto& st = stages[nstages++];
          st.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
          st.stage = VkShaderStageFlagBits(stage_bit(s->stage));
 -        st.module = module_of(s, s == key.vs ? int_kinds : nullptr, s == key.fs ? unwritten : 0);
-+        st.module = module_of(s, s == key.vs ? int_kinds : nullptr, s == key.fs ? unwritten : 0, s == key.vs && key.topology == 0 ? key.point_size : 0);
++        st.module = modules(modules_ctx, s, s == key.vs ? int_kinds : nullptr, s == key.fs ? unwritten : 0, s == key.vs && key.topology == 0 ? key.point_size : 0);
          st.pName = "main";
          if (s == key.vs && key.uw_x > 0) {  // NX_ULTRAWIDE: constant 0 of the patched vertex module
              static VkSpecializationMapEntry entry{0, 0, sizeof(float)};
-@@ -410,9 +449,10 @@
+@@ -410,9 +520,10 @@
      // depth; two translated shaders compiled separately by Metal do not, and Wonder's whole course colour pass was
      // discarded (only the sky showed). LESS_OR_EQUAL keeps what EQUAL keeps for opaque geometry after a pre-pass.
      if (key.depth.depth_func == 3 && !key.depth.depth_write) {
@@ -9193,7 +9375,41 @@
      }
      ds.stencilTestEnable = has_depth && key.depth.stencil_test && !std::getenv("NX_NO_STENCIL");
      VkStencilOpState* faces[2] = {&ds.front, &ds.back};
-@@ -554,6 +594,8 @@
+@@ -480,16 +591,26 @@
+     ci.pDepthStencilState = &ds;
+     ci.pColorBlendState = &cb;
+     ci.pDynamicState = &dy;
+-    ci.layout = layout.layout;
++    ci.layout = layout;
++    VkPipelineCreationFeedback whole{}, per_stage[2]{};
++    VkPipelineCreationFeedbackCreateInfo feedback{VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO};
++    if (made) {  // NX_PIPELINE_STATS / NX_PIPELINE_RECIPES: did the driver cache have it (core in Vulkan 1.3)
++        feedback.pNext = ci.pNext;
++        feedback.pPipelineCreationFeedback = &whole;
++        feedback.pipelineStageCreationFeedbackCount = nstages;
++        feedback.pPipelineStageCreationFeedbacks = per_stage;
++        ci.pNext = &feedback;
++    }
+     VkPipeline p = VK_NULL_HANDLE;
+     const uint64_t t0 = plat::monotonic_ns();
+-    VkResult made = p_vkCreateGraphicsPipelines(vk_device(), pipeline_cache(), 1, &ci, nullptr, &p);
+-    note_pipeline_created(plat::monotonic_ns() - t0);
+-    if (made != VK_SUCCESS)
++    VkResult result = p_vkCreateGraphicsPipelines(vk_device(), pipeline_cache(), 1, &ci, nullptr, &p);
++    if (create_ns) *create_ns = plat::monotonic_ns() - t0;
++    if (made) *made = {whole.flags, whole.duration};
++    if (result != VK_SUCCESS) {
+         log("nvn/vk: pipeline for %s + %s failed", key.vs ? key.vs->hash.c_str() : "-", key.fs ? key.fs->hash.c_str() : "-");
+-    else if (g_trace)
+-        log("nvn/vk: pipeline %zu: %s + %s", cache.size() + 1, key.vs ? key.vs->hash.c_str() : "-", key.fs ? key.fs->hash.c_str() : "-");
+-    return (last = &*cache.emplace(k, p).first)->second;
++        p = VK_NULL_HANDLE;
++    }
++    return p;
+ }
+ 
+ // ---- sampled textures -------------------------------------------------------------------------------------------------
+@@ -554,6 +675,8 @@
  
  VkImageView attachment_view(GpuImage& img, uint32_t level, uint32_t layer, VkFormat format) {
      if (format == VK_FORMAT_UNDEFINED) format = img.format;
@@ -9202,7 +9418,7 @@
      level = std::min(level, img.levels - 1);
      // A 3D image's slice is a layer of its 2D-array-compatible views, counted at this level.
      layer = std::min(layer, img.view_type == VK_IMAGE_VIEW_TYPE_3D ? std::max(1u, img.depth >> level) - 1 : img.layers - 1);
-@@ -568,15 +610,36 @@
+@@ -568,15 +691,36 @@
          ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
          ci.format = format;
          ci.subresourceRange = {img.aspect, level, 1, layer, 1};
@@ -9240,7 +9456,7 @@
      bool dirty = t->dirty.exchange(false);
      uint64_t dirty_lo = t->dirty_lo.exchange(UINT64_MAX), dirty_hi = t->dirty_hi.exchange(0);
      if (dirty_hi <= dirty_lo) dirty_lo = 0, dirty_hi = UINT64_MAX;  // marked without a range: all of it
-@@ -595,8 +658,14 @@
+@@ -595,8 +739,14 @@
          }
      }
      // A texture already on the GPU that the CPU wrote part of: only those bytes go again (the glyph cache).
@@ -9255,7 +9471,7 @@
      if (img->layout == VK_IMAGE_LAYOUT_UNDEFINED) {  // never written: black, not garbage
          transition(cb, *img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
          VkImageSubresourceRange r{img->aspect, 0, img->levels, 0, img->layers};
-@@ -609,11 +678,29 @@
+@@ -609,11 +759,29 @@
  }
  
  VkImageView sampled_view(VkCommandBuffer cb, uint64_t texture, const ImageShape& shape, const ViewInfo* view,
@@ -9286,7 +9502,7 @@
          if (++no_image % 100000 == 1) log("nvn/vk: dummy sampled: %llu with no image, %llu with an incompatible view",
                                            (unsigned long long)no_image, (unsigned long long)incompatible);
          return dummy_view(cb, shape);
-@@ -643,6 +730,7 @@
+@@ -643,6 +811,7 @@
      }
      VkImageView v = view_of(*img, view_type(shape), vi);
      if (!v) {
@@ -9294,7 +9510,7 @@
          *layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
          if (++incompatible % 1000 == 1)
              log("nvn/vk: texture %llx (%ux%u x%u, view type %d) sampled as view type %d: dummy", (unsigned long long)texture,
-@@ -653,6 +741,7 @@
+@@ -653,6 +822,7 @@
  }
  
  VkPipeline compute_pipeline(const ShaderInfo* cs, const ProgramLayout& layout) {
@@ -9302,6 +9518,23 @@
      static std::map<std::pair<const ShaderInfo*, VkPipelineLayout>, VkPipeline> cache;
      auto& p = cache[{cs, layout.layout}];
      if (!p) {
+@@ -665,10 +835,16 @@
+         sg.requiredSubgroupSize = 32;
+         if (gpu_require_subgroup32()) ci.stage.pNext = &sg;
+         ci.layout = layout.layout;
++        const bool timed = recipes::stats_enabled();
++        VkPipelineCreationFeedback whole{};
++        VkPipelineCreationFeedbackCreateInfo feedback{VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO};
++        if (timed) feedback.pPipelineCreationFeedback = &whole, ci.pNext = &feedback;
++        const uint64_t t0 = timed ? plat::monotonic_ns() : 0;
+         if (p_vkCreateComputePipelines(vk_device(), pipeline_cache(), 1, &ci, nullptr, &p) != VK_SUCCESS) {
+             log("nvn/vk: compute pipeline for %s failed", cs->hash.c_str());
+             p = VK_NULL_HANDLE;
+         }
++        if (timed) recipes::note_compute_created(plat::monotonic_ns() - t0, {whole.flags, whole.duration});
+     }
+     return p;
+ }
 --- a/runtime/src/nvn/nvn_pipeline.h
 +++ b/runtime/src/nvn/nvn_pipeline.h
 @@ -61,6 +61,7 @@
@@ -9330,7 +9563,7 @@
  void clear_image(VkCommandBuffer cb, GpuImage& img, bool magenta = false);
 --- a/runtime/src/nvn/nvn_pipeline_cache.cpp
 +++ b/runtime/src/nvn/nvn_pipeline_cache.cpp
-@@ -2,6 +2,9 @@
+@@ -2,11 +2,15 @@
  // creates on the fly. Pipelines are compiled the first time a draw needs them, inside the replay: the course's
  // stutters when new objects come in (16-42 ms replays on the RTX 3050). The driver checks the cache header itself
  // (vendor, device, driver build): a stale file is ignored. Saved every 600 presents when it grew.
@@ -9340,7 +9573,30 @@
  // NX_PIPELINE_CACHE=0: no cache (bisecting, or to measure first-run stutter).
  #include <cstdio>
  #include <cstdlib>
-@@ -32,7 +35,8 @@
+ #include <vector>
+ 
++#include "nvn_pipeline_recipes.h"
+ #include "nvn_vk.h"
+ #include "platform.h"
+ 
+@@ -24,15 +28,25 @@
+ 
+ }  // namespace
+ 
++static VkPipelineCache open_pipeline_cache();
++
++// The driver cache, opened by the first pipeline made; then the recipes (nvn_pipeline_recipes.h) start, when on.
+ VkPipelineCache pipeline_cache() {
+     if (g_tried) return g_cache;
+     g_tried = true;
++    g_cache = open_pipeline_cache();
++    recipes::start();
++    return g_cache;
++}
++
++static VkPipelineCache open_pipeline_cache() {
+     if (const char* e = std::getenv("NX_PIPELINE_CACHE"); e && e[0] == '0') return VK_NULL_HANDLE;
+     VkPhysicalDeviceProperties p{};
      p_vkGetPhysicalDeviceProperties(vk_physical(), &p);
      char name[64];
      std::snprintf(name, sizeof name, "/pipelines_%04x_%04x.bin", p.vendorID, p.deviceID);
@@ -9350,6 +9606,1126 @@
      std::vector<uint8_t> data;
      if (FILE* f = plat::fopen_utf8(g_path, "rb")) {
          plat::fseek64(f, 0, SEEK_END);
+@@ -41,16 +55,17 @@
+         if (n > 0) data.resize(size_t(n)), data.resize(std::fread(data.data(), 1, data.size(), f));
+         std::fclose(f);
+     }
++    VkPipelineCache cache = VK_NULL_HANDLE;
+     VkPipelineCacheCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+     ci.initialDataSize = data.size();
+     ci.pInitialData = data.empty() ? nullptr : data.data();
+-    if (p_vkCreatePipelineCache(vk_device(), &ci, nullptr, &g_cache) != VK_SUCCESS) {
++    if (p_vkCreatePipelineCache(vk_device(), &ci, nullptr, &cache) != VK_SUCCESS) {
+         ci.initialDataSize = 0, ci.pInitialData = nullptr;  // a cache the driver refuses: start empty
+-        p_vkCreatePipelineCache(vk_device(), &ci, nullptr, &g_cache);
++        p_vkCreatePipelineCache(vk_device(), &ci, nullptr, &cache);
+     }
+     g_saved_size = data.size();
+     log("nvn/vk: pipeline cache %s (%zu bytes loaded)", g_path.c_str(), data.size());
+-    return g_cache;
++    return cache;
+ }
+ 
+ void pipeline_cache_save() {
+@@ -78,8 +93,9 @@
+             (unsigned long long)frames, (unsigned long long)g_pipelines, double(g_pipeline_ns) / 1e6,
+             (unsigned long long)g_astc, double(g_astc_ns) / 1e6);
+     g_pipelines = g_pipeline_ns = g_astc = g_astc_ns = 0;
++    recipes::window_log(frames);
+     static uint64_t windows = 0;
+-    if (++windows % 10 == 0) pipeline_cache_save();
++    if (++windows % 10 == 0) pipeline_cache_save(), recipes::save_async();
+ }
+ 
+ }  // namespace nx::nvn
+--- /dev/null
++++ b/runtime/src/nvn/nvn_pipeline_prewarm.cpp
+@@ -0,0 +1,583 @@
++// The recipe engine (nvn_pipeline_recipes.h): records the graphics pipelines a run makes, loads the last run's
++// recipes and builds them on bounded background workers, and hands them to the draws that need them.
++//
++// Workers never take the GPU lock: they build from their own copies of the stages (the offline .spv files, checked
++// against the recipe's digest), their own modules and pipeline layouts, through the same create_graphics_pipeline
++// a draw uses, with the shared (internally synchronized) VkPipelineCache. A draw adopts a pipeline only for a key
++// that encodes to the same value and only when its program's set layouts are the very same handles, so the adopted
++// pipeline is the one the draw would have made.
++#include <algorithm>
++#include <atomic>
++#include <condition_variable>
++#include <cstdlib>
++#include <cstring>
++#include <deque>
++#include <map>
++#include <memory>
++#include <mutex>
++#include <thread>
++#include <tuple>
++#include <unordered_map>
++#include <unordered_set>
++
++#include "native_exit_hooks.h"
++#include "nvn_pipeline_recipes.h"
++#include "platform.h"
++
++#ifdef _WIN32
++#include <windows.h>
++#include <psapi.h>
++#endif
++
++namespace nx::nvn::recipes {
++
++using namespace nx::vk;
++
++namespace {
++
++enum class State : uint8_t { Queued, Building, Ready, Failed, Claimed };
++
++struct Entry {
++    Recipe recipe;
++    State state = State::Queued;
++    VkPipeline pipeline = VK_NULL_HANDLE;
++    std::array<VkDescriptorSetLayout, 4> sets{};  // the layout it was made with
++};
++
++struct Stage {
++    bool tried = false, ok = false;
++    ShaderInfo info;
++    Digest digest{};
++};
++
++using SetKey = std::array<VkDescriptorSetLayout, 4>;
++
++struct Engine {
++    std::mutex lock;
++    std::condition_variable changed;
++    bool started = false, stopping = false, prewarm = false, drained_logged = false;
++    std::string path;
++    FileInfo info;
++    std::unordered_map<std::string, Entry> table;  // value key -> entry; references stay valid
++    std::deque<std::string> queue;                  // value keys, first-use order
++    std::vector<std::string> used_order;            // this run's value keys in first-use order
++    std::unordered_map<std::string, Recipe> used;
++    std::vector<Recipe> older;                      // the loaded file, kept for the next save
++    std::unordered_set<std::string> rejected;       // loaded recipes whose stages changed or vanished
++    std::unordered_map<const ShaderInfo*, Digest> digests;
++    size_t active = 0;
++    uint64_t prewarm_start_ns = 0;
++    Counters c, last_window;
++    uint64_t dirty = 0;
++    std::atomic<bool> saving{false};
++
++    std::mutex stage_lock;  // stages by hash, built once
++    std::map<std::string, std::unique_ptr<Stage>> stages;
++    std::vector<std::pair<std::string, std::vector<uint32_t>>> sources;
++
++    std::mutex module_lock;
++    std::map<std::tuple<Digest, std::string, uint32_t, uint32_t>, VkShaderModule> modules;
++    std::mutex layout_lock;
++    std::map<SetKey, VkPipelineLayout> layouts;
++};
++
++Engine& engine() {
++    static Engine* e = new Engine;  // never destroyed: workers and savers may outlive static destruction
++    return *e;
++}
++
++std::atomic<int> g_mode{-1};
++
++Mode env_mode() {
++    const char* e = std::getenv("NX_PIPELINE_RECIPES");
++    if (!e || !*e || std::strcmp(e, "0") == 0) return Mode::Off;
++    if (std::strcmp(e, "capture") == 0) return Mode::Capture;
++    return Mode::Prewarm;
++}
++
++uint64_t private_bytes() {
++#ifdef _WIN32
++    PROCESS_MEMORY_COUNTERS_EX pmc{};
++    if (GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc), sizeof pmc))
++        return pmc.PrivateUsage;
++#endif
++    return 0;
++}
++
++// The switches that change how a key becomes a pipeline in this build (logged and stored, never a gate).
++uint64_t translation_profile() {
++    uint64_t h = 1469598103934665603ull;
++    auto mix = [&](const char* s) {
++        for (; s && *s; s++) h = (h ^ uint8_t(*s)) * 1099511628211ull;
++        h = (h ^ 0xff) * 1099511628211ull;
++    };
++    for (const char* name : {"NX_INT_ATTRIBS", "NX_CLIP_Z_PATCH", "NX_ULTRAWIDE", "NX_ZERO_VS_OUTPUTS", "NX_INVARIANT",
++                             "NX_FLOAT_CONTROLS", "NX_DYNAMIC_UBO", "NX_NO_ALPHA_TO_COVERAGE", "NX_EQUAL_ALWAYS",
++                             "NX_EQUAL_SLACK", "NX_NO_STENCIL", "NX_R11G11B10_RAW", "NX_RENDER_PASS_OBJECTS"}) {
++        mix(name), mix(std::getenv(name));
++    }
++    const VkPhysicalDeviceFeatures& f = vk_features();
++    char bits[8] = {char('0' + f.depthClamp), char('0' + f.largePoints), char('0' + vk_depth_clip_control()),
++                    char('0' + depth_remap()), 0};
++    mix(bits);
++    return h;
++}
++
++const Digest& digest_of(Engine& e, const ShaderInfo* s) {  // under e.lock
++    auto it = e.digests.find(s);
++    if (it == e.digests.end()) it = e.digests.emplace(s, stage_digest(*s)).first;
++    return it->second;
++}
++
++// The prewarm copy of a stage: its SPIR-V from the fixture's sources or <data root>/spirv/<hash>.spv, reflected as
++// shader_for does. Null when missing, malformed or not the content the recipe was recorded with.
++const ShaderInfo* stage_for(Engine& e, const StageRef& ref) {
++    std::lock_guard guard(e.stage_lock);
++    auto& slot = e.stages[ref.hash];
++    if (!slot) slot = std::make_unique<Stage>();
++    Stage& st = *slot;
++    if (!st.tried) {
++        st.tried = true;
++        std::vector<uint32_t> words;
++        bool found = false;
++        for (const auto& [hash, code] : e.sources)
++            if (hash == ref.hash) words = code, found = true;
++        if (!found && ref.hash.find_first_of("/\\.:") == std::string::npos) {
++            std::string bytes;
++            if (read_whole_file(plat::data_root() + "/spirv/" + ref.hash + ".spv", bytes, 16u << 20) &&
++                !bytes.empty() && bytes.size() % 4 == 0) {
++                words.resize(bytes.size() / 4);
++                std::memcpy(words.data(), bytes.data(), bytes.size());
++                found = true;
++            }
++        }
++        if (found && reflect_spirv(words.data(), words.size(), st.info.refl)) {
++            st.info.hash = ref.hash;
++            st.info.stage = st.info.refl.stage;
++            st.info.spirv = std::move(words);
++            st.digest = stage_digest(st.info);
++            st.ok = true;
++        }
++    }
++    return st.ok && st.digest == ref.digest ? &st.info : nullptr;
++}
++
++VkShaderModule prewarm_module(void* ctx, const ShaderInfo* s, const uint8_t* kinds, uint32_t unwritten,
++                              float point_size) {
++    Engine& e = *static_cast<Engine*>(ctx);
++    const std::string k = module_kinds(kinds);
++    uint32_t point_bits = 0;
++    std::memcpy(&point_bits, &point_size, 4);
++    Digest d;
++    {
++        std::lock_guard guard(e.stage_lock);
++        d = e.stages.at(s->hash)->digest;
++    }
++    auto key = std::make_tuple(d, k, unwritten, point_bits);
++    {
++        std::lock_guard guard(e.module_lock);
++        if (auto it = e.modules.find(key); it != e.modules.end()) return it->second;
++    }
++    VkShaderModule m = make_module(s, k, unwritten, point_size, nullptr);  // outside the lock: patching takes time
++    std::lock_guard guard(e.module_lock);
++    auto [it, inserted] = e.modules.emplace(key, m);
++    if (!inserted && m) p_vkDestroyShaderModule(vk_device(), m, nullptr);
++    return it->second;
++}
++
++// The pipeline layout over a program's set layouts, one per distinct tuple of set layouts.
++VkPipelineLayout prewarm_layout(Engine& e, const std::vector<const ShaderInfo*>& stages, SetKey& sets) {
++    ProgramLayout pl;
++    program_set_layouts(stages, pl);
++    std::copy(std::begin(pl.sets), std::end(pl.sets), sets.begin());
++    std::lock_guard guard(e.layout_lock);
++    VkPipelineLayout& l = e.layouts[sets];
++    if (!l) {
++        VkPipelineLayoutCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
++        ci.setLayoutCount = 4;
++        ci.pSetLayouts = sets.data();
++        if (p_vkCreatePipelineLayout(vk_device(), &ci, nullptr, &l) != VK_SUCCESS) l = VK_NULL_HANDLE;
++    }
++    return l;
++}
++
++// Builds one recipe; false with `rejected` when it cannot describe a pipeline of this build (stages changed or
++// gone, malformed state, or a key the draw path would refuse).
++VkPipeline build(Engine& e, const Recipe& r, SetKey& sets, Feedback& fb, bool& rejected) {
++    rejected = true;
++    const ShaderInfo* vs = stage_for(e, r.vs);
++    const ShaderInfo* fs = r.fs.hash.empty() ? nullptr : stage_for(e, r.fs);
++    if (!vs || vs->stage != ShaderStage::Vertex || (!r.fs.hash.empty() && (!fs || fs->stage != ShaderStage::Fragment)))
++        return VK_NULL_HANDLE;
++    PipelineKey key;
++    if (!decode_state(r.state, key)) return VK_NULL_HANDLE;
++    key.vs = vs, key.fs = fs;
++    if (!graphics_key_admitted(key)) return VK_NULL_HANDLE;
++    std::vector<const ShaderInfo*> program{vs};
++    if (fs) program.push_back(fs);
++    VkPipelineLayout layout = prewarm_layout(e, program, sets);
++    if (!layout) return VK_NULL_HANDLE;
++    rejected = false;
++    return create_graphics_pipeline(key, layout, prewarm_module, &e, nullptr, &fb);
++}
++
++void count_feedback(Counters& c, const Feedback& fb) {
++    if (fb.flags & VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT) {
++        c.feedback_valid++;
++        if (fb.flags & VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT) c.feedback_hits++;
++    }
++}
++
++// Modules are not needed once their pipelines exist (Vulkan allows destroying them right after creation), nor the
++// stage copies: both are made again if more recipes come.
++void release_prewarm_inputs(Engine& e) {  // under e.lock, no worker active
++    {
++        std::lock_guard guard(e.module_lock);
++        for (auto& [key, module] : e.modules)
++            if (module) p_vkDestroyShaderModule(vk_device(), module, nullptr), e.c.released_modules++;
++        e.modules.clear();
++    }
++    std::lock_guard guard(e.stage_lock);
++    e.stages.clear();
++}
++
++void log_drained(Engine& e) {  // under e.lock, once the queue is empty and no worker builds
++    if (e.drained_logged || !e.prewarm || !e.prewarm_start_ns || e.active || !e.queue.empty()) return;
++    e.drained_logged = true;
++    release_prewarm_inputs(e);
++    log("nvn/vk: pipeline prewarm done in %.1f ms: %llu built (%.1f ms of worker time), %llu failed, %llu rejected, "
++        "%llu claimed by draws first, %llu modules released; private bytes %.1f MB",
++        double(plat::monotonic_ns() - e.prewarm_start_ns) / 1e6, (unsigned long long)e.c.built,
++        double(e.c.build_ns) / 1e6, (unsigned long long)e.c.failed, (unsigned long long)e.c.rejected,
++        (unsigned long long)e.c.claimed, (unsigned long long)e.c.released_modules, double(private_bytes()) / (1 << 20));
++}
++
++void worker(Engine* ep) {
++    Engine& e = *ep;
++    plat::set_thread_name("nx-pipeline-prewarm");
++#ifdef _WIN32
++    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
++#endif
++    std::unique_lock lk(e.lock);
++    for (;;) {
++        if (e.stopping || e.queue.empty()) break;
++        std::string value = std::move(e.queue.front());
++        e.queue.pop_front();
++        Entry& en = e.table.at(value);
++        if (en.state != State::Queued) continue;  // a draw claimed it
++        en.state = State::Building;
++        Recipe r = en.recipe;
++        lk.unlock();
++        SetKey sets{};
++        Feedback fb{};
++        bool rejected = false;
++        const uint64_t t0 = plat::monotonic_ns();
++        VkPipeline p = build(e, r, sets, fb, rejected);
++        const uint64_t dt = plat::monotonic_ns() - t0;
++        lk.lock();
++        en.state = p ? State::Ready : State::Failed;
++        en.pipeline = p, en.sets = sets;
++        if (p) e.c.built++, e.c.build_ns += dt, count_feedback(e.c, fb);
++        else if (rejected) e.c.rejected++, e.rejected.insert(value);
++        else e.c.failed++;
++        e.changed.notify_all();
++    }
++    e.active--;
++    log_drained(e);
++    e.changed.notify_all();
++}
++
++void record_use(Engine& e, const std::string& value, const ShaderInfo* vs, const ShaderInfo* fs) {  // under e.lock
++    if (e.used.count(value)) return;
++    Recipe r;
++    r.vs = {vs->hash, digest_of(e, vs)};
++    if (fs) r.fs = {fs->hash, digest_of(e, fs)};
++    r.state = value.substr(kValuePrefix);
++    r.order = uint32_t(e.used_order.size());
++    e.used_order.push_back(value);
++    e.used.emplace(value, std::move(r));
++    e.c.recorded++;
++    e.dirty++;
++}
++
++void enqueue_locked(Engine& e, const std::vector<Recipe>& list) {
++    for (const Recipe& r : list) {
++        if (e.table.size() >= kMaxRecipes * 2) break;
++        std::string value = value_key(r.vs.digest, r.fs.hash.empty() ? nullptr : &r.fs.digest, r.state);
++        auto [it, inserted] = e.table.try_emplace(value);
++        if (!inserted) continue;
++        it->second.recipe = r;
++        e.queue.push_back(std::move(value));
++        e.c.queued++;
++    }
++}
++
++void start_workers(Engine& e) {  // under e.lock
++    static const unsigned wanted = [] {
++        const char* w = std::getenv("NX_PIPELINE_PREWARM_WORKERS");
++        int n = w ? std::atoi(w) : 2;
++        return unsigned(std::clamp(n, 1, 4));
++    }();
++    if (e.prewarm_start_ns == 0) e.prewarm_start_ns = plat::monotonic_ns();
++    while (e.active < wanted && e.active < e.queue.size()) {
++        e.active++;
++        std::thread(worker, &e).detach();  // the engine outlives them; stop() waits for them
++    }
++}
++
++void exit_hook() { stop(500); }
++
++}  // namespace
++
++Mode mode() {
++    int m = g_mode.load(std::memory_order_acquire);
++    if (m < 0) {
++        int expected = -1;
++        g_mode.compare_exchange_strong(expected, int(env_mode()));
++        m = g_mode.load(std::memory_order_acquire);
++    }
++    return Mode(m);
++}
++
++bool stats_enabled() {
++    static const bool stats = [] {
++        const char* e = std::getenv("NX_PIPELINE_STATS");
++        return e && e[0] == '1';
++    }();
++    return stats || mode() != Mode::Off;
++}
++
++void start() {
++    if (mode() == Mode::Off) return;
++    Engine& e = engine();
++    std::lock_guard guard(e.lock);
++    if (e.started) return;
++    e.started = true;
++    const char* directory = std::getenv("NX_PIPELINE_CACHE_DIR");
++    e.path = (directory && *directory ? std::string(directory) : plat::data_root()) + "/pipeline_recipes_v1.bin";
++    VkPhysicalDeviceProperties p{};
++    p_vkGetPhysicalDeviceProperties(vk_physical(), &p);
++    e.info = {translation_profile(), p.vendorID, p.deviceID, p.driverVersion};
++    add_exit_hook(exit_hook);
++    const bool diagnostics = std::getenv("NX_SPIRV_OPT") || std::getenv("NX_SPIRV_TOOL");
++    e.prewarm = mode() == Mode::Prewarm && !render_pass_objects() && !diagnostics;
++    std::string bytes, why = "no file";
++    FileInfo saved;
++    bool loaded = read_whole_file(e.path, bytes, kMaxFileBytes) && parse(bytes, e.older, &saved, &why);
++    log("nvn/vk: pipeline recipes %s: %s%s, %zu loaded (profile %016llx, saved %016llx)%s", e.path.c_str(),
++        mode() == Mode::Capture ? "capture" : "prewarm", e.prewarm || mode() == Mode::Capture ? "" : " disabled here",
++        e.older.size(), (unsigned long long)e.info.profile, (unsigned long long)(loaded ? saved.profile : 0),
++        loaded ? "" : (" (" + why + ")").c_str());
++    if (e.prewarm && loaded) {
++        enqueue_locked(e, e.older);
++        log("nvn/vk: pipeline prewarm: %zu queued; private bytes %.1f MB", e.queue.size(),
++            double(private_bytes()) / (1 << 20));
++        start_workers(e);
++    }
++}
++
++VkPipeline begin_miss(const PipelineKey& key, const ProgramLayout& layout, Miss& miss) {
++    if (mode() == Mode::Off || !key.vs) return VK_NULL_HANDLE;
++    Engine& e = engine();
++    std::unique_lock lk(e.lock);
++    miss.active = true;
++    miss.vs = key.vs, miss.fs = key.fs;
++    const Digest vs = digest_of(e, key.vs);
++    const Digest fs = key.fs ? digest_of(e, key.fs) : Digest{};
++    miss.value = value_key(vs, key.fs ? &fs : nullptr, encode_state(key));
++    e.c.misses++;
++    auto it = e.table.find(miss.value);
++    if (it == e.table.end()) return VK_NULL_HANDLE;
++    Entry& en = it->second;
++    if (en.state == State::Building) {
++        const uint64_t t0 = plat::monotonic_ns();
++        e.changed.wait(lk, [&] { return en.state != State::Building; });
++        e.c.waited++, e.c.wait_ns += plat::monotonic_ns() - t0;
++    }
++    if (en.state == State::Queued) {
++        en.state = State::Claimed;
++        miss.claimed = true;
++        e.c.claimed++;
++        return VK_NULL_HANDLE;
++    }
++    if (en.state != State::Ready || !en.pipeline) return VK_NULL_HANDLE;
++    if (!std::equal(std::begin(layout.sets), std::end(layout.sets), en.sets.begin())) {
++        e.c.layout_mismatch++;  // another program shape: made by the draw, under its own layout
++        return VK_NULL_HANDLE;
++    }
++    e.c.adopted++;
++    record_use(e, miss.value, key.vs, key.fs);
++    return en.pipeline;
++}
++
++void end_miss(const Miss& miss, const ProgramLayout& layout, VkPipeline made, uint64_t stall_ns, const Feedback& fb) {
++    if (!miss.active) return;
++    Engine& e = engine();
++    std::lock_guard guard(e.lock);
++    e.c.miss_ns += stall_ns;
++    count_feedback(e.c, fb);
++    auto [it, inserted] = e.table.try_emplace(miss.value);
++    Entry& en = it->second;
++    if (inserted || miss.claimed) {  // later misses with the same value (and layout) take this one
++        en.state = made ? State::Ready : State::Failed;
++        en.pipeline = made;
++        std::copy(std::begin(layout.sets), std::end(layout.sets), en.sets.begin());
++        e.changed.notify_all();
++    }
++    if (made) record_use(e, miss.value, miss.vs, miss.fs);
++    log_drained(e);
++}
++
++void note_layout_created(uint64_t ns) {
++    Engine& e = engine();
++    std::lock_guard guard(e.lock);
++    e.c.layouts++, e.c.layout_ns += ns;
++}
++
++void note_graphics_feedback(const Feedback& fb) {
++    Engine& e = engine();
++    std::lock_guard guard(e.lock);
++    count_feedback(e.c, fb);
++}
++
++void note_compute_created(uint64_t ns, const Feedback& fb) {
++    Engine& e = engine();
++    std::lock_guard guard(e.lock);
++    e.c.compute++, e.c.compute_ns += ns;
++    count_feedback(e.c, fb);
++}
++
++void window_log(uint64_t frames) {
++    if (!stats_enabled()) return;
++    Engine& e = engine();
++    std::lock_guard guard(e.lock);
++    const Counters& n = e.c;
++    Counters& o = e.last_window;
++    auto d = [](uint64_t a, uint64_t b) { return (unsigned long long)(a - b); };
++    if (n.misses == o.misses && n.built == o.built && n.compute == o.compute && n.layouts == o.layouts) return;
++    log("nvn/vk: pipeline recipes over %llu frames: %llu misses (%.1f ms first-use stall), %llu adopted, %llu waited "
++        "(%.1f ms), %llu claimed, %llu built (%.1f ms worker), %llu failed, %llu rejected, %zu queued; driver cache "
++        "%llu/%llu hits; %llu layouts (%.2f ms), %llu compute (%.1f ms); private bytes %.1f MB",
++        (unsigned long long)frames, d(n.misses, o.misses), double(n.miss_ns - o.miss_ns) / 1e6,
++        d(n.adopted, o.adopted), d(n.waited, o.waited), double(n.wait_ns - o.wait_ns) / 1e6, d(n.claimed, o.claimed),
++        d(n.built, o.built), double(n.build_ns - o.build_ns) / 1e6, d(n.failed, o.failed), d(n.rejected, o.rejected),
++        e.queue.size(), d(n.feedback_hits, o.feedback_hits), d(n.feedback_valid, o.feedback_valid),
++        d(n.layouts, o.layouts), double(n.layout_ns - o.layout_ns) / 1e6, d(n.compute, o.compute),
++        double(n.compute_ns - o.compute_ns) / 1e6, double(private_bytes()) / (1 << 20));
++    o = n;
++}
++
++namespace {
++
++std::vector<Recipe> snapshot_for_save(Engine& e) {  // under e.lock
++    std::vector<Recipe> used, older;
++    used.reserve(e.used_order.size());
++    for (const std::string& v : e.used_order) used.push_back(e.used.at(v));
++    for (const Recipe& r : e.older)
++        if (!e.rejected.count(value_key(r.vs.digest, r.fs.hash.empty() ? nullptr : &r.fs.digest, r.state)))
++            older.push_back(r);
++    return merge_for_save(used, older, kMaxRecipes);
++}
++
++}  // namespace
++
++void save_async() {
++    if (mode() == Mode::Off) return;
++    Engine& e = engine();
++    std::vector<Recipe> snapshot;
++    std::string path;
++    FileInfo info;
++    {
++        std::lock_guard guard(e.lock);
++        if (!e.started || e.dirty == 0 || e.saving.exchange(true)) return;
++        e.dirty = 0;
++        snapshot = snapshot_for_save(e);
++        path = e.path, info = e.info;
++    }
++    std::thread([snapshot = std::move(snapshot), path, info] {  // off the replay thread; the rename is atomic
++        std::string why;
++        const std::string bytes = serialize(snapshot, info);
++        if (write_atomic(path, bytes, &why))
++            log("nvn/vk: pipeline recipes saved: %zu (%zu bytes)", snapshot.size(), bytes.size());
++        else
++            log("nvn/vk: pipeline recipes not saved: %s", why.c_str());
++        engine().saving.store(false);
++    }).detach();
++}
++
++void stop(uint64_t wait_ms) {
++    Engine& e = engine();
++    std::unique_lock lk(e.lock);
++    e.stopping = true;  // queued recipes stay queued: draws claim and build them themselves
++    e.changed.wait_for(lk, std::chrono::milliseconds(wait_ms), [&] { return e.active == 0; });
++}
++
++Counters counters() {
++    Engine& e = engine();
++    std::lock_guard guard(e.lock);
++    return e.c;
++}
++
++void configure_for_test(Mode m, const std::string& directory,
++                        std::vector<std::pair<std::string, std::vector<uint32_t>>> sources) {
++    Engine& e = engine();
++    std::unique_lock lk(e.lock);
++    e.changed.wait(lk, [&] { return e.active == 0; });
++    // Pipelines, modules and layouts made so far stay alive (draws may hold them); only the bookkeeping resets.
++    e.table.clear(), e.queue.clear(), e.used.clear(), e.used_order.clear(), e.older.clear(), e.rejected.clear();
++    e.c = {}, e.last_window = {}, e.dirty = 0;
++    e.stopping = false, e.drained_logged = false, e.prewarm_start_ns = 0;
++    e.started = m != Mode::Off;
++    e.prewarm = m == Mode::Prewarm;
++    e.path = directory + "/pipeline_recipes_v1.bin";
++    {
++        std::lock_guard sg(e.stage_lock);
++        e.sources = std::move(sources);
++        for (auto& [hash, stage] : e.stages) stage->tried = false, stage->ok = false;
++    }
++    g_mode.store(int(m), std::memory_order_release);
++}
++
++void enqueue(const std::vector<Recipe>& list) {
++    Engine& e = engine();
++    std::lock_guard guard(e.lock);
++    enqueue_locked(e, list);
++    e.older.insert(e.older.end(), list.begin(), list.end());
++    if (e.prewarm && !e.stopping) start_workers(e);
++}
++
++bool wait_idle(uint64_t timeout_ms) {
++    Engine& e = engine();
++    std::unique_lock lk(e.lock);
++    return e.changed.wait_for(lk, std::chrono::milliseconds(timeout_ms), [&] { return e.active == 0; });
++}
++
++std::vector<Recipe> used_recipes() {
++    Engine& e = engine();
++    std::lock_guard guard(e.lock);
++    std::vector<Recipe> out;
++    for (const std::string& v : e.used_order) out.push_back(e.used.at(v));
++    return out;
++}
++
++bool save_now(std::string* why) {
++    Engine& e = engine();
++    std::vector<Recipe> snapshot;
++    std::string path;
++    FileInfo info;
++    {
++        std::lock_guard guard(e.lock);
++        snapshot = snapshot_for_save(e);
++        path = e.path, info = e.info;
++        e.dirty = 0;
++    }
++    return write_atomic(path, serialize(snapshot, info), why);
++}
++
++std::string file_path() {
++    Engine& e = engine();
++    std::lock_guard guard(e.lock);
++    return e.path;
++}
++
++}  // namespace nx::nvn::recipes
+--- /dev/null
++++ b/runtime/src/nvn/nvn_pipeline_recipes.cpp
+@@ -0,0 +1,363 @@
++// Pipeline recipes: stage digests, the field-by-field key encoding and the file (nvn_pipeline_recipes.h). No Vulkan
++// calls and no runtime state: the prewarm engine is nvn_pipeline_prewarm.cpp.
++#include "nvn_pipeline_recipes.h"
++
++#include <algorithm>
++#include <cstdio>
++#include <cstring>
++#include <unordered_map>
++#include <unordered_set>
++
++#include "platform.h"
++
++#ifdef _WIN32
++#include <io.h>
++#include <windows.h>
++#endif
++
++namespace nx::nvn::recipes {
++
++// A new PipelineKey field needs a new kKeyEncoding and a line in each of encode_state and decode_state.
++static_assert(sizeof(PipelineKey) == 712, "PipelineKey changed: update encode_state/decode_state and kKeyEncoding");
++
++namespace {
++
++constexpr char kMagic[8] = {'N', 'X', 'P', 'R', 'C', 'P', 0, 1};
++constexpr size_t kHeaderBytes = 80;  // magic, 4 x u32, u64, 4 x u32, u64 length, SHA-1, u32
++constexpr size_t kMaxHashBytes = 64;
++
++struct Writer {
++    std::string out;
++    void u8(uint8_t v) { out.push_back(char(v)); }
++    void u32(uint32_t v) {
++        for (int k = 0; k < 4; k++) out.push_back(char(v >> (8 * k)));
++    }
++    void u64(uint64_t v) {
++        for (int k = 0; k < 8; k++) out.push_back(char(v >> (8 * k)));
++    }
++    void f32(float v) {
++        uint32_t bits;
++        std::memcpy(&bits, &v, 4);
++        u32(bits);
++    }
++    void bytes(const void* p, size_t n) { out.append(static_cast<const char*>(p), n); }
++};
++
++struct Reader {
++    std::string_view in;
++    size_t at = 0;
++    bool ok = true;
++    bool need(size_t n) {
++        if (!ok || in.size() - at < n) ok = false;
++        return ok;
++    }
++    uint8_t u8() { return need(1) ? uint8_t(in[at++]) : 0; }
++    uint32_t u32() {
++        if (!need(4)) return 0;
++        uint32_t v = 0;
++        for (int k = 0; k < 4; k++) v |= uint32_t(uint8_t(in[at + k])) << (8 * k);
++        at += 4;
++        return v;
++    }
++    uint64_t u64() {
++        uint64_t lo = u32(), hi = u32();
++        return lo | hi << 32;
++    }
++    float f32() {
++        uint32_t bits = u32();
++        float v;
++        std::memcpy(&v, &bits, 4);
++        return v;
++    }
++    void bytes(void* p, size_t n) {
++        if (need(n)) std::memcpy(p, in.data() + at, n), at += n;
++    }
++    std::string_view take(size_t n) {
++        if (!need(n)) return {};
++        std::string_view v = in.substr(at, n);
++        at += n;
++        return v;
++    }
++};
++
++void digest_io(Sha1& h, const std::vector<ShaderIo>& list) {
++    uint32_t n = uint32_t(list.size());
++    h.update(&n, 4);
++    for (const ShaderIo& io : list) {
++        uint32_t v[5] = {io.location, io.component, uint32_t(io.type), io.components, io.array};
++        h.update(v, sizeof v);
++    }
++}
++
++Digest sha1(std::string_view bytes) {
++    Sha1 h;
++    h.update(bytes.data(), bytes.size());
++    Digest d;
++    h.finish(d.data());
++    return d;
++}
++
++std::string merge_key(const Recipe& r) {
++    return value_key(r.vs.digest, r.fs.hash.empty() ? nullptr : &r.fs.digest, r.state);
++}
++
++}  // namespace
++
++Digest stage_digest(const ShaderInfo& s) {
++    Sha1 h;
++    static const char tag[] = "nx pipeline stage v1";
++    h.update(tag, sizeof tag);
++    uint32_t head[2] = {uint32_t(s.stage), uint32_t(s.spirv.size())};
++    h.update(head, sizeof head);
++    h.update(s.spirv.data(), s.spirv.size() * 4);
++    digest_io(h, s.refl.inputs);
++    digest_io(h, s.refl.outputs);
++    uint32_t n = uint32_t(s.refl.bindings.size());
++    h.update(&n, 4);
++    for (const DescriptorBinding& b : s.refl.bindings) {
++        uint32_t v[4] = {b.set, b.binding, uint32_t(b.type), b.count};
++        h.update(v, sizeof v);
++    }
++    Digest d;
++    h.finish(d.data());
++    return d;
++}
++
++std::string encode_state(const PipelineKey& k) {
++    Writer w;
++    w.u32(k.topology);
++    w.f32(k.point_size);
++    for (const VertexAttrib& a : k.attribs) w.u32(a.format), w.u32(a.offset), w.u32(a.stream);
++    for (const VertexStream& s : k.streams) w.u32(s.stride), w.u32(s.divisor);
++    w.u32(k.attrib_count), w.u32(k.stream_count);
++    for (const BlendTarget& b : k.blend)
++        w.u32(b.target), w.u32(b.src_rgb), w.u32(b.dst_rgb), w.u32(b.src_a), w.u32(b.dst_a), w.u32(b.eq_rgb),
++            w.u32(b.eq_a);
++    w.bytes(k.color.blend_enable, 8);
++    w.u32(k.color.alpha_test), w.u32(k.color.logic_op);
++    w.bytes(k.mask.mask, 8);
++    w.u8(k.depth.depth_test), w.u8(k.depth.depth_write), w.u8(k.depth.stencil_test);
++    w.u32(k.depth.depth_func);
++    for (int f = 0; f < 2; f++)
++        w.u32(k.depth.stencil_func[f]), w.u32(k.depth.stencil_fail[f]), w.u32(k.depth.depth_fail[f]),
++            w.u32(k.depth.depth_pass[f]);
++    w.u32(k.polygon.cull), w.u32(k.polygon.front), w.u32(k.polygon.mode), w.u32(k.polygon.offset_enables);
++    for (VkFormat f : k.color_formats) w.u32(uint32_t(f));
++    w.u32(k.color_count);
++    w.u32(uint32_t(k.depth_format));
++    w.u32(k.depth_clamp), w.u32(k.ufloat_colors), w.u32(k.alpha_to_coverage);
++    w.f32(k.uw_x);
++    return w.out;
++}
++
++bool decode_state(std::string_view bytes, PipelineKey& k) {
++    std::memset(&k, 0, sizeof k);  // as draw_call builds them: compared byte for byte
++    Reader r{bytes};
++    k.topology = r.u32();
++    k.point_size = r.f32();
++    for (VertexAttrib& a : k.attribs) a.format = r.u32(), a.offset = r.u32(), a.stream = r.u32();
++    for (VertexStream& s : k.streams) s.stride = r.u32(), s.divisor = r.u32();
++    k.attrib_count = r.u32(), k.stream_count = r.u32();
++    for (BlendTarget& b : k.blend)
++        b.target = r.u32(), b.src_rgb = r.u32(), b.dst_rgb = r.u32(), b.src_a = r.u32(), b.dst_a = r.u32(),
++        b.eq_rgb = r.u32(), b.eq_a = r.u32();
++    r.bytes(k.color.blend_enable, 8);
++    k.color.alpha_test = r.u32(), k.color.logic_op = r.u32();
++    r.bytes(k.mask.mask, 8);
++    k.depth.depth_test = r.u8(), k.depth.depth_write = r.u8(), k.depth.stencil_test = r.u8();
++    k.depth.depth_func = r.u32();
++    for (int f = 0; f < 2; f++)
++        k.depth.stencil_func[f] = r.u32(), k.depth.stencil_fail[f] = r.u32(), k.depth.depth_fail[f] = r.u32(),
++        k.depth.depth_pass[f] = r.u32();
++    k.polygon.cull = r.u32(), k.polygon.front = r.u32(), k.polygon.mode = r.u32(), k.polygon.offset_enables = r.u32();
++    for (VkFormat& f : k.color_formats) f = VkFormat(r.u32());
++    k.color_count = r.u32();
++    k.depth_format = VkFormat(r.u32());
++    k.depth_clamp = r.u32(), k.ufloat_colors = r.u32(), k.alpha_to_coverage = r.u32();
++    k.uw_x = r.f32();
++    bool ok = r.ok && r.at == bytes.size() && k.attrib_count <= 16 && k.stream_count <= 16 && k.color_count <= 8;
++    if (!ok) std::memset(&k, 0, sizeof k);
++    return ok;
++}
++
++std::string value_key(const Digest& vs, const Digest* fs, std::string_view state) {
++    std::string v;
++    v.reserve(kValuePrefix + state.size());
++    v.append(reinterpret_cast<const char*>(vs.data()), vs.size());
++    v.push_back(fs ? 1 : 0);
++    Digest none{};
++    const Digest& f = fs ? *fs : none;
++    v.append(reinterpret_cast<const char*>(f.data()), f.size());
++    v.append(state.data(), state.size());
++    return v;
++}
++
++std::string serialize(const std::vector<Recipe>& recipes, const FileInfo& info) {
++    Writer payload;
++    for (const Recipe& r : recipes) {
++        Writer rec;
++        rec.u32(r.order), rec.u32(r.runs);
++        rec.u8(uint8_t(r.vs.hash.size())), rec.bytes(r.vs.hash.data(), r.vs.hash.size());
++        rec.bytes(r.vs.digest.data(), 20);
++        rec.u8(r.fs.hash.empty() ? 0 : 1);
++        if (!r.fs.hash.empty())
++            rec.u8(uint8_t(r.fs.hash.size())), rec.bytes(r.fs.hash.data(), r.fs.hash.size()),
++                rec.bytes(r.fs.digest.data(), 20);
++        rec.u32(uint32_t(r.state.size())), rec.bytes(r.state.data(), r.state.size());
++        payload.u32(uint32_t(rec.out.size()));
++        payload.out += rec.out;
++    }
++    Writer w;
++    w.bytes(kMagic, 8);
++    w.u32(kSchema), w.u32(kKeyEncoding), w.u32(uint32_t(recipes.size())), w.u32(0);
++    w.u64(info.profile), w.u32(info.vendor), w.u32(info.device), w.u32(info.driver), w.u32(0);
++    w.u64(payload.out.size());
++    Digest d = sha1(payload.out);
++    w.bytes(d.data(), 20);
++    w.u32(0);
++    w.out += payload.out;
++    return w.out;
++}
++
++bool parse(std::string_view bytes, std::vector<Recipe>& out, FileInfo* info, std::string* why) {
++    out.clear();
++    auto fail = [&](const char* reason) {
++        if (why) *why = reason;
++        out.clear();
++        return false;
++    };
++    if (bytes.size() < kHeaderBytes) return fail("shorter than the header");
++    if (bytes.size() > kMaxFileBytes) return fail("larger than the limit");
++    if (std::memcmp(bytes.data(), kMagic, 8) != 0) return fail("not a recipe file");
++    Reader h{bytes.substr(0, kHeaderBytes)};
++    h.at = 8;
++    uint32_t schema = h.u32(), encoding = h.u32(), count = h.u32();
++    h.u32();
++    FileInfo fi;
++    fi.profile = h.u64(), fi.vendor = h.u32(), fi.device = h.u32(), fi.driver = h.u32();
++    h.u32();
++    uint64_t length = h.u64();
++    Digest stored;
++    h.bytes(stored.data(), 20);
++    if (schema != kSchema) return fail("another schema");
++    if (encoding != kKeyEncoding) return fail("another key encoding");
++    if (count > kMaxRecipes) return fail("too many recipes");
++    if (length != bytes.size() - kHeaderBytes) return fail("truncated or extended payload");
++    std::string_view payload = bytes.substr(kHeaderBytes);
++    if (sha1(payload) != stored) return fail("payload checksum mismatch");
++    Reader r{payload};
++    PipelineKey scratch;
++    for (uint32_t n = 0; n < count; n++) {
++        uint32_t size = r.u32();
++        std::string_view rec_bytes = r.take(size);
++        if (!r.ok) return fail("record past the end");
++        Reader rec{rec_bytes};
++        Recipe x;
++        x.order = rec.u32(), x.runs = rec.u32();
++        size_t vs_len = rec.u8();
++        if (vs_len == 0 || vs_len > kMaxHashBytes) return fail("bad vertex stage name");
++        x.vs.hash = std::string(rec.take(vs_len));
++        rec.bytes(x.vs.digest.data(), 20);
++        uint8_t has_fs = rec.u8();
++        if (has_fs > 1) return fail("bad fragment stage flag");
++        if (has_fs) {
++            size_t fs_len = rec.u8();
++            if (fs_len == 0 || fs_len > kMaxHashBytes) return fail("bad fragment stage name");
++            x.fs.hash = std::string(rec.take(fs_len));
++            rec.bytes(x.fs.digest.data(), 20);
++        }
++        uint32_t state_len = rec.u32();
++        x.state = std::string(rec.take(state_len));
++        if (!rec.ok || rec.at != rec_bytes.size()) return fail("malformed record");
++        if (!decode_state(x.state, scratch)) return fail("malformed pipeline state");
++        out.push_back(std::move(x));
++    }
++    if (r.at != payload.size()) return fail("bytes after the last record");
++    if (info) *info = fi;
++    return true;
++}
++
++bool read_whole_file(const std::string& path, std::string& bytes, size_t limit) {
++    bytes.clear();
++    FILE* f = plat::fopen_utf8(path, "rb");
++    if (!f) return false;
++    plat::fseek64(f, 0, SEEK_END);
++    int64_t n = plat::ftell64(f);
++    plat::fseek64(f, 0, SEEK_SET);
++    bool ok = n >= 0 && uint64_t(n) <= limit;
++    if (ok) {
++        bytes.resize(size_t(n));
++        ok = std::fread(bytes.data(), 1, bytes.size(), f) == bytes.size();
++    }
++    std::fclose(f);
++    if (!ok) bytes.clear();
++    return ok;
++}
++
++bool write_atomic(const std::string& path, const std::string& bytes, std::string* why) {
++    const std::string tmp = path + ".tmp";
++    FILE* f = plat::fopen_utf8(tmp, "wb");
++    if (!f) {
++        if (why) *why = "cannot create the temporary file";
++        return false;
++    }
++    bool ok = std::fwrite(bytes.data(), 1, bytes.size(), f) == bytes.size();
++    ok = std::fflush(f) == 0 && ok;
++#ifdef _WIN32
++    ok = _commit(_fileno(f)) == 0 && ok;  // on disk before it replaces the old file
++#endif
++    ok = std::fclose(f) == 0 && ok;
++    if (!ok) {
++        std::remove(tmp.c_str());
++        if (why) *why = "temporary file write failed";
++        return false;
++    }
++#ifdef _WIN32
++    auto wide = [](const std::string& s) {
++        int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
++        std::wstring w(n > 0 ? size_t(n) : 0, L'\0');
++        if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, w.data(), n);
++        if (!w.empty()) w.pop_back();
++        return w;
++    };
++    ok = MoveFileExW(wide(tmp).c_str(), wide(path).c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
++#else
++    ok = std::rename(tmp.c_str(), path.c_str()) == 0;  // atomic on POSIX
++#endif
++    if (!ok) {
++        std::remove(tmp.c_str());
++        if (why) *why = "replacing the file failed";
++    }
++    return ok;
++}
++
++std::vector<Recipe> merge_for_save(const std::vector<Recipe>& used, const std::vector<Recipe>& older, size_t cap) {
++    std::vector<Recipe> out;
++    std::unordered_map<std::string, uint32_t> runs;
++    for (const Recipe& r : older) runs.emplace(merge_key(r), r.runs);
++    std::unordered_set<std::string> kept;
++    for (const Recipe& r : used) {
++        if (out.size() >= cap) break;
++        std::string key = merge_key(r);
++        if (!kept.insert(key).second) continue;
++        Recipe x = r;
++        auto it = runs.find(key);
++        x.runs = it == runs.end() ? 1 : std::min<uint32_t>(it->second, 0xFFFFFFFEu) + 1;
++        x.order = uint32_t(out.size());
++        out.push_back(std::move(x));
++    }
++    std::vector<const Recipe*> rest;
++    for (const Recipe& r : older)
++        if (!kept.count(merge_key(r))) rest.push_back(&r);
++    std::stable_sort(rest.begin(), rest.end(), [](const Recipe* a, const Recipe* b) { return a->order < b->order; });
++    for (const Recipe* r : rest) {
++        if (out.size() >= cap) break;
++        if (!kept.insert(merge_key(*r)).second) continue;
++        Recipe x = *r;
++        x.order = uint32_t(out.size());
++        out.push_back(std::move(x));
++    }
++    return out;
++}
++
++}  // namespace nx::nvn::recipes
+--- /dev/null
++++ b/runtime/src/nvn/nvn_pipeline_recipes.h
+@@ -0,0 +1,133 @@
++// Serialized graphics pipeline recipes and their bounded prewarm (docs/native-pipeline-recipes.md).
++//
++// A recipe is a value description of a graphics pipeline a previous run created: its two stages (the .spv name and
++// a digest of what pipeline creation reads from them) and every PipelineKey field except the stage pointers,
++// encoded field by field. Recipes are hints: workers build their pipelines ahead of use, and a draw whose pointer
++// cache misses adopts one only when its own key encodes to exactly the same value, in the same process. A stale
++// recipe can only cost prewarm work. NX_PIPELINE_RECIPES=1 (load, prewarm, record), capture (record only), unset/0:
++// off, nothing here runs. NX_PIPELINE_PREWARM_WORKERS=1..4 (2). NX_PIPELINE_STATS=1: the counters alone.
++#pragma once
++
++#include <array>
++#include <cstdint>
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "nvn_pipeline.h"
++
++namespace nx::nvn {
++
++// nvn_pipeline.cpp internals shared with the prewarm workers. Each is safe off the replay thread.
++using ModuleSource = VkShaderModule (*)(void* ctx, const ShaderInfo* s, const uint8_t* kinds, uint32_t unwritten,
++                                        float point_size);
++std::string module_kinds(const uint8_t* kinds);  // the 16 bytes a module is patched for (all zero: none)
++VkShaderModule make_module(const ShaderInfo* s, const std::string& kinds, uint32_t unwritten, float point_size,
++                           bool* patched);
++// The set layouts and dynamic uniform mask of a program (no pipeline layout made).
++void program_set_layouts(const std::vector<const ShaderInfo*>& stages, ProgramLayout& out);
++namespace recipes { struct Feedback; }
++// A new pipeline for `key` (no cache): what graphics_pipeline makes on a miss. Null when the driver refuses.
++VkPipeline create_graphics_pipeline(const PipelineKey& key, VkPipelineLayout layout, ModuleSource modules,
++                                    void* modules_ctx, uint64_t* create_ns, recipes::Feedback* made);
++// What graphics_pipeline would stop the process for (unsupported point size, fragment output type): false.
++bool graphics_key_admitted(const PipelineKey& key);
++
++namespace recipes {
++
++constexpr uint32_t kSchema = 1;       // the file's layout
++constexpr uint32_t kKeyEncoding = 1;  // encode_state's field list
++constexpr size_t kMaxRecipes = 8192;  // kept in the file (and prewarmed) at most
++constexpr size_t kMaxFileBytes = 64u << 20;
++
++using Digest = std::array<uint8_t, 20>;
++// value_key: the vertex digest, a fragment flag byte, the fragment digest (zero without one), then the state.
++constexpr size_t kValuePrefix = 2 * std::tuple_size_v<Digest> + 1;
++
++// SHA-1 over a domain tag, the stage, its SPIR-V words and the reflection fields pipeline creation reads (input and
++// output locations, components, types, arrays; bindings' set, binding, type, count).
++Digest stage_digest(const ShaderInfo& s);
++
++struct StageRef {
++    std::string hash;  // the .spv name; empty: no stage
++    Digest digest{};
++};
++struct Recipe {
++    StageRef vs, fs;
++    std::string state;   // encode_state
++    uint32_t order = 0;  // first use in the run that saved it
++    uint32_t runs = 1;   // runs that used it
++};
++
++// Every PipelineKey field except vs and fs, little-endian, in declaration order. decode_state rejects wrong sizes
++// and out-of-range counts; vs and fs come back null.
++std::string encode_state(const PipelineKey& k);
++bool decode_state(std::string_view bytes, PipelineKey& k);
++// The in-process identity a draw is matched by.
++std::string value_key(const Digest& vs, const Digest* fs, std::string_view state);
++
++struct FileInfo {
++    uint64_t profile = 0;                          // translation switches (diagnostic, not a compatibility gate)
++    uint32_t vendor = 0, device = 0, driver = 0;  // the device that saved it (diagnostic)
++};
++std::string serialize(const std::vector<Recipe>& recipes, const FileInfo& info);
++// False with a reason for a foreign, older, truncated, oversized or corrupted file; `out` is then empty.
++bool parse(std::string_view bytes, std::vector<Recipe>& out, FileInfo* info, std::string* why);
++// `.tmp` beside it, flushed, then moved over the old file in one step.
++bool write_atomic(const std::string& path, const std::string& bytes, std::string* why);
++bool read_whole_file(const std::string& path, std::string& bytes, size_t limit);
++// What a save keeps: this run's recipes in first-use order, then the older ones by their order, at most `cap`.
++std::vector<Recipe> merge_for_save(const std::vector<Recipe>& used, const std::vector<Recipe>& older, size_t cap);
++
++// ---- the engine (nvn_pipeline_prewarm.cpp) --------------------------------------------------------------------
++
++enum class Mode : uint8_t { Off, Capture, Prewarm };
++Mode mode();
++bool stats_enabled();  // recipes on, or NX_PIPELINE_STATS=1
++
++struct Feedback {
++    VkPipelineCreationFeedbackFlags flags = 0;
++    uint64_t duration = 0;
++};
++// graphics_pipeline's pointer-cache miss: a prewarmed pipeline for exactly this key and these set layouts (waiting
++// for one a worker is building), or null with `miss` set up for end_miss once the caller made it (a queued recipe is
++// claimed, so no worker builds it twice).
++struct Miss {
++    bool active = false;  // recipes on: end_miss records the key
++    std::string value;
++    bool claimed = false;
++    const ShaderInfo* vs = nullptr;
++    const ShaderInfo* fs = nullptr;
++};
++VkPipeline begin_miss(const PipelineKey& key, const ProgramLayout& layout, Miss& miss);
++void end_miss(const Miss& miss, const ProgramLayout& layout, VkPipeline made, uint64_t stall_ns, const Feedback& fb);
++void note_layout_created(uint64_t ns);
++void note_graphics_feedback(const Feedback& fb);  // a draw-path creation with recipes off (NX_PIPELINE_STATS=1)
++void note_compute_created(uint64_t ns, const Feedback& fb);
++
++void start();                          // after pipeline_cache(): loads the file, queues, starts the workers
++void window_log(uint64_t frames);      // one line per timing window (creation_log)
++void save_async();                     // the file, when this run added recipes (a background write)
++void stop(uint64_t wait_ms);           // workers leave between pipelines; waits for them at most wait_ms
++
++// Fixture hooks (tests/native_pipeline_recipe_probe.h).
++struct Counters {
++    uint64_t misses = 0, adopted = 0, waited = 0, claimed = 0, recorded = 0;
++    uint64_t built = 0, failed = 0, rejected = 0, queued = 0, layout_mismatch = 0;
++    uint64_t miss_ns = 0, wait_ns = 0, build_ns = 0;
++    uint64_t feedback_valid = 0, feedback_hits = 0, layouts = 0, layout_ns = 0, compute = 0, compute_ns = 0;
++    uint64_t released_modules = 0;
++};
++Counters counters();
++// Resets an idle engine to `m`, with recipes saved to `directory` and stages from `sources` (hash -> SPIR-V) before
++// the .spv files.
++void configure_for_test(Mode m, const std::string& directory,
++                        std::vector<std::pair<std::string, std::vector<uint32_t>>> sources);
++void enqueue(const std::vector<Recipe>& recipes);
++bool wait_idle(uint64_t timeout_ms);
++std::vector<Recipe> used_recipes();  // this run's, in first-use order
++bool save_now(std::string* why);
++std::string file_path();
++
++}  // namespace recipes
++}  // namespace nx::nvn
 --- a/runtime/src/nvn/nvn_program.cpp
 +++ b/runtime/src/nvn/nvn_program.cpp
 @@ -10,6 +10,7 @@
@@ -10895,17 +12271,18 @@
  // Windows host: memory, threads, time, files, the game window (F11 / Alt+Enter fullscreen), XInput + keyboard,
  // XAudio2, the Vulkan loader and win32 surface, crash handler, hardware watchpoints (NX_WATCH) and main().
  #include <algorithm>
-@@ -22,6 +25,9 @@
+@@ -22,6 +25,10 @@
  
  #include "kernel.h"
  #include "platform.h"
 +#include "native_exit_policy.h"
++#include "native_exit_hooks.h"
 +#include "mk8_focus_policy.h"
 +#include "native_memory_epoch.h"
  
  namespace nx {
  HWND g_window = nullptr;
-@@ -33,15 +39,20 @@
+@@ -33,15 +40,20 @@
  // ---- memory ---------------------------------------------------------------------------------------------------
  
  bool reserve(uint64_t addr, uint64_t size) {
@@ -10927,7 +12304,7 @@
  
  // ---- threads and time -----------------------------------------------------------------------------------------
  
-@@ -53,20 +64,71 @@
+@@ -53,20 +65,74 @@
  static DWORD WINAPI thread_entry(void* p) {
      ThreadStart s = *static_cast<ThreadStart*>(p);
      delete static_cast<ThreadStart*>(p);
@@ -10951,7 +12328,10 @@
  void exit_thread() { ExitThread(0); }
 -void exit_process(int code) { ExitProcess(UINT(code)); }
 -void sleep_ns(int64_t ns) { std::this_thread::sleep_for(std::chrono::nanoseconds(ns)); }
-+void exit_process(int code) { ExitProcess(UINT(native_exit_policy().process_status(uint32_t(code)))); }
++void exit_process(int code) {
++    run_exit_hooks();  // background pipeline workers out of the driver first (native_exit_hooks.h)
++    ExitProcess(UINT(native_exit_policy().process_status(uint32_t(code))));
++}
 +void sleep_ns(int64_t ns) {
 +    if (ns <= 0) return;
 +    static const bool precise = [] {
@@ -11005,7 +12385,7 @@
  float default_render_scale() { return 1.0f; }
  void release_window(void*) {}
  uint64_t window_generation() { return 1; }
-@@ -78,6 +140,7 @@
+@@ -78,6 +144,7 @@
      const char* v = std::getenv(env.c_str());
      return v ? v : "";
  }
@@ -11013,7 +12393,7 @@
  int64_t current_thread_id() { return int64_t(GetCurrentThreadId()); }
  bool profile(const int64_t*, const uint64_t* const*, size_t, int, const std::string&) { return false; }
  
-@@ -148,9 +211,10 @@
+@@ -148,9 +215,10 @@
  
  static LRESULT CALLBACK wndproc(HWND h, UINT msg, WPARAM w, LPARAM l) {
      switch (msg) {
@@ -11026,7 +12406,7 @@
          case WM_KEYDOWN:
              if (w == VK_F11) toggle_fullscreen(h);
              break;
-@@ -188,10 +252,11 @@
+@@ -188,10 +256,11 @@
      int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2, y = (sh - h) / 2;
      // NX_HEADLESS: created hidden (the surface still needs a window), never brought to the front.
      const DWORD style = headless() ? (kWindowed & ~WS_VISIBLE) : kWindowed;
@@ -11040,7 +12420,7 @@
      *ready = true;
      MSG m;
      while (GetMessageW(&m, nullptr, 0, 0) > 0) {
-@@ -278,12 +343,15 @@
+@@ -278,12 +347,15 @@
  namespace {
  
  std::atomic<uint32_t> g_queued{0};
@@ -11056,7 +12436,7 @@
          g_done(p->first);
          delete p;
      }
-@@ -292,7 +360,7 @@
+@@ -292,7 +364,7 @@
      void STDMETHODCALLTYPE OnStreamEnd() noexcept override {}
      void STDMETHODCALLTYPE OnBufferStart(void*) noexcept override {}
      void STDMETHODCALLTYPE OnLoopEnd(void*) noexcept override {}
@@ -11065,7 +12445,7 @@
  };
  
  IXAudio2* g_xa = nullptr;
-@@ -302,35 +370,58 @@
+@@ -302,35 +374,58 @@
  }  // namespace
  
  bool audio_open(AudioDone done) {
@@ -11150,7 +12530,7 @@
      return true;
  }
  
-@@ -392,7 +483,7 @@
+@@ -392,7 +487,7 @@
      if (e->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP || !g_watch) return EXCEPTION_CONTINUE_SEARCH;
      nx::log("WATCH: %llx written (now %llx) at %s.exe+%llx (tools/symbolize.py)", (unsigned long long)g_watch,
              (unsigned long long)nx::ld<uint64_t>(g_watch), nx::game::kInfo.id, (unsigned long long)exe_va(e->ExceptionRecord->ExceptionAddress));
@@ -11159,7 +12539,7 @@
      static int hits = 0;
      if (++hits >= 30) e->ContextRecord->Dr7 = 0;
      return EXCEPTION_CONTINUE_EXECUTION;
-@@ -440,8 +531,9 @@
+@@ -440,8 +535,9 @@
      nx::log("CRASH: exception %08lx at %s (tools/symbolize.py for the exe), data address %llx", r->ExceptionCode,
              host_where(uint64_t(r->ExceptionAddress)).c_str(), (unsigned long long)info);
      host_backtrace(*e->ContextRecord);
@@ -11170,7 +12550,7 @@
      return EXCEPTION_EXECUTE_HANDLER;
  }
  
-@@ -462,9 +554,31 @@
+@@ -462,9 +558,31 @@
      return EXCEPTION_CONTINUE_SEARCH;
  }
  
@@ -13863,7 +15243,7 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,784 @@
+@@ -0,0 +1,787 @@
 +#include "native_thread_policy_probe.h"
 +#include <source_location>
 +#include "nvn/native_readback_memory.h"
@@ -13933,12 +15313,14 @@
 +#include "native_null_sampler_probe.h"
 +#include "native_conditional_probe.h"
 +#include "native_point_probe.h"
++#include "native_pipeline_recipe_probe.h"
 +#include "native_early_chunk_probe.h"
 +#include "native_depth_contract_probe.h"
 +#include "native_counter_sync_probe.h"
 +#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
 + if(argc==2&&std::string_view(argv[1])=="--thread-policy")return authored_thread_probe::run();
++ if(argc==2&&std::string_view(argv[1])=="--pipeline-recipes"){unsigned n=0;auto check=[&](bool b,const std::source_location site=std::source_location::current()){++n;if(!b)throw std::runtime_error("pipeline recipe assertion "+std::to_string(n)+" at "+std::to_string(site.line()));};pipeline_recipe_probe::unit(check);std::cout<<"native pipeline recipes checks="<<n<<" PASS"<<std::endl;return 0;}
 + if(argc==2&&std::string_view(argv[1])=="--mapped-readback-bench") {
 +  using namespace nx::nvn;using namespace nx::vk;
 +  auto require=[](bool ok){if(!ok)throw std::runtime_error("mapped readback benchmark assertion");};
@@ -14639,6 +16021,7 @@
 + native_conditional_probe(device,check);
 + native_point_probe(device,check);
 + native_depth_contract_probe(device,check);
++ {const unsigned before=n;pipeline_recipe_probe::unit(check);pipeline_recipe_probe::gpu(device,check);std::cout<<"native pipeline recipe checks="<<(n-before)<<" PASS"<<std::endl;}
 + if(std::getenv("NX_SUBMIT_CHUNK_DRAWS")&&std::atoi(std::getenv("NX_SUBMIT_CHUNK_DRAWS"))>0)native_early_chunk_probe(device);
 + nx::nvn::finalize_native_device(device);check(!nx::nvn::native_device_alive(device));check(nx::nvn::native_window_origin()==0);check(nx::find_symbol("nnMain")==0);}
 + if(gpu&&std::getenv("NX_SUBMIT_CHUNK_DRAWS")&&std::atoi(std::getenv("NX_SUBMIT_CHUNK_DRAWS"))>0) {
@@ -14887,6 +16270,353 @@
 +    const auto weighted = take(Region::Focus);
 +    assert(weighted.calls == 1024 && weighted.inclusive_ns == weighted.exclusive_ns);
 +}
+--- /dev/null
++++ b/tests/native_pipeline_recipe_probe.h
+@@ -0,0 +1,344 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Pipeline recipes (runtime/src/nvn/nvn_pipeline_recipes.h): the encoding and file on the CPU, then prewarm,
++// adoption, rejection of changed stages, claiming, persistence and identical rendering on the GPU. Authored shaders
++// only (native_point_test_shaders.h).
++#pragma once
++#include "nvn/nvn_draw_state.h"
++#include "nvn/nvn_pipeline_recipes.h"
++#include "native_point_test_shaders.h"
++#include <cstdio>
++#include <cstring>
++#include <filesystem>
++#include <iterator>
++#include <tuple>
++#include <string>
++#include <vector>
++
++namespace pipeline_recipe_probe {
++
++inline void stage(nx::nvn::ShaderInfo& shader, const std::vector<uint32_t>& words, const char* hash, bool& ok) {
++    shader = {};
++    shader.hash = hash;
++    shader.spirv = words;
++    ok = nx::nvn::reflect_spirv(shader.spirv.data(), shader.spirv.size(), shader.refl);
++    shader.stage = shader.refl.stage;
++}
++
++// Every field a distinct, non-zero value.
++inline nx::nvn::PipelineKey busy_key() {
++    nx::nvn::PipelineKey k;
++    std::memset(&k, 0, sizeof k);
++    uint32_t v = 1;
++    k.topology = v++;
++    k.point_size = 2.5f;
++    for (auto& a : k.attribs) a.format = v++, a.offset = v++, a.stream = v++;
++    for (auto& s : k.streams) s.stride = v++, s.divisor = v++;
++    k.attrib_count = 16, k.stream_count = 15;
++    for (auto& b : k.blend) b.target = v++, b.src_rgb = v++, b.dst_rgb = v++, b.src_a = v++, b.dst_a = v++, b.eq_rgb = v++, b.eq_a = v++;
++    for (auto& e : k.color.blend_enable) e = uint8_t(v++);
++    k.color.alpha_test = v++, k.color.logic_op = v++;
++    for (auto& m : k.mask.mask) m = uint8_t(v++);
++    k.depth.depth_test = 1, k.depth.depth_write = 1, k.depth.stencil_test = 1, k.depth.depth_func = v++;
++    for (int f = 0; f < 2; f++)
++        k.depth.stencil_func[f] = v++, k.depth.stencil_fail[f] = v++, k.depth.depth_fail[f] = v++, k.depth.depth_pass[f] = v++;
++    k.polygon = {v++, v++, v++, v++};
++    for (auto& f : k.color_formats) f = VkFormat(v++);
++    k.color_count = 8, k.depth_format = VkFormat(v++), k.depth_clamp = 1, k.ufloat_colors = 0x5, k.alpha_to_coverage = 1;
++    k.uw_x = 0.75f;
++    return k;
++}
++
++template <class Check> void unit(Check check) {
++    using namespace nx::nvn;
++    namespace R = nx::nvn::recipes;
++    // Encoding: every field survives, nothing else is carried, malformed state is refused.
++    PipelineKey key = busy_key(), back;
++    const std::string state = R::encode_state(key);
++    check(R::decode_state(state, back));
++    PipelineKey bare = key;
++    bare.vs = bare.fs = nullptr;
++    check(std::memcmp(&bare, &back, sizeof back) == 0);
++    for (size_t field = 0; field < state.size(); field += 37) {  // each sampled byte changes the value
++        std::string changed = state;
++        changed[field] = char(changed[field] ^ 0x40);
++        PipelineKey other;
++        if (R::decode_state(changed, other)) check(std::memcmp(&other, &back, sizeof back) != 0);
++    }
++    check(!R::decode_state(state.substr(0, state.size() - 1), back));
++    check(!R::decode_state(state + '\0', back));
++    PipelineKey too_many = busy_key();
++    too_many.attrib_count = 17;
++    check(!R::decode_state(R::encode_state(too_many), back));
++    too_many = busy_key(), too_many.color_count = 9;
++    check(!R::decode_state(R::encode_state(too_many), back));
++
++    // Stage digests: equal content, equal digest; one word or one reflected field changes it.
++    const std::vector<uint32_t> vs_words(std::begin(native_point_vertex), std::end(native_point_vertex));
++    const std::vector<uint32_t> fs_words(std::begin(native_point_fragment), std::end(native_point_fragment));
++    ShaderInfo a, b, f;
++    bool ok = false;
++    stage(a, vs_words, "unit-vs-a", ok), check(ok);
++    stage(b, vs_words, "unit-vs-b", ok), check(ok);
++    stage(f, fs_words, "unit-fs", ok), check(ok);
++    check(R::stage_digest(a) == R::stage_digest(b));
++    check(R::stage_digest(a) != R::stage_digest(f));
++    b.spirv.push_back(0x00010000u);  // OpNop
++    check(R::stage_digest(a) != R::stage_digest(b));
++    ShaderInfo g = f;  // a reflected field the pipeline reads: the fragment output location
++    check(!g.refl.outputs.empty());
++    g.refl.outputs[0].location ^= 1;
++    check(R::stage_digest(f) != R::stage_digest(g));
++
++    // The file: round trip, then truncated, bit-flipped, foreign and oversized files are refused whole.
++    std::vector<R::Recipe> list;
++    for (uint32_t n = 0; n < 5; n++) {
++        R::Recipe r;
++        r.vs = {"vs" + std::to_string(n), R::stage_digest(a)};
++        if (n != 2) r.fs = {"fs" + std::to_string(n), R::stage_digest(f)};
++        PipelineKey k = busy_key();
++        k.topology = n;
++        r.state = R::encode_state(k);
++        r.order = n, r.runs = n + 1;
++        list.push_back(r);
++    }
++    R::FileInfo info{0x1234, 0x1002, 0x7550, 42};
++    const std::string bytes = R::serialize(list, info);
++    std::vector<R::Recipe> parsed;
++    R::FileInfo got;
++    std::string why;
++    check(R::parse(bytes, parsed, &got, &why));
++    check(parsed.size() == list.size() && got.profile == 0x1234 && got.vendor == 0x1002 && got.device == 0x7550 && got.driver == 42);
++    for (size_t n = 0; n < list.size(); n++)
++        check(parsed[n].vs.hash == list[n].vs.hash && parsed[n].vs.digest == list[n].vs.digest &&
++              parsed[n].fs.hash == list[n].fs.hash && parsed[n].fs.digest == list[n].fs.digest &&
++              parsed[n].state == list[n].state && parsed[n].order == list[n].order && parsed[n].runs == list[n].runs);
++    check(parsed[2].fs.hash.empty());
++    for (size_t cut : {size_t(0), size_t(7), size_t(79), size_t(80), bytes.size() / 2, bytes.size() - 1})
++        check(!R::parse(std::string_view(bytes).substr(0, cut), parsed, nullptr, &why) && parsed.empty());
++    for (size_t at = 0; at < bytes.size(); at += 7) {
++        // Reserved words, the profile and the device identity are diagnostic: not part of what is checked.
++        if ((at >= 20 && at < 48) || (at >= 76 && at < 80)) continue;
++        std::string flipped = bytes;
++        flipped[at] = char(flipped[at] ^ 0x01);
++        check(!R::parse(flipped, parsed, nullptr, &why) && parsed.empty());
++    }
++    std::string foreign = bytes;
++    foreign[8] = 2;  // schema 2
++    check(!R::parse(foreign, parsed, nullptr, &why) && why == "another schema");
++    foreign = bytes, foreign[12] = 9;  // key encoding 9
++    check(!R::parse(foreign, parsed, nullptr, &why) && why == "another key encoding");
++    check(!R::parse(bytes + "x", parsed, nullptr, &why));
++    check(R::parse(R::serialize({}, info), parsed, nullptr, &why) && parsed.empty());
++
++    // Atomic replacement in a scratch directory: the old file until the new one is complete, no temporary left.
++    const std::string path = (std::filesystem::temp_directory_path() /
++                              ("nx-recipe-unit-" + std::to_string(nx::plat::current_process_id()) + ".bin")).string();
++    std::remove(path.c_str());
++    check(R::write_atomic(path, bytes, &why));
++    std::string read;
++    check(R::read_whole_file(path, read, R::kMaxFileBytes) && read == bytes);
++    const std::string smaller = R::serialize({list[0]}, info);
++    check(R::write_atomic(path, smaller, &why));
++    check(R::read_whole_file(path, read, R::kMaxFileBytes) && read == smaller);
++    check(!R::read_whole_file(path, read, smaller.size() - 1));
++    FILE* tmp = nx::plat::fopen_utf8(path + ".tmp", "rb");
++    check(tmp == nullptr);
++    if (tmp) std::fclose(tmp);
++    std::remove(path.c_str());
++
++    // Saving: this run's first, older ones after by order, no duplicates, run counts carried, capped.
++    std::vector<R::Recipe> used{list[3], list[1]}, older{list[4], list[1], list[0]};
++    older[0].order = 9, older[2].order = 2;
++    std::vector<R::Recipe> merged = R::merge_for_save(used, older, 16);
++    check(merged.size() == 4);
++    check(merged[0].state == list[3].state && merged[1].state == list[1].state && merged[2].state == list[0].state &&
++          merged[3].state == list[4].state);
++    check(merged[0].runs == 1 && merged[1].runs == list[1].runs + 1 && merged[2].runs == list[0].runs);
++    for (uint32_t n = 0; n < merged.size(); n++) check(merged[n].order == n);
++    check(R::merge_for_save(used, older, 3).size() == 3 && R::merge_for_save(used, older, 1)[0].state == list[3].state);
++    std::vector<R::Recipe> twice{list[3], list[3]};
++    check(R::merge_for_save(twice, {}, 16).size() == 1);
++}
++
++// One point through `pipeline` into an 8x8 RGBA8 target cleared black; the 64 pixels.
++template <class Check>
++std::vector<uint32_t> render(uint64_t key, nx::nvn::Targets& targets, VkPipeline pipeline, Check check) {
++    using namespace nx;
++    using namespace nx::nvn;
++    std::lock_guard lock(gpu_lock());
++    auto command = frame_begin(false);
++    clears_begin_submit();
++    auto* image = image_of(key);
++    check(image && image->format == VK_FORMAT_R8G8B8A8_UNORM);
++    transition(command, *image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
++    VkClearColorValue black{};
++    black.float32[3] = 1;
++    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
++    vk::p_vkCmdClearColorImage(command, image->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
++    image->rendered = true;
++    pass_begin(command, targets);
++    vk::p_vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
++    VkViewport viewport{0, 0, 8, 8, 0, 1};
++    VkRect2D scissor{{0, 0}, {8, 8}};
++    vk::p_vkCmdSetViewport(command, 0, 1, &viewport);
++    vk::p_vkCmdSetScissor(command, 0, 1, &scissor);
++    const float blend[4] = {};
++    vk::p_vkCmdSetBlendConstants(command, blend);
++    vk::p_vkCmdSetDepthBias(command, 0, 0, 0);
++    vk::p_vkCmdSetStencilReference(command, VK_STENCIL_FACE_FRONT_AND_BACK, 0);
++    vk::p_vkCmdSetStencilCompareMask(command, VK_STENCIL_FACE_FRONT_AND_BACK, 255);
++    vk::p_vkCmdSetStencilWriteMask(command, VK_STENCIL_FACE_FRONT_AND_BACK, 255);
++    vk::p_vkCmdDraw(command, 1, 1, 0, 0);
++    pass_mark_written(1);
++    draw_end_rendering(command);
++    const auto result = upload_alloc(256, 16);
++    std::memset(result.ptr, 0xcd, 256);
++    transition(command, *image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
++    VkBufferImageCopy copy{};
++    copy.bufferOffset = result.offset;
++    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
++    copy.imageExtent = {8, 8, 1};
++    vk::p_vkCmdCopyImageToBuffer(command, image->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, result.buffer, 1, &copy);
++    VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
++    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
++    barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
++    barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++    barrier.buffer = result.buffer, barrier.offset = result.offset, barrier.size = 256;
++    vk::p_vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1,
++                               &barrier, 0, nullptr);
++    frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, true);
++    std::vector<uint32_t> pixels(64);
++    std::memcpy(pixels.data(), result.ptr, 256);
++    return pixels;
++}
++
++template <class Check> void gpu(uint64_t device, Check check) {
++    using namespace nx;
++    using namespace nx::nvn;
++    namespace R = nx::nvn::recipes;
++    (void)device;
++    const std::vector<uint32_t> vs_words(std::begin(native_point_vertex), std::end(native_point_vertex));
++    const std::vector<uint32_t> fs_words(std::begin(native_point_fragment), std::end(native_point_fragment));
++    std::vector<uint32_t> changed = vs_words;
++    changed.push_back(0x00010000u);  // OpNop: valid, but not the content the recipe was recorded with
++    // Live stages as shader_for would hand them out: set A adopts, B shares A's value, C claims, D is the inline control.
++    static ShaderInfo va, fa, vb, fb, vc, fc, vd, fd;
++    bool ok = false;
++    using Live = std::tuple<ShaderInfo*, const std::vector<uint32_t>*, const char*>;
++    for (auto [s, words, name] : std::initializer_list<Live>{
++             {&va, &vs_words, "recipe-vs"}, {&fa, &fs_words, "recipe-fs"}, {&vb, &vs_words, "recipe-vs"},
++             {&fb, &fs_words, "recipe-fs"}, {&vc, &vs_words, "recipe-vs"}, {&fc, &fs_words, "recipe-fs"},
++             {&vd, &vs_words, "recipe-vs"}, {&fd, &fs_words, "recipe-fs"}})
++        stage(*s, *words, name, ok), check(ok);
++    const std::string dir = plat::data_root();
++    std::remove((dir + "/pipeline_recipes_v1.bin").c_str());
++    auto sources = [&] {
++        return std::vector<std::pair<std::string, std::vector<uint32_t>>>{
++            {"recipe-vs", vs_words}, {"recipe-fs", fs_words}, {"recipe-vs-changed", changed}};
++    };
++    const auto key_address = kernel_alloc(256, 4096);
++    vm_set(key_address, 256, kMemHeap, 3);
++    auto& texture = make<Texture>(key_address);
++    texture.target = 1, texture.width = texture.height = 8, texture.depth = texture.levels = 1, texture.format = 0x25;
++    Targets targets{};
++    targets.color_count = 1, targets.colors[0] = key_address;
++    VkFormat format = VK_FORMAT_UNDEFINED;
++    {
++        std::lock_guard lock(gpu_lock());
++        auto* image = image_of(key_address);
++        check(image != nullptr);
++        format = image->format;
++    }
++    PipelineKey key;
++    std::memset(&key, 0, sizeof key);
++    key.topology = 0, key.point_size = 1, key.polygon.mode = 2, key.color_count = 1, key.color_formats[0] = format;
++    key.mask.mask[0] = 15;
++    auto with = [](PipelineKey k, const ShaderInfo* v, const ShaderInfo* f) { return k.vs = v, k.fs = f, k; };
++    auto recipe = [&](const char* vs_name, const PipelineKey& k) {
++        R::Recipe r;
++        r.vs = {vs_name, R::stage_digest(va)};
++        r.fs = {"recipe-fs", R::stage_digest(fa)};
++        r.state = R::encode_state(k);
++        return r;
++    };
++    PipelineKey stale_key = key, claim_key = key;
++    stale_key.mask.mask[0] = 7;   // distinct values; the changed stage cannot describe this pipeline
++    claim_key.mask.mask[0] = 11;
++
++    // Prewarm: one recipe builds, the one whose stage content changed is rejected.
++    R::configure_for_test(R::Mode::Prewarm, dir, sources());
++    R::enqueue({recipe("recipe-vs", key), recipe("recipe-vs-changed", stale_key)});
++    check(R::wait_idle(20000));
++    R::Counters c = R::counters();
++    check(c.queued == 2 && c.built == 1 && c.rejected == 1 && c.failed == 0 && c.misses == 0);
++    check(c.released_modules == 2);  // the vertex and fragment modules, once the queue drained
++
++    VkPipeline adopted = VK_NULL_HANDLE, stale = VK_NULL_HANDLE;
++    {
++        std::lock_guard lock(gpu_lock());
++        const auto& layout_a = program_layout({&va, &fa});
++        adopted = graphics_pipeline(with(key, &va, &fa), layout_a);
++        c = R::counters();
++        check(adopted != VK_NULL_HANDLE && c.misses == 1 && c.adopted == 1);
++        check(graphics_pipeline(with(key, &va, &fa), layout_a) == adopted && R::counters().misses == 1);  // pointer cache
++        stale = graphics_pipeline(with(stale_key, &va, &fa), layout_a);  // made by the draw itself
++        c = R::counters();
++        check(stale != VK_NULL_HANDLE && stale != adopted && c.misses == 2 && c.adopted == 1);
++        // Other stage objects with the same content and state: the same pipeline.
++        check(graphics_pipeline(with(key, &vb, &fb), program_layout({&vb, &fb})) == adopted && R::counters().adopted == 2);
++    }
++    // Persistence: what this run used, in first-use order, saved atomically and read back.
++    std::string why;
++    check(R::save_now(&why));
++    std::string bytes;
++    std::vector<R::Recipe> saved;
++    check(R::read_whole_file(R::file_path(), bytes, R::kMaxFileBytes) && R::parse(bytes, saved, nullptr, &why));
++    check(saved.size() == 2 && saved[0].state == R::encode_state(key) && saved[1].state == R::encode_state(stale_key));
++    check(saved[0].vs.digest == R::stage_digest(va) && saved[0].fs.digest == R::stage_digest(fa));
++    std::string corrupt = bytes;
++    corrupt[corrupt.size() - 3] ^= 0x10;
++    check(!R::parse(corrupt, saved, nullptr, &why));
++
++    // A fresh engine from that file builds both (the stale-key recipe now names an unchanged stage).
++    R::configure_for_test(R::Mode::Prewarm, dir, sources());
++    check(R::parse(bytes, saved, nullptr, &why));
++    R::enqueue(saved);
++    check(R::wait_idle(20000));
++    c = R::counters();
++    check(c.queued == 2 && c.built == 2 && c.rejected == 0);
++
++    // Claim: no workers (capture), a queued recipe is built once, by the draw, and then shared.
++    R::configure_for_test(R::Mode::Capture, dir, sources());
++    R::enqueue({recipe("recipe-vs", claim_key)});
++    VkPipeline claimed = VK_NULL_HANDLE;
++    {
++        std::lock_guard lock(gpu_lock());
++        claimed = graphics_pipeline(with(claim_key, &vc, &fc), program_layout({&vc, &fc}));
++        c = R::counters();
++        check(claimed != VK_NULL_HANDLE && c.claimed == 1 && c.built == 0 && c.adopted == 0);
++        check(graphics_pipeline(with(claim_key, &vd, &fd), program_layout({&vd, &fd})) == claimed &&
++              R::counters().adopted == 1);
++    }
++
++    // Off: the draw path as before. The control pipeline renders exactly what the adopted one does.
++    R::configure_for_test(R::Mode::Off, dir, {});
++    VkPipeline control = VK_NULL_HANDLE;
++    {
++        std::lock_guard lock(gpu_lock());
++        control = graphics_pipeline(with(key, &vd, &fd), program_layout({&vd, &fd}));
++        check(control != VK_NULL_HANDLE && control != adopted && R::counters().misses == 0);
++    }
++    const auto from_adopted = render(key_address, targets, adopted, check);
++    const auto from_control = render(key_address, targets, control, check);
++    unsigned red = 0;
++    for (uint32_t pixel : from_adopted) {
++        check(pixel == 0xff000000u || pixel == 0xff0000ffu);
++        red += pixel == 0xff0000ffu;
++    }
++    check(red == 1 && from_adopted == from_control);
++    R::configure_for_test(R::Mode::Off, dir, {});
++    std::remove((dir + "/pipeline_recipes_v1.bin").c_str());
++    destroy(key_address);
++}
++
++}  // namespace pipeline_recipe_probe
 --- /dev/null
 +++ b/tests/native_point_probe.h
 @@ -0,0 +1,70 @@

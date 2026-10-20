@@ -1,8 +1,34 @@
 # Native runtime progress
 
-Updated 2026-10-19. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
+Updated 2026-10-20. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
 
 ## Belmante runtime adoption
+
+R248 adds opt-in serialized graphics pipeline recipes with bounded background
+prewarming (`NX_PIPELINE_RECIPES=1`, or `capture` to record only; default off).
+A recipe names both stages by shader hash plus a SHA-1 of their SPIR-V and
+reflection, and encodes every pipeline-key field explicitly; draws adopt a
+prewarmed pipeline only for an identical value and identical set layouts, so
+stale recipes can only miss. The file is checksummed, atomically replaced and
+bounded to 8,192 recipes. Design, rejected approaches and full tables:
+`docs/native-pipeline-recipes.md`.
+
+Measured with the same executable, save and input: a cold driver cache costs
+12.9 s of first-use creation (889 pipelines, one 5.6 s presentation); the warm
+driver seed alone still leaves 0.7–1.1 s and a 1.1–1.35 s worst presentation at
+the course-load burst. With a covering recipe file, prewarm completes before
+that burst (1.5–1.9 s warm, 7.7 s cold), draw-path creation falls to 10
+pipelines/116 ms and the burst's worst presentation to 0.49–0.54 s. Coverage
+follows content: a flight meeting new meshes or targets missed up to 140 keys.
+Prewarm costs ~290 MB while running and 30–90 MB at the end of a flight.
+Recipe-on flights averaged 56.7–57.6 FPS in the R245 course window against
+52.6–55.7 for alternating recipe-off controls, but the off controls spent at most
+0.06 ms/frame creating pipelines there, so this is not a causal steady-FPS
+gain; hundreds of presentations over 20 ms remain. All 43 suites, a 3,212-check
+GPU fixture (2,507 existing plus 705 recipe checks, also run with recipes on),
+300-check sync/cutoff, 259 readback checks and five clean analyses pass. The
+default source recipe reconstructs 207 generic files. Smooth 60 and correct
+120 remain unverified; 240 exceeds the measured 4.9 ms GPU execution alone.
 
 R245 fixes native Windows worker-handle ownership and thread descriptions.
 The old path leaked 128 creation handles after 128 completed workers; both new

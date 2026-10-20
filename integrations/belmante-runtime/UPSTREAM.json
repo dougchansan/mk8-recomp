@@ -4,7 +4,7 @@
   "license": "MIT",
   "license_sha256": "7f728cfaa94ff27c2a40c906dac12564a216077ceb017fb2d01cc29ba6697720",
   "local_changes_license": "GPL-3.0-or-later",
-  "patch_sha256": "b75f464ef7d7f97273dc6dcd6cb9a337aaac4ec866ab4b21b215159d12b68797",
+  "patch_sha256": "ef90156ce04b477ddb24deb0fe2c2988120e07a68f80512355f3cdbe87906079",
   "changed_files": [
     "CMakeLists.txt",
     "games/mk8d/game.cpp",
@@ -53,6 +53,8 @@
     "runtime/src/native_mii/raw_data.h",
     "runtime/src/native_mii/raw_data.inc",
     "runtime/src/native_mii/types.h",
+    "runtime/src/native_overlay.cpp",
+    "runtime/src/native_overlay.h",
     "runtime/src/native_perf.h",
     "runtime/src/native_program_stages.h",
     "runtime/src/native_readonly_storage.h",

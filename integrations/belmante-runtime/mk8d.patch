@@ -167,16 +167,17 @@
      runtime/src/nvn/nvn_janitor.cpp
      runtime/src/nvn/nvn_trace.cpp
      runtime/src/nvn/nvn_device.cpp
-@@ -147,6 +268,8 @@
+@@ -147,6 +268,9 @@
      runtime/src/nvn/nvn_pipeline.cpp
      runtime/src/nvn/nvn_dummy.cpp
      runtime/src/nvn/nvn_pipeline_cache.cpp
 +    runtime/src/nvn/nvn_pipeline_prewarm.cpp
 +    runtime/src/nvn/nvn_pipeline_recipes.cpp
++    runtime/src/native_overlay.cpp
      runtime/src/nvn/nvn_upload.cpp
      runtime/src/nvn/nvn_astc.cpp
      runtime/src/nvn/nvn_spirv_patch.cpp
-@@ -185,7 +308,7 @@
+@@ -185,7 +309,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -185,7 +186,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +319,7 @@
+@@ -196,7 +320,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -194,7 +195,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,19 +331,64 @@
+@@ -208,19 +332,65 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -228,6 +229,7 @@
 +        target_link_options(native_device_fixture PRIVATE /STACK:67108864 /HIGHENTROPYVA:NO /MAP)
 +        add_test(NAME native_device_cpu COMMAND native_device_fixture)
 +        add_test(NAME native_pipeline_recipes COMMAND native_device_fixture --pipeline-recipes)
++        add_test(NAME native_overlay COMMAND native_device_fixture --overlay)
 +        add_test(NAME native_thread_host_default COMMAND native_device_fixture --thread-policy)
 +        set_tests_properties(native_thread_host_default PROPERTIES ENVIRONMENT "NX_NATIVE_THREAD_PRIORITY=0" TIMEOUT 15)
 +        add_test(NAME native_thread_host_priorities COMMAND native_device_fixture --thread-policy)
@@ -5954,6 +5956,167 @@
 +
 +} // namespace Service::Mii
 --- /dev/null
++++ b/runtime/src/native_overlay.cpp
+@@ -0,0 +1,131 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// The metrics overlay's text and rates (native_overlay.h). No Vulkan here: nvn_vk.cpp copies the pixels.
++#include "native_overlay.h"
++
++#include <algorithm>
++#include <atomic>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <mutex>
++
++namespace nx {
++
++namespace {
++
++// 5x7 glyphs, one string of 35 cells per character ('#' set), rows top to bottom.
++struct Glyph {
++    char c;
++    const char* rows;
++};
++constexpr Glyph kFont[] = {
++    {'0', ".###.#...##..###.#.###..##...#.###."}, {'1', "..#...##....#....#....#....#...###."},
++    {'2', ".###.#...#....#...#...#...#...#####"}, {'3', "#####...#...#.....#.....##...#.###."},
++    {'4', "...#...##..#.#.#..#.#####...#....#."}, {'5', "######....####.....#....##...#.###."},
++    {'6', "..##..#...#....####.#...##...#.###."}, {'7', "#####....#...#...#...#....#....#..."},
++    {'8', ".###.#...##...#.###.#...##...#.###."}, {'9', ".###.#...##...#.####....#...#..##.."},
++    {'A', ".###.#...##...#######...##...##...#"}, {'B', "####.#...##...#####.#...##...#####."},
++    {'C', ".###.#...##....#....#....#...#.###."}, {'D', "###..#..#.#...##...##...##..#.###.."},
++    {'E', "######....#....####.#....#....#####"}, {'F', "######....#....####.#....#....#...."},
++    {'G', ".###.#...##....#.####...##...#.####"}, {'H', "#...##...##...#######...##...##...#"},
++    {'I', ".###...#....#....#....#....#...###."}, {'J', "..###...#....#....#....##..#..##..."},
++    {'K', "#...##..#.#.#..##...#.#..#..#.#...#"}, {'L', "#....#....#....#....#....#....#####"},
++    {'M', "#...###.###.#.##.#.##...##...##...#"}, {'N', "#...##...###..##.#.##..###...##...#"},
++    {'O', ".###.#...##...##...##...##...#.###."}, {'P', "####.#...##...#####.#....#....#...."},
++    {'Q', ".###.#...##...##...##.#.##..#..##.#"}, {'R', "####.#...##...#####.#.#..#..#.#...#"},
++    {'S', ".####.....#.....###.....#....#####."}, {'T', "#####..#....#....#....#....#....#.."},
++    {'U', "#...##...##...##...##...##...#.###."}, {'V', "#...##...##...##...##...#.#.#...#.."},
++    {'W', "#...##...##...##.#.##.#.##.#.#.#.#."}, {'X', "#...##...#.#.#...#...#.#.#...##...#"},
++    {'Y', "#...##...#.#.#...#....#....#....#.."}, {'Z', "#####....#...#...#...#...#....#####"},
++    {'.', "..............................##..."}, {':', ".......##..##.......##..##........."},
++    {'/', ".........#...#...#...#...#........."}, {'-', "...............###................."},
++    {'%', "##...##..#...#...#...#...#..##...##"}, {' ', "..................................."},
++    {'(', "...#...#...#....#....#.....#.....#."}, {')', ".#.....#.....#....#....#...#...#..."},
++};
++
++const char* glyph(char c) {
++    if (c >= 'a' && c <= 'z') c = char(c - 'a' + 'A');
++    for (const Glyph& g : kFont)
++        if (g.c == c) return g.rows;
++    return nullptr;
++}
++
++std::mutex g_lock;
++uint64_t g_window_start = 0, g_game = 0, g_shown = 0, g_last_shown = 0, g_worst = 0, g_late = 0, g_sum = 0;
++uint32_t g_w = 0, g_h = 0;
++std::vector<std::string> g_lines{"FPS -", "VPS -", "FT -", "MAX -", "LATE -", "RES -", "FG OFF"};
++
++}  // namespace
++
++bool overlay_on() {
++    static const bool on = [] {
++        const char* e = std::getenv("NX_OVERLAY");
++        return e && e[0] == '1';
++    }();
++    return on;
++}
++
++bool overlay_raster(const std::vector<std::string>& lines, uint32_t scale, std::vector<uint32_t>& pixels,
++                    uint32_t& width, uint32_t& height) {
++    scale = std::clamp<uint32_t>(scale, 1, 8);
++    size_t columns = 1;
++    for (const auto& l : lines) columns = std::max(columns, l.size());
++    const uint32_t pad = 2 * scale, cell_w = 6 * scale, cell_h = 9 * scale;
++    width = uint32_t(columns) * cell_w + 2 * pad;
++    height = uint32_t(std::max<size_t>(1, lines.size())) * cell_h + 2 * pad;
++    pixels.assign(size_t(width) * height, 0xFF101010u);  // BGRA: dark grey panel, opaque
++    bool all = true;
++    for (size_t row = 0; row < lines.size(); row++)
++        for (size_t col = 0; col < lines[row].size(); col++) {
++            const char* g = glyph(lines[row][col]);
++            if (!g) all = false;
++            for (uint32_t gy = 0; gy < 7; gy++)
++                for (uint32_t gx = 0; gx < 5; gx++) {
++                    const bool on = g ? g[gy * 5 + gx] == '#' : (gx == 0 || gx == 4 || gy == 0 || gy == 6);
++                    if (!on) continue;
++                    for (uint32_t sy = 0; sy < scale; sy++)
++                        for (uint32_t sx = 0; sx < scale; sx++) {
++                            const uint32_t x = pad + uint32_t(col) * cell_w + gx * scale + sx;
++                            const uint32_t y = pad + uint32_t(row) * cell_h + gy * scale + sy;
++                            pixels[size_t(y) * width + x] = 0xFF40FF40u;  // green text
++                        }
++                }
++        }
++    return all;
++}
++
++void overlay_note_game_present(uint64_t) {
++    std::lock_guard lk(g_lock);
++    g_game++;
++}
++
++void overlay_note_shown(uint64_t now, uint32_t render_width, uint32_t render_height) {
++    std::lock_guard lk(g_lock);
++    if (!g_window_start) g_window_start = now;
++    if (g_last_shown) {
++        const uint64_t dt = now - g_last_shown;
++        g_sum += dt, g_worst = std::max(g_worst, dt), g_late += dt > 20'000'000;
++    }
++    g_last_shown = now, g_shown++, g_w = render_width, g_h = render_height;
++    const uint64_t span = now - g_window_start;
++    if (span < 500'000'000 || g_shown < 2) return;
++    char b[64];
++    std::vector<std::string> lines;
++    std::snprintf(b, sizeof b, "FPS %.1f", double(g_game) * 1e9 / double(span)), lines.push_back(b);
++    std::snprintf(b, sizeof b, "VPS %.1f", double(g_shown) * 1e9 / double(span)), lines.push_back(b);
++    std::snprintf(b, sizeof b, "FT %.2f MS", double(g_sum) / 1e6 / double(g_shown - 1 ? g_shown - 1 : 1)),
++        lines.push_back(b);
++    std::snprintf(b, sizeof b, "MAX %.2f MS", double(g_worst) / 1e6), lines.push_back(b);
++    std::snprintf(b, sizeof b, "LATE %llu", (unsigned long long)g_late), lines.push_back(b);
++    std::snprintf(b, sizeof b, "RES %uX%u", g_w, g_h), lines.push_back(b);
++    lines.push_back("FG OFF");
++    g_lines = lines;
++    g_window_start = now, g_game = 0, g_shown = 0, g_worst = 0, g_late = 0, g_sum = 0;
++}
++
++std::vector<std::string> overlay_lines() {
++    std::lock_guard lk(g_lock);
++    return g_lines;
++}
++
++}  // namespace nx
+--- /dev/null
++++ b/runtime/src/native_overlay.h
+@@ -0,0 +1,24 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// NX_OVERLAY=1: a small metrics panel copied into the top-left corner of each displayed frame (nvn_overlay.cpp).
++// FPS: frames the game submitted per second; VPS: frames shown per second (equal unless a frame is dropped or
++// repeated); frame time average and worst over the last half second; frames over 20 ms; render size; FG: frame
++// generation (none exists here, always OFF). Text is drawn on the CPU and copied, so no shader or pipeline is added.
++#pragma once
++#include <cstdint>
++#include <string>
++#include <vector>
++
++namespace nx {
++
++bool overlay_on();
++// Rasterizes `lines` (upper case, digits, . : / - % x and space) with a 5x7 font at `scale` into BGRA pixels on a
++// dark panel. Returns false when a character has no glyph (drawn as a box). Width and height are set.
++bool overlay_raster(const std::vector<std::string>& lines, uint32_t scale, std::vector<uint32_t>& pixels,
++                    uint32_t& width, uint32_t& height);
++// The game's present calls (nvn_queue.cpp) and the frames shown (gpu_present), for the rates above.
++void overlay_note_game_present(uint64_t now_ns);
++void overlay_note_shown(uint64_t now_ns, uint32_t render_width, uint32_t render_height);
++// The panel's current lines (refreshed twice a second).
++std::vector<std::string> overlay_lines();
++
++}  // namespace nx
+--- /dev/null
 +++ b/runtime/src/native_perf.h
 @@ -0,0 +1,61 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -8163,7 +8326,7 @@
  // Draws (docs/NVN.md, N6): replays the bind, state and draw commands of nvn_state.cpp into Vulkan. Everything a draw
  // reads from guest memory (vertices, indices, uniform and storage buffers, textures) is copied at replay time into
  // the submit's upload buffer: the replay runs right when the game submits and is waited for, so the memory holds
-@@ -11,11 +14,18 @@
+@@ -11,11 +14,22 @@
  #include <cstring>
  #include <set>
  
@@ -8176,13 +8339,17 @@
 +#include "native_counters.h"
 +#include "native_conditional.h"
 +#include "native_debug_buffer_snapshot.h"
++
++namespace nx::nvn::replay {
++void trace_zero_draw(const Targets& t, bool indexed, const Cmd& c);  // nvn_draw_trace.cpp (NX_TRACE_FRAME)
++}
  
  namespace nx::nvn {
 +VkPhysicalDevice vk_physical();
  
  using namespace nx::vk;
  
-@@ -150,8 +160,18 @@
+@@ -150,8 +164,18 @@
          colors[k].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
          colors[k].loadOp = fresh >> k & 1 ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
          colors[k].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -8203,7 +8370,7 @@
      }
      GpuImage* dimg = t.depth ? image_of(t.depth) : nullptr;
      g_pass_images[8] = dimg;
-@@ -200,6 +220,7 @@
+@@ -200,6 +224,7 @@
  // DispatchCompute: the bound program's compute stage over (x, y, z) groups, outside render passes, then a barrier
  // so what it wrote is visible to what follows.
  void dispatch(VkCommandBuffer cb, const Cmd& c) {
@@ -8211,7 +8378,7 @@
      static const bool off = std::getenv("NX_NO_COMPUTE") != nullptr;  // debug: skip compute dispatches
      if (off) return;
      const auto* shaders = program_shaders(g_state.program);
-@@ -207,20 +228,27 @@
+@@ -207,20 +232,27 @@
      if (shaders)
          for (const ShaderInfo* s : *shaders)
              if (s->stage == ShaderStage::Compute) cs = s;
@@ -8242,7 +8409,7 @@
      draw_end_rendering(cb, 2);
      gather_textures(stages);
      build_sets(cb, stages, layout);
-@@ -256,7 +284,15 @@
+@@ -256,7 +288,15 @@
  }
  
  bool draw(VkCommandBuffer cb, const Targets& t, uint32_t mode, bool indexed, const Cmd& c) {
@@ -8254,11 +8421,11 @@
 +    if(count<0||c.i[3]<0)throw std::invalid_argument("negative native draw count or instance count");
 +    // A zero-work draw invokes no vertex or fragment shader and cannot access
 +    // their descriptors or indices. Preserve its recorded command, skip replay.
-+    if(!count||!c.i[3])return false;
++    if(!count||!c.i[3]){replay::trace_zero_draw(t,indexed,c);return false;}
      if (g_state.rasterizer_discard || !g_state.render_enable) return false;  // nothing reaches the targets
      const auto* shaders = program_shaders(g_state.program);
      if (!shaders || shaders->empty()) {
-@@ -311,12 +347,17 @@
+@@ -311,12 +351,17 @@
                      (unsigned long long)r.texture, (void*)img, img ? img->width : 0, img ? img->height : 0,
                      img ? int(img->format) : 0, img ? img->levels : 0, img ? img->layers : 0, img ? int(img->uploaded) : 0,
                      img ? int(img->rendered) : 0);
@@ -8282,7 +8449,7 @@
              }
          }
      }
-@@ -365,6 +406,30 @@
+@@ -365,6 +410,30 @@
          return false;
      }
      check_vertex_ranges(vs, fs, indexed, c, in);  // NX_CHECK_VERTS (nvn_written.cpp)
@@ -8313,7 +8480,7 @@
      if (!g_rendering) {
          if (gpu_profile_on()) {
              GpuImage* img = t.color_count && t.colors[0] ? image_of(t.colors[0]) : nullptr;
-@@ -381,6 +446,7 @@
+@@ -381,6 +450,7 @@
      std::memset(&key, 0, sizeof key);  // the key is compared byte for byte
      key.vs = vs, key.fs = fs;
      key.topology = mode;
@@ -8321,7 +8488,7 @@
      key.attrib_count = uint32_t(std::min<size_t>(g_state.attribs.size(), 16));
      std::copy_n(g_state.attribs.begin(), key.attrib_count, key.attribs);
      key.stream_count = uint32_t(std::min<size_t>(g_state.streams.size(), 16));
-@@ -502,13 +568,27 @@
+@@ -502,13 +572,27 @@
              p_vkCmdBindIndexBuffer(cb, in.index.buffer, in.index.offset, in.index_type);
              g_bound.has_index = true, g_bound.index = in.index, g_bound.index_type = in.index_type, g_state_set++;
          }
@@ -8353,7 +8520,7 @@
      }
      g_stats.done++;
      g_pass_written |= ((1u << t.color_count) - 1) | (g_state.depth.depth_write || g_state.depth.stencil_test ? 1u << 8 : 0);
-@@ -604,6 +684,7 @@
+@@ -604,6 +688,7 @@
  
  void pass_end_only(VkCommandBuffer cb, int reason) {
      if (!g_rendering) return;
@@ -8453,6 +8620,60 @@
          for (int n = 0; n < 18; n++)
              if (const Range& r = g_state.uniforms[st][n]; r.address && r.size >= 16 && !g_sig.blocks.count(r.address))
                  if (const uint8_t* p = guest_bytes(r.address)) {
+@@ -298,6 +298,42 @@
+ 
+ namespace nx::nvn::replay {
+ 
++// NX_TRACE_FRAME=<present>[,<present>...]: the game is at one of those presents (draw traces, zero-work draws).
++bool trace_frame_now() {
++    static const std::vector<uint64_t> frames = [] {
++        std::vector<uint64_t> v;
++        const char* e = std::getenv("NX_TRACE_FRAME");
++        while (e && *e) {
++            char* end = nullptr;
++            const uint64_t n = std::strtoull(e, &end, 10);
++            if (end == e) break;
++            v.push_back(n);
++            e = *end == ',' ? end + 1 : end;
++        }
++        return v;
++    }();
++    return !frames.empty() && std::find(frames.begin(), frames.end(), g_frame.load()) != frames.end();
++}
++
++// A draw the replay skips because it has no vertices or no instances (nvn_draw.cpp), in a traced frame: its
++// shaders, targets and the textures bound to the fragment stage, so an element the game hides by emptying it shows up.
++void trace_zero_draw(const Targets& t, bool indexed, const Cmd& c) {
++    if (!trace_frame_now()) return;
++    const auto* shaders = program_shaders(g_state.program);
++    std::string stages, tex;
++    if (shaders)
++        for (const ShaderInfo* s : *shaders) stages += " " + s->hash;
++    for (int k = 0; k < 32; k++)
++        if (g_state.textures[1][k]) {
++            char b[40];
++            std::snprintf(b, sizeof b, " t%d=%llx", k, (unsigned long long)g_state.textures[1][k]);
++            tex += b;
++        }
++    log("draw-zero at %llu: shaders%s %s count %d x%d targets %u:%llx%s", (unsigned long long)g_stats.done,
++        stages.c_str(), indexed ? "indexed" : "arrays", indexed ? c.i[0] : c.i[1], c.i[3], t.color_count,
++        (unsigned long long)t.colors[0], tex.c_str());
++}
++
+ void trace_draw(const Targets& t, uint32_t mode, bool indexed, const Cmd& c, const ShaderInfo* vs,
+                 const ShaderInfo* fs, const TexBindings& tex_bindings, const std::vector<uint64_t>& handles) {
+     // Always: the first draws with a huge vertex or instance count (a GPU hang candidate).
+@@ -318,7 +354,9 @@
+     // NX_TRACE_FS_HASH=<hash>[,<hash>...]: only draws with those fragment shaders.
+     static const char* fs_env = std::getenv("NX_TRACE_FS_HASH");
+     static const uint64_t trace_count = std::getenv("NX_TRACE_COUNT") ? std::strtoull(std::getenv("NX_TRACE_COUNT"), nullptr, 10) : 80;
+-    if (trace_env && g_stats.done >= trace_from && traced < trace_count && (!trace_target || t.colors[0] == trace_target) &&
++    // NX_TRACE_FRAME (trace_frame_now): every draw replayed in those frames (with NX_TRACE_COUNT).
++    const bool by_frame = trace_frame_now();
++    if (((trace_env && g_stats.done >= trace_from) || by_frame) && traced < trace_count && (!trace_target || t.colors[0] == trace_target) &&
+         (!fs_env || (fs && std::strstr(fs_env, fs->hash.c_str())))) {  // one hash or a comma list
+         traced++;
+         // NX_TRACE_VERTS=1: the first 3 vertices of stream 0 as floats and halves (8 words each at most).
 --- a/runtime/src/nvn/nvn_format.cpp
 +++ b/runtime/src/nvn/nvn_format.cpp
 @@ -43,7 +43,7 @@
@@ -10969,7 +11190,7 @@
      auto* p = get<Program>(program);
 --- a/runtime/src/nvn/nvn_queue.cpp
 +++ b/runtime/src/nvn/nvn_queue.cpp
-@@ -17,14 +17,23 @@
+@@ -17,14 +17,24 @@
  #include <atomic>
  #include <vector>
  #include <map>
@@ -10990,10 +11211,11 @@
  #include "platform.h"
 +#include "native_frame_attribution.h"
 +#include "native_cpu_cycles.h"
++#include "native_overlay.h"
  
  namespace nx {
  void svc_profile_mark(int role);
-@@ -33,6 +42,7 @@
+@@ -33,6 +43,7 @@
  extern std::atomic<uint64_t> g_tick_calls, g_yield_calls, g_sleep_calls;
  }
  namespace nx::nvn {
@@ -11001,7 +11223,7 @@
  
  // Submits the game made and submits whose replay (and GPU work, write-backs) finished. The game records the next frame
  // on one thread while another submits the last one, and our replay runs inside nvnQueueSubmitCommands: a fence the
-@@ -76,6 +86,7 @@
+@@ -76,6 +87,7 @@
  
  // Where the game waits for the replay (docs/nvn/android-perf/PHASE3.md I1): calls, the ones that blocked and for how
  // long, per 600 presents; frame_ns is this main-thread frame's blocked time, for the hitch lines (frame_time_probe).
@@ -11009,7 +11231,7 @@
  struct WaitSite {
      const char* name;
      std::atomic<uint64_t> calls{0}, blocked{0}, ns{0}, frame_ns{0};
-@@ -97,6 +108,7 @@
+@@ -97,6 +109,7 @@
              (unsigned long long)g_sub_done);
      uint64_t dt = plat::monotonic_ns() - t0;
      w.blocked++, w.ns += dt, w.frame_ns += dt;
@@ -11017,7 +11239,7 @@
  }
  
  void log_wait_sites() {
-@@ -123,7 +135,14 @@
+@@ -123,7 +136,14 @@
  
  // ---- syncs ------------------------------------------------------------------------------------------------------
  
@@ -11032,7 +11254,7 @@
      std::atomic<bool> signaled{false};
      std::atomic<uint64_t> serial{0};  // NX_ASYNC_GPU: the submit it waits for (0: none; always 0 otherwise)
      std::atomic<uint64_t> job{0};     // the replay-thread job that fences it (0: none)
-@@ -138,27 +157,57 @@
+@@ -138,27 +158,57 @@
  void SyncFinalize(CPU& c) { destroy(c.x[0]); }
  
  void signal_sync(uint64_t guest) {
@@ -11100,7 +11322,7 @@
      plat::perf_hint_thread();  // this thread replays: part of every frame (perf_hint.cpp)
      std::vector<std::shared_ptr<CmdList>> lists;
      static uint64_t submitted = 0, missing = 0;
-@@ -184,45 +233,35 @@
+@@ -184,45 +234,35 @@
          std::lock_guard lk(g_sub_lock);
          g_sub_called++;
      }
@@ -11160,7 +11382,7 @@
  }
  
  void WindowFinalize(CPU& c) { destroy(c.x[0]); }
-@@ -238,6 +277,14 @@
+@@ -238,6 +278,14 @@
      if (c.x[2]) st<int32_t>(c.x[2], index);
      signal_sync(c.x[1]);
      c.x[0] = 0;
@@ -11175,7 +11397,7 @@
  }
  
  void WindowGetNumTextures(CPU& c) {
-@@ -489,12 +536,179 @@
+@@ -489,12 +537,179 @@
  // one. On the Switch the texture-available sync of the next acquire does this; ours is signaled at once, so without
  // it the game runs as fast as it can once it is faster than 60 fps. A late frame is not snapped to the next vsync
  // (an 18 ms frame stays 18 ms, not 33). NX_NO_FRAME_LIMIT=1: unpaced.
@@ -11356,18 +11578,19 @@
      static uint64_t presents = 0, at2 = 0;  // how often the game asks for 30 fps (interval 2), per 600 presents
      at2 += interval >= 2;
      if (++presents % 600 == 0)
-@@ -504,6 +718,10 @@
+@@ -504,6 +719,11 @@
  }
  
  void QueuePresentTexture(CPU& c) {
 +    delivery.begin();
 +    slow_frames.begin(g_presents);
++    if (overlay_on()) overlay_note_game_present(plat::monotonic_ns());
 +    require_queue(c.x[0]);
 +    const auto* owned_window=get<Window>(c.x[1]);if(!owned_window||int64_t(c.x[2])<0||c.x[2]>=owned_window->textures.size())fatal("native present requires valid window texture index");
      // The frame's work, from the end of the last present's pacing to now (perf_hint.cpp: ADPF on Android).
      static uint64_t work_from = 0;
      uint64_t t_in = plat::monotonic_ns();
-@@ -520,7 +738,10 @@
+@@ -520,7 +740,10 @@
          // At most two presents queued: the game runs at most two frames ahead of the replay.
          static uint64_t queued[2] = {};
          static int next_slot = 0;
@@ -11378,7 +11601,7 @@
          if (int(c.x[2]) >= 0 && size_t(c.x[2]) < w->textures.size()) {
              uint64_t texture = w->textures[size_t(c.x[2])];
              std::array<int32_t, 4> crop{w->crop[0], w->crop[1], w->crop[2], w->crop[3]};
-@@ -561,6 +782,7 @@
+@@ -561,6 +784,7 @@
  }  // namespace
  
  NX_HLE("nvnWindowSetCrop", WindowSetCrop);
@@ -11386,7 +11609,7 @@
  NX_HLE("nvnSyncInitialize", SyncInitialize);
  NX_HLE("nvnSyncFinalize", SyncFinalize);
  NX_HLE("nvnSyncWait", SyncWait);
-@@ -572,6 +794,7 @@
+@@ -572,6 +796,7 @@
  NX_HLE("nvnQueueFenceSync", QueueFenceSync);
  NX_HLE("nvnQueueWaitSync", QueueWaitSync);
  NX_HLE("nvnQueuePresentTexture", QueuePresentTexture);
@@ -12121,7 +12344,7 @@
  // NVN's GPU side on Vulkan (docs/NVN.md, N3): the host device, a VkImage per NVN texture the GPU touches, the
  // replay of recorded command lists, and presenting a window texture on the host swapchain.
  //
-@@ -20,7 +21,14 @@
+@@ -20,7 +21,15 @@
  #include <vector>
  
  #include "nvn_vk.h"
@@ -12132,11 +12355,12 @@
 +#include <stdexcept>
  #include "platform.h"
 +#include "native_frame_attribution.h"
++#include "native_overlay.h"
 +#include "vi_state.h"
  
  #include <nx/game.h>
  
-@@ -52,6 +60,9 @@
+@@ -52,6 +61,9 @@
  VkFormat g_sc_format = VK_FORMAT_B8G8R8A8_UNORM;
  VkSemaphore g_acquired = VK_NULL_HANDLE, g_rendered = VK_NULL_HANDLE;
  VkBool32 g_depth_clip_control = VK_FALSE;
@@ -12146,7 +12370,7 @@
  bool g_integrated = false;
  bool g_require_sg32 = false;  // compute pipelines are made with a required subgroup size of 32 (Maxwell's warp)  // the chosen GPU is an integrated one (unified memory, the GPU is the long side)
  VkPhysicalDeviceFeatures g_features{};  // the core features enabled (vk_features())
-@@ -176,6 +187,24 @@
+@@ -176,6 +188,24 @@
      std::vector<VkExtensionProperties> dext(n);
      p_vkEnumerateDeviceExtensionProperties(g_physical, nullptr, &n, dext.data());
      std::vector<const char*> dexts = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
@@ -12171,7 +12395,7 @@
      // Features: everything core the GPU has, dynamic rendering (1.3), 8-bit indices (NVN has them), clip-space
      // depth -1..1 (NVN's default depth mode, what Wonder uses), and on MoltenVK the portability subset's own
      // features, which must be enabled to be used.
-@@ -183,6 +212,8 @@
+@@ -183,6 +213,8 @@
      VkPhysicalDeviceVulkan13Features f13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
      VkPhysicalDeviceIndexTypeUint8FeaturesEXT fu8{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT};
      VkPhysicalDeviceDepthClipControlFeaturesEXT fclip{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT};
@@ -12180,7 +12404,7 @@
      struct {  // VkPhysicalDevicePortabilitySubsetFeaturesKHR, without its header (beta extensions)
          VkStructureType sType = VkStructureType(1000163000);
          void* pNext = nullptr;
-@@ -198,11 +229,23 @@
+@@ -198,11 +230,23 @@
          dexts.push_back("VK_EXT_depth_clip_control");
          *tail = &fclip, tail = &fclip.pNext;
      }
@@ -12204,7 +12428,7 @@
      {   // The translated shaders assume Maxwell's warp of 32 (TRANSLATOR.md). Intel runs subgroups of 8, 16 or 32 as its
          // compiler chooses; where the size can be pinned (core 1.3 subgroup size control), compute pipelines pin 32.
          VkPhysicalDeviceSubgroupSizeControlProperties sgc{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
-@@ -217,6 +260,8 @@
+@@ -217,6 +261,8 @@
              g_require_sg32 ? "pinned to 32" : "left to the driver");
      }
      g_depth_clip_control = fclip.depthClipControl;
@@ -12213,7 +12437,7 @@
      g_features = features.features;
      // NX_ASTC_DECODE=1|linear|srgb: the CPU decoder even where the GPU has ASTC (to compare the two on one GPU).
      set_astc_native(g_features.textureCompressionASTC_LDR);
-@@ -396,11 +441,23 @@
+@@ -396,11 +442,23 @@
  }  // namespace
  
  std::recursive_mutex& gpu_lock() { return g_gpu; }
@@ -12237,7 +12461,7 @@
  const VkPhysicalDeviceFeatures& vk_features() { return g_features; }
  bool gpu_is_integrated() { return g_integrated; }
  bool gpu_require_subgroup32() { return g_require_sg32; }
-@@ -479,7 +536,9 @@
+@@ -479,7 +537,9 @@
      p_vkResetCommandBuffer(g_cb, 0);
      VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
      bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -12248,7 +12472,7 @@
  }
  
  // Where the submitting thread's time goes, logged with the draw stats, per presented frame: the replay (recording
-@@ -491,6 +550,7 @@
+@@ -491,6 +551,7 @@
  
  void end_and_wait(VkSemaphore wait, VkSemaphore signal) {
      uint64_t t0 = plat::monotonic_ns();
@@ -12256,7 +12480,7 @@
      p_vkEndCommandBuffer(g_cb);
      VkPipelineStageFlags stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
      VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-@@ -533,12 +593,24 @@
+@@ -533,12 +594,24 @@
      frame_log(frames);
      creation_log(frames);  // pipelines and ASTC decodes of the window; saves the pipeline cache now and then
      g_timing = {};
@@ -12282,7 +12506,7 @@
  };
  
  }  // namespace
-@@ -555,6 +627,7 @@
+@@ -555,6 +628,7 @@
      std::lock_guard lk(g_gpu);
      uint64_t t_in = plat::monotonic_ns();
      const FrameTimes f_in = frame_times();
@@ -12290,7 +12514,7 @@
      uint64_t lists_epoch = 0;
      for (auto& l : lists) lists_epoch = std::max(lists_epoch, l->epoch);
      ReplayScope replay(lists_epoch);  // the texture mark (#55, #57), then drain_objects (under the GPU lock, #50)
-@@ -599,6 +672,15 @@
+@@ -599,6 +673,15 @@
      const FrameTimes f2 = frame_times();
      g_timing.encode_ns += f2.encode_ns - f_in.encode_ns, g_timing.fence_ns += f2.fence_ns - f_in.fence_ns;
      g_timing.submit_ns += plat::monotonic_ns() - t_in;
@@ -12306,7 +12530,7 @@
  }
  
  // Headless: the presented texture is only counted, logged and dumped (no swapchain). Nothing is submitted unless a
-@@ -638,6 +720,8 @@
+@@ -638,6 +721,8 @@
  }
  
  void gpu_present(uint64_t texture, const int32_t* crop) {
@@ -12315,7 +12539,35 @@
      plat::perf_hint_thread();  // the thread that presents takes part in the frame (perf_hint.cpp)
      std::lock_guard lk(g_gpu);
      PresentTimer timer;
-@@ -729,4 +813,80 @@
+@@ -690,6 +775,27 @@
+         blit.dstOffsets[1] = {int32_t(g_sc_extent.width), int32_t(g_sc_extent.height), 1};
+         p_vkCmdBlitImage(g_cb, src->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst.image,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
++    }
++    if (src && overlay_on()) {  // NX_OVERLAY (native_overlay.h): the metrics panel over the top-left corner
++        overlay_note_shown(plat::monotonic_ns(), src->width, src->height);
++        const bool four_bytes = g_sc_format == VK_FORMAT_B8G8R8A8_UNORM || g_sc_format == VK_FORMAT_B8G8R8A8_SRGB ||
++                                g_sc_format == VK_FORMAT_R8G8B8A8_UNORM || g_sc_format == VK_FORMAT_R8G8B8A8_SRGB;
++        std::vector<uint32_t> pixels;  // grey and green: the same in RGBA and BGRA byte order
++        uint32_t ow = 0, oh = 0;
++        overlay_raster(overlay_lines(), g_sc_extent.height >= 1440 ? 3 : 2, pixels, ow, oh);
++        const uint32_t margin = 16, cw = g_sc_extent.width > margin ? std::min(ow, g_sc_extent.width - margin) : 0,
++                       ch = g_sc_extent.height > margin ? std::min(oh, g_sc_extent.height - margin) : 0;
++        if (four_bytes && cw && ch) {
++            if (drawn) dst.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, transition(g_cb, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
++            Upload u = upload_alloc(pixels.size() * 4, 16);
++            std::memcpy(u.ptr, pixels.data(), pixels.size() * 4);
++            VkBufferImageCopy copy{};
++            copy.bufferOffset = u.offset, copy.bufferRowLength = ow, copy.bufferImageHeight = oh;
++            copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
++            copy.imageOffset = {int32_t(margin), int32_t(margin), 0}, copy.imageExtent = {cw, ch, 1};
++            p_vkCmdCopyBufferToImage(g_cb, u.buffer, dst.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
++            if (drawn) transition(g_cb, dst, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
++        }
+     }
+     if (!drawn) transition(g_cb, dst, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+     static uint64_t presents = 0;
+@@ -729,4 +835,80 @@
      if (remake) make_swapchain();
  }
  
@@ -15627,7 +15879,7 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,787 @@
+@@ -0,0 +1,789 @@
 +#include "native_thread_policy_probe.h"
 +#include <source_location>
 +#include "nvn/native_readback_memory.h"
@@ -15698,12 +15950,14 @@
 +#include "native_conditional_probe.h"
 +#include "native_point_probe.h"
 +#include "native_pipeline_recipe_probe.h"
++#include "native_overlay.h"
 +#include "native_early_chunk_probe.h"
 +#include "native_depth_contract_probe.h"
 +#include "native_counter_sync_probe.h"
 +#include "native_wait_cancellation_probe.h"
 +int main(int argc,char** argv){try{
 + if(argc==2&&std::string_view(argv[1])=="--thread-policy")return authored_thread_probe::run();
++ if(argc==2&&std::string_view(argv[1])=="--overlay"){unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("overlay assertion "+std::to_string(n));};std::vector<uint32_t> px;uint32_t w=0,h=0;check(nx::overlay_raster({"FPS 59.9","MAX 16.67 MS"},2,px,w,h));check(w==12*12+8&&h==2*18+8&&px.size()==size_t(w)*h);size_t lit=0;for(uint32_t p:px)lit+=p==0xFF40FF40u;check(lit>0&&lit<px.size()/2);check(px[0]==0xFF101010u&&px[size_t(w)*h-1]==0xFF101010u);std::vector<uint32_t> one;check(nx::overlay_raster({"1"},1,one,w,h));check(w==10&&h==13);const char* expect[7]={"..#..",".##..","..#..","..#..","..#..","..#..",".###."};for(uint32_t y=0;y<7;y++)for(uint32_t x=0;x<5;x++)check((one[size_t(y+2)*w+x+2]==0xFF40FF40u)==(expect[y][x]=='#'));check(!nx::overlay_raster({"FPS~"},1,one,w,h));std::cout<<"native overlay checks="<<n<<" PASS"<<std::endl;return 0;}
 + if(argc==2&&std::string_view(argv[1])=="--pipeline-recipes"){unsigned n=0;auto check=[&](bool b,const std::source_location site=std::source_location::current()){++n;if(!b)throw std::runtime_error("pipeline recipe assertion "+std::to_string(n)+" at "+std::to_string(site.line()));};pipeline_recipe_probe::unit(check);std::cout<<"native pipeline recipes checks="<<n<<" PASS"<<std::endl;return 0;}
 + if(argc==2&&std::string_view(argv[1])=="--mapped-readback-bench") {
 +  using namespace nx::nvn;using namespace nx::vk;

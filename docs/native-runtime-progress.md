@@ -4,6 +4,36 @@ Updated 2026-10-20. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
+R252 adds an opt-in metrics overlay (`NX_OVERLAY=1`) and frame-scoped draw traces.
+The overlay copies a CPU-drawn panel into the top-left of each displayed frame:
+FPS (game presents), VPS (frames shown), average and worst frame time, frames over
+20 ms, render size and frame generation (none exists: always OFF). No shader,
+pipeline or wait is added; it was verified on the live window. `NX_TRACE_FRAME=
+<present>[,...]` logs every draw of those frames, and draws skipped for zero
+vertices or instances, with shaders, targets, samplers and textures.
+
+Visual triage with those tools, against the scripted Grand Prix flight:
+
+- Race timer: in race frames the UI pass issues four glyph draws, which a
+  per-draw snapshot shows are the coin count and the lap counter; no draw, and
+  no zero-instance draw, carries a timer. UI and font archives load without
+  error. The game is not asking for a timer in this mode; why is not yet known.
+- Dark kart-select shading: the screen-space shadow mask marks only small areas
+  (cap brim, eyes, kart base), far less than the dark regions, so shadowing is
+  not the cause. The character draws sample runtime-rendered light probes and a
+  128x128 GPU-compressed BC3 target that reads back as zero; whether that
+  readback is real or a diagnostic limit of blitting compressed images is open.
+  R150 already recorded the face and diffuse lighting as too dark.
+- Glider whiteout and bloom: reproduced (frames 5310-5430 show the kart and glider
+  as a white glow; bright flares appear behind geometry). Not yet attributed.
+- Fine mesh on characters: faint striping on the cap and hair is visible at full
+  resolution. Not yet attributed.
+
+All 44 suites (new: overlay raster), 3,212 GPU checks in every matrix variant
+including overlay on, sync/cutoff/readback controls and the analyses pass, apart
+from pre-existing warnings in `nvn_vk.cpp` and `nvn_draw.cpp`. The recipe
+reconstructs 210 files.
+
 R250 names the critical path of late presentations: in two flights every
 blocked millisecond of the presenting thread (g51) in intervals over 20 ms was
 ended by the title's main thread (g50), which is also the busiest guest thread

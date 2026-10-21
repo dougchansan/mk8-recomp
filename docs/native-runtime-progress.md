@@ -4,6 +4,14 @@ Updated 2026-10-20. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## Belmante runtime adoption
 
+Following main-thread focus-gate phase profiling, R284 moves optional profiling
+and parking/notification frames out of its common path while retaining every
+check. Longer alternating single-thread controls observe a 5.5% lower median
+gate cost; contended throughput is effectively unchanged. It also records actual
+minimum presentation intervals in the existing optional pacing reports. See
+[main-thread focus measurements and per-course readings](native-main-thread-focus.md)
+for results and the limits of the 21-course historical FPS table.
+
 R282 removes optional profiling state and codec string handling from the ordinary
 indirect-dispatch path. Authored alternating measurements reduce median compiled
 dispatch from 6.65 to 3.52 ns and HLE dispatch from 7.04 to 4.55 ns, with one focus

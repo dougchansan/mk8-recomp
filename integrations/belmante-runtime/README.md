@@ -6,10 +6,12 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-The current recipe reconstructs R282 (212 generic files). It keeps optional
+The current recipe reconstructs R284 (212 generic files). It keeps optional
 profiling and codec-trace state out of ordinary indirect dispatch while retaining
 every focus check. Authored dispatch benchmarks and GPU/component controls pass;
 see [measurements and sweep limits](../../docs/native-dispatch-optimization.md).
+R284 also outlines the common focus gate and records minimum presentation
+intervals; see [main-thread measurements](../../docs/native-main-thread-focus.md).
 
 R212 now passes a clean 24,000-target flight from Stadium's first-place/15-point
 results through native screenshot readback to Water Park driving, underwater

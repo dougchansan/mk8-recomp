@@ -1967,7 +1967,7 @@
      auto it = g_vm.lower_bound(addr);
 --- /dev/null
 +++ b/runtime/src/mk8_focus_policy.cpp
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,85 @@
 +#include "native_perf.h"
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "mk8_focus_policy.h"
@@ -2011,12 +2011,19 @@
 + }if(signal)signal();
 +}
 +uint8_t mk8_logical_focus(){mk8_observe_display();std::lock_guard guard(lock);return logical_focus;}
-+void mk8_focus_gate(){
-+    // This gate can execute millions of times per frame. Sample one in 1024
-+    // calls so profiling atomics do not become a new contention bottleneck.
-+    static thread_local uint32_t samples = 0;
-+    const bool sampled = perf::enabled() && (++samples & 1023u) == 0;
-+    perf::Scope perf_scope(perf::Region::Focus, sampled, 1024);
++namespace {
++[[gnu::noinline]] void park_focus_gate() {
++ for(;;){std::function<void()> signal;bool park;{
++  std::lock_guard guard(lock);if(!live())fatal("owned native display closed");
++  const uint8_t next=IsWindowVisible(display)&&!IsIconic(display)?1:2;
++  if(next!=logical_focus){logical_focus=next;if(notify)signal=notification;}
++  // A visible owned display runs without activating it. Check ownership once
++  // under the same lock that observes visibility and evaluates the policy.
++  park=!background&&logical_focus!=1&&(suspend||out_of_focus);
++ }if(signal){signal();continue;}if(!park)return;Sleep(5);}
++}
++
++void focus_gate_impl() {
 + if(!enabled.load(std::memory_order_acquire))return;
 + // Stable visible/background policy needs no mutation. Check the live owner and
 + // visibility on every call while allowing concurrent readers. Transitions,
@@ -2028,16 +2035,24 @@
 +  if(next==logical_focus&&(background||logical_focus==1||(!suspend&&!out_of_focus)))return;
 + }
 +
-+ for(;;){std::function<void()> signal;bool park;{
-+  std::lock_guard guard(lock);if(!live())fatal("owned native display closed");
-+  const uint8_t next=IsWindowVisible(display)&&!IsIconic(display)?1:2;
-+  if(next!=logical_focus){logical_focus=next;if(notify)signal=notification;}
-+  // A visible owned display runs without activating it. Check ownership once
-+  // under the same lock that observes visibility and evaluates the policy.
-+  park=!background&&logical_focus!=1&&(suspend||out_of_focus);
-+ }if(signal){signal();continue;}if(!park)return;Sleep(5);}
++ park_focus_gate();
 +}
++
++[[gnu::noinline]] void profiled_focus_gate() {
++    // This gate can execute millions of times per frame. Sample one in 1024
++    // calls so profiling atomics do not become a new contention bottleneck.
++    static thread_local uint32_t samples = 0;
++    const bool sampled = (++samples & 1023u) == 0;
++    perf::Scope perf_scope(perf::Region::Focus, sampled, 1024);
++ focus_gate_impl();
 +}
++}  // namespace
++
++void mk8_focus_gate() {
++    if (perf::enabled()) profiled_focus_gate();
++    else focus_gate_impl();
++}
++}  // namespace nx
 --- /dev/null
 +++ b/runtime/src/mk8_focus_policy.h
 @@ -0,0 +1,14 @@
@@ -12003,7 +12018,7 @@
  }
  
  void WindowGetNumTextures(CPU& c) {
-@@ -489,12 +537,179 @@
+@@ -489,12 +537,182 @@
  // one. On the Switch the texture-available sync of the next acquire does this; ours is signaled at once, so without
  // it the game runs as fast as it can once it is faster than 60 fps. A late frame is not snapped to the next vsync
  // (an 18 ms frame stays 18 ms, not 33). NX_NO_FRAME_LIMIT=1: unpaced.
@@ -12012,6 +12027,7 @@
 +struct DeliveryStats {
 +    bool enabled = [] { const char* e = std::getenv("NX_FRAME_PACING_STATS"); return e && e[0] == '1'; }();
 +    uint64_t previous_wall{}, previous_cpu{}, intervals{}, wall{}, cpu{}, peak{}, late{};
++    uint64_t minimum=~uint64_t(0);
 +    uint64_t worker{}, requested{}, slept{}, overshoot{}, sleeps{}, interval2{};
 +    void begin() {
 +        if (!enabled) return;
@@ -12021,14 +12037,16 @@
 +        if (previous_wall) {
 +            const auto elapsed = now - previous_wall;
 +            wall += elapsed; peak = std::max(peak, elapsed); late += elapsed > 20'000'000;
++            minimum = std::min(minimum, elapsed);
 +            if (current_cpu >= previous_cpu) cpu += current_cpu - previous_cpu;
 +            if (++intervals == 60) {
-+                log("native delivery over 60: wall %.3f ms/frame, caller CPU %.3f, peak %.3f, over20ms %llu, worker %.3f, pace-request %.3f, pace-sleep %.3f, overshoot %.3f, sleeps %llu, interval>=2 %llu",
++                log("native delivery over 60: wall %.3f ms/frame, caller CPU %.3f, peak %.3f, over20ms %llu, worker %.3f, pace-request %.3f, pace-sleep %.3f, overshoot %.3f, sleeps %llu, interval>=2 %llu, min %.3f ms",
 +                    double(wall)/60e6, double(cpu)/60e6, double(peak)/1e6,
 +                    (unsigned long long)late, double(worker)/60e6, double(requested)/60e6,
 +                    double(slept)/60e6, double(overshoot)/60e6,
-+                    (unsigned long long)sleeps, (unsigned long long)interval2);
++                    (unsigned long long)sleeps, (unsigned long long)interval2, double(minimum)/1e6);
 +                intervals=wall=cpu=peak=late=worker=requested=slept=overshoot=sleeps=interval2=0;
++                minimum=~uint64_t(0);
 +            }
 +        }
 +        previous_wall=now; previous_cpu=current_cpu;
@@ -12184,7 +12202,7 @@
      static uint64_t presents = 0, at2 = 0;  // how often the game asks for 30 fps (interval 2), per 600 presents
      at2 += interval >= 2;
      if (++presents % 600 == 0)
-@@ -504,6 +719,11 @@
+@@ -504,6 +722,11 @@
  }
  
  void QueuePresentTexture(CPU& c) {
@@ -12196,7 +12214,7 @@
      // The frame's work, from the end of the last present's pacing to now (perf_hint.cpp: ADPF on Android).
      static uint64_t work_from = 0;
      uint64_t t_in = plat::monotonic_ns();
-@@ -520,7 +740,10 @@
+@@ -520,7 +743,10 @@
          // At most two presents queued: the game runs at most two frames ahead of the replay.
          static uint64_t queued[2] = {};
          static int next_slot = 0;
@@ -12207,7 +12225,7 @@
          if (int(c.x[2]) >= 0 && size_t(c.x[2]) < w->textures.size()) {
              uint64_t texture = w->textures[size_t(c.x[2])];
              std::array<int32_t, 4> crop{w->crop[0], w->crop[1], w->crop[2], w->crop[3]};
-@@ -561,6 +784,7 @@
+@@ -561,6 +787,7 @@
  }  // namespace
  
  NX_HLE("nvnWindowSetCrop", WindowSetCrop);
@@ -12215,7 +12233,7 @@
  NX_HLE("nvnSyncInitialize", SyncInitialize);
  NX_HLE("nvnSyncFinalize", SyncFinalize);
  NX_HLE("nvnSyncWait", SyncWait);
-@@ -572,6 +796,7 @@
+@@ -572,6 +799,7 @@
  NX_HLE("nvnQueueFenceSync", QueueFenceSync);
  NX_HLE("nvnQueueWaitSync", QueueWaitSync);
  NX_HLE("nvnQueuePresentTexture", QueuePresentTexture);

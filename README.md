@@ -42,6 +42,10 @@ or 12.9 s (cold) to 116 ms, and the worst course-load presentation from about
 1.2 s to 0.5 s. No steady-FPS gain is established. The default source recipe now
 reconstructs 210 files. `NX_OVERLAY=1` shows an FPS/frame-time overlay. Sustained smooth 60 and correct 120 remain unverified.
 
+R284 reduces single-thread focus-gate overhead while preserving every ownership
+and visibility check, and records minimum presentation intervals for future
+course reports. See [main-thread measurements and per-course FPS](docs/native-main-thread-focus.md).
+
 R282 moves optional diagnostics out of ordinary CPU dispatch. Authored alternating
 benchmarks show lower dispatch overhead, with all 44 suites and 3,212 GPU checks
 passing. See [dispatch measurements and sweep limits](docs/native-dispatch-optimization.md);

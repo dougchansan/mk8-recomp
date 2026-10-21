@@ -4,7 +4,7 @@
   "license": "MIT",
   "license_sha256": "7f728cfaa94ff27c2a40c906dac12564a216077ceb017fb2d01cc29ba6697720",
   "local_changes_license": "GPL-3.0-or-later",
-  "patch_sha256": "f2bccb68f55d5695ebd0f9082158a91ca26064546f99b8d346a364a720475568",
+  "patch_sha256": "84a6cd86b1194ba93eee116536a23040f7db14b3cb5dfc50e98085157b3f98b1",
   "changed_files": [
     "CMakeLists.txt",
     "games/mk8d/game.cpp",

@@ -3,6 +3,32 @@ from scripts.native_sweep_report import parse
 
 
 class ReportTests(unittest.TestCase):
+    def test_delivery_minima_and_peaks_survive_detail_cap(self):
+        result = parse([
+            'OpenFile(content:/Course/A/course_model.szs)',
+            'native delivery over 60: wall 16.0 ms/frame, caller CPU 2.0, peak 100.0, over20ms 2, min 3.0 ms',
+            'native delivery over 60: wall 15.0 ms/frame, caller CPU 2.0, peak 50.0, over20ms 1, min 2.5 ms',
+        ])
+        section = result['sections'][0]
+        self.assertEqual(section['minimum_present_ms'], 2.5)
+        self.assertEqual(section['maximum_present_ms'], 100)
+        self.assertEqual(section['delivery_windows'], 2)
+        self.assertEqual(section['detailed_late_frames'], 0)
+
+    def test_legacy_delivery_and_boundary_do_not_invent_minimum(self):
+        result = parse([
+            'OpenFile(content:/Course/A/course_model.szs)',
+            'native delivery over 60: wall 16.0 ms/frame, caller CPU 2.0, peak 90.0, over20ms 2',
+            'OpenFile(content:/Course/B/course_model.szs)',
+            'native delivery over 60: wall 15.0 ms/frame, caller CPU 2.0, peak 70.0, over20ms 1, min 1.0 ms',
+            'native delivery over 60: wall 15.0 ms/frame, caller CPU 2.0, peak 60.0, over20ms 1, min 4.0 ms',
+        ])
+        first, second = result['sections']
+        self.assertIsNone(first['minimum_present_ms'])
+        self.assertEqual(first['maximum_present_ms'], 90)
+        self.assertEqual(second['minimum_present_ms'], 4)
+        self.assertEqual(result['delivery_buckets'][1]['section_indices'], [0, 1])
+
     def test_cap_and_course_boundary_do_not_become_zero_or_double_counts(self):
         result = parse([
             'OpenFile(content:/Course/First/course_model.szs)',

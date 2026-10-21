@@ -1,3 +1,5 @@
+> **ARCHIVED (October 2026):** These suyu-hosted notes are historical research, not active export/build guidance. Keyed baseline/export entrypoints were retired. See [native runtime](../integrations/belmante-runtime/README.md) and [publication policy](distribution-audit.md).
+
 # Library static playtesting
 
 The playtest queue contains the 82 ARM64 cartridge bases from the final decode

@@ -1,0 +1,39 @@
+name: distribution audit
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  release:
+    types: [published, prereleased, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  distribution:
+    name: public distribution policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+      - name: Source audit regression tests
+        run: python3 -m unittest discover -s tests -p 'test_dist_audit.py' -v
+      - name: Audit tracked tree and candidate dist directory
+        run: python3 scripts/dist_audit.py
+      - name: Flag assets on a published release
+        if: github.event_name == 'release'
+        env:
+          EVENT_PATH: \${{ github.event_path }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          with open(os.environ["EVENT_PATH"], encoding="utf-8") as stream:
+              assets = json.load(stream).get("release", {}).get("assets", [])
+          if assets:
+              print("FAIL: unreviewed download assets are prohibited.")
+              print("This check runs AFTER release publication, not before.")
+              sys.exit(1)
+          print("Release contains no download assets.")
+          PY

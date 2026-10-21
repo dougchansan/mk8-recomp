@@ -1,3 +1,5 @@
+> **ARCHIVED (October 2026):** These suyu-hosted notes are historical research, not active export/build guidance. Keyed baseline/export entrypoints were retired. See [native runtime](../integrations/belmante-runtime/README.md) and [publication policy](distribution-audit.md).
+
 # Bootstrap Record
 
 Session 1. All values below were measured on this machine, not assumed.

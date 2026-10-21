@@ -1,3 +1,5 @@
+> **ARCHIVED (October 2026):** These suyu-hosted notes are historical research, not active export/build guidance. Keyed baseline/export entrypoints were retired. See [native runtime](../integrations/belmante-runtime/README.md) and [publication policy](distribution-audit.md).
+
 # Suyu v0.0.4 Native Recompiler — Verified Findings
 
 Everything below was read out of the pinned source at commit

@@ -10,9 +10,12 @@ without reading the source.
 
 Our own code, build tooling and documentation, plus a submodule pointer to a
 fork of an emulator. The tracked tree includes scripts, docs, tests and reviewed
-native-runtime source patches. Native-foundations prereleases may also contain
-verification tools and synthetic fixtures built from that public source. Those
-tools contain no mechanically translated game code or game assets.
+native-runtime source patches. Prior synthetic native-foundations prereleases were
+removed. Future public source/tool packages require a distribution audit and
+provenance review; game-linked binary downloads are prohibited.
+
+**Public game-linked binaries are prohibited.** Finishing the native game
+is an engineering milestone, not permission to distribute its executable.
 
 ## What it does not distribute, under any circumstances
 
@@ -36,9 +39,10 @@ alongside the others rather than treated as documentation.
 
 ## What you have to supply yourself
 
-A legally dumped copy of software you own, and keys from hardware you own. The
-project will not help you obtain either, and requests to do so will not be
-answered.
+Lawfully sourced game inputs for local research only. The current native path
+accepts privately prepared ExeFS and RomFS, not encrypted input/key installers.
+The suyu-hosted keyed baseline/export workflow is retired. See the
+[distribution audit](docs/distribution-audit.md).
 
 ## Licensing
 
@@ -55,8 +59,8 @@ Connectix* (9th Cir. 2000) and *Sony Computer Entertainment v. Bleem* (9th Cir.
 2000) hold that developing an emulator — including the intermediate copying
 that reverse engineering requires — is fair use. This project is a static
 recompilation research effort built on that footing: its subject is translating
-one instruction set into another, and its output of interest is a measurement,
-not a playable port.
+one instruction set into another, and the resulting native game executable is a **private development target**, not a
+publicly distributed playable port.
 
 The current engineering goal includes a standalone native runtime for locally
 supplied title code and data. Public distributions remain limited to the tools,

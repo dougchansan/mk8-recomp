@@ -4,7 +4,7 @@ The current goal is a standalone native Mario Kart 8 Deluxe application: statica
 
 See [native runtime progress](docs/native-runtime-progress.md) for verified results and remaining work. This repository is `dougchansan/mk8-recomp`.
 
-**Release policy:** all five native-foundations prereleases, their 15 download assets and their tags have been removed. No new native release, tag or download will be published until the full native game is working: static CPU execution, live native graphics, platform services, audio, controls, saves and restart. Development builds and verification receipts remain local. See [development build notes](docs/native-builds.md).
+**Release policy:** Public game-linked binaries are prohibited. Full native compatibility does not authorize downloadable game-linked executables. Audited authored source and game-free tooling only may be published after provenance review. Existing foundations prereleases, download assets and tags were removed; private development builds stay local. See [LEGAL.md](LEGAL.md), [distribution audit](docs/distribution-audit.md) and [build notes](docs/native-builds.md).
 
 The [MK8 native runtime integration](integrations/belmante-runtime/README.md) uses static CPU modules and native Vulkan. R201 completes all three laps, the FINISH sequence and the results table without a fatal error. The native game commits its post-race save; a fresh process reloads an exact copy and reaches mode selection. A measured 11,280-frame racing window averages about 25 FPS (26.5 ms median interval), with profiling disabled and sparse readbacks enabled. Forty component suites, 2,327 native GPU checks and separate 300-check sync/cutoff regressions pass. The offline cache held 7,365 stages at the time (see R276 below for current coverage). No native release, tag or download is available. See [native runtime progress](docs/native-runtime-progress.md) for the remaining verification gates.
 
@@ -167,29 +167,9 @@ The no-JIT build uses `-DSUYU_NO_JIT=ON`. Dynarmic is excluded from its build gr
 
 Synthetic tests cover decoder masks, integer/FP state, condition flags, crypto vectors, code guards, branch side entries and bounded module slices. The [differential harness](tests/differential_README.md) checks selected single instructions against Dynarmic. Whole-block memory and concurrency equivalence remain open.
 
-## Build and validate a static title
+## Retired suyu-hosted export workflow
 
-The simplest path is suyu's **Export Game** dialog. The scripts below are the reproducible command-line workflow used for testing.
-
-Supply your configured local dumps, keys and firmware. The boot source can differ from the update executable being exported: `MK8R_ROM` is the boot path and `MK8R_EXPORT_ROM` is the matching export source. The emitter supports AArch64; [AArch32](docs/aarch32.md) remains out of scope.
-
-On the primary Windows workflow:
-
-```powershell
-.\scripts\build-suyu.ps1 -NoJit
-.\scripts\export-static-title.ps1 -Target $env:MK8R_TARGET -Rom $env:MK8R_EXPORT_ROM
-.\scripts\stage-static-title.ps1 -Target $env:MK8R_TARGET -TitleId <title-id>
-```
-
-The exporter rebuilds the host before exporting, builds every module and rejects stale output. Staging accepts ABI 5 or ABI 6 images and refuses a bundle that mixes them, since ABI 6 extends the shared guest context. Miss recording remains useful for genuinely missing code.
-
-```powershell
-.\scripts\playtest-static-title.ps1 -Target $env:MK8R_TARGET -Rom $env:MK8R_ROM `
-  -SuyuExe build\suyu-nojit\bin\suyu.exe -RequireNoJit -TasReplay `
-  -TasFixtureDirectory local\tas-fixtures\static-profile -TasObserveAfterSeconds 120
-```
-
-Keep baseline and static timing fixtures in separate local directories. The driver copies the chosen fixture for a run and preserves the existing recording. See [library playtesting](docs/library-playtesting.md) for recording, manifests and limitations.
+The older keyed baseline, static export, re-export and one-click setup workflows were retired in October 2026. Suyu-hosted performance figures remain historical research results, **not** current build or distribution instructions. Current local development generates private modules from previously extracted user-supplied game inputs using the [native integration](integrations/belmante-runtime/README.md).
 
 ## Historical next work (September 2026)
 
@@ -202,12 +182,7 @@ Nintendo code, no keys, no firmware, and no generated C — that material is
 produced locally and gitignored. The screenshots above are of our own tooling;
 no frame of any game appears in this repository.
 
-You need your own legally dumped game and your own keys. This project will not
-help you obtain either, and will not answer requests to.
-
-The rules the project holds itself to, including why recompiler output is never
-published, are in [`LEGAL.md`](LEGAL.md). Working assumptions and their
-confidence levels are in [`docs/assumptions.md`](docs/assumptions.md).
+Native title-specific tests use lawfully obtained, locally supplied game inputs. No encrypted-game/key installer is provided. **Public game-linked binaries are prohibited.** See [LEGAL.md](LEGAL.md), [distribution audit](docs/distribution-audit.md) and [archived assumptions](docs/assumptions.md).
 
 ## Layout
 
@@ -218,81 +193,17 @@ tests/        decoder tests and differential validation
 third_party/  suyu submodule, pinned to a commit on our fork
 ```
 
-## Building the historical suyu host
+## Current native development
 
-The existing host setup scripts below install the toolchain,
-clone with submodules and build. Neither fetches a game, keys, or firmware. These instructions do not verify a clean build of the new native checkpoint.
-
-**Linux** — any distro with `apt`, `dnf`/`yum`, `pacman`, `zypper`, `apk`,
-`xbps` or `eopkg`. Package names are per-distro; unknown ones are reported and
-skipped rather than aborting the install:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/dougchansan/mk8-recomp/main/scripts/setup-linux.sh | bash
-```
-
-The script is bash, and Alpine and Void do not ship bash — install it first there
-(`apk add bash`, `xbps-install -y bash`). Every other distro tested has it.
-
-**Windows** — an Administrator PowerShell, because the MSVC C++ toolset needs
-one. Everything comes from `winget`; an existing Visual Studio with the C++
-workload is reused rather than duplicated:
-
-```powershell
-irm https://raw.githubusercontent.com/dougchansan/mk8-recomp/main/scripts/setup-windows.ps1 | iex
-```
-
-Both clone into `./mk8-recomp` (`MK8R_ROOT` overrides), or build in place if
-you run them from inside a clone you already have. To stop partway:
-`--deps-only` / `--no-build` on Linux, `$env:MK8R_SETUP='deps'` or `'nobuild'`
-on Windows. `./scripts/setup-linux.sh --dry-run` lists the packages it would
-install without touching the system.
-
-<details>
-<summary>Doing it by hand</summary>
-
-The setup scripts are a wrapper around three steps. Clone with submodules, then
-on Linux install Qt 6, GCC, nasm, glslang and the codec/Boost development
-packages and run the build script — it needs CMake 3.31 or newer, and tells you
-where to put one if yours is older:
-
-```bash
-git clone --recursive https://github.com/dougchansan/mk8-recomp && cd mk8-recomp && ./scripts/build-suyu.sh
-```
-
-On Windows, `bootstrap.ps1` downloads the pinned glslang and Qt into
-`local/tools`. It verifies a dump when `MK8R_ROM` points at one and skips that
-step with `-SkipGame`:
-
-```powershell
-git clone --recursive https://github.com/dougchansan/mk8-recomp; cd mk8-recomp; .\scripts\bootstrap.ps1 -SkipGame; .\scripts\build-suyu.ps1
-```
-
-Both build scripts take `--clean` / `-Clean` to start from scratch and
-`--configure` / `-Configure` to force a reconfigure. If you cloned without
-`--recursive`, run `git submodule update --init --recursive` first; the scripts
-stop with that instruction rather than failing inside cmake.
-
-</details>
-
-Building one generated module into a loadable image, once you have exported
-locally:
-
-```bash
-./scripts/build-recomp.sh main       # Windows: .\scripts\build-recomp.ps1 -Module main
-```
+Follow the [Belmante integration README](integrations/belmante-runtime/README.md) for local source preparation, private title-module generation and tests. Legacy suyu-hosted build/export instructions are retired; do not upload local outputs. For candidate authored-source archives, run `python3 scripts/dist_audit.py --artifact dist/source.zip` and obtain provenance review.
 
 ## Start here
 
-1. [`docs/suyu-recompiler-findings.md`](docs/suyu-recompiler-findings.md) — what
-   suyu v0.0.4's recompiler actually is, verified against source rather than
-   against its release notes. Read this before anything else.
-2. [`docs/bootstrap.md`](docs/bootstrap.md) — machine and toolchain verification
-   for this workspace.
-3. [`docs/architecture.md`](docs/architecture.md) — the pipeline as it exists and
-   where we intend to extend it.
-4. [`docs/aarch32.md`](docs/aarch32.md) — the one hard limit on what can be
-   targeted, and how to check a title before spending an export on it.
+1. [Current native integration](integrations/belmante-runtime/README.md)
+2. [Native runtime progress](docs/native-runtime-progress.md)
+3. [Private development vs. public-source policy](docs/native-builds.md)
+4. [Distribution audit](docs/distribution-audit.md)
+5. [Archived suyu findings](docs/suyu-recompiler-findings.md)
 
 ## The emulator
 

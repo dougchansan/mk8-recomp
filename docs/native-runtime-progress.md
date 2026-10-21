@@ -1642,21 +1642,18 @@ Decoded draw state establishes source-alpha blending, a destination-multiplicati
 
 The next graphics gate is live game-to-native Device/resource/draw/presentation integration, extending beyond the captured background replay. Native audio, input, saves and overall gameplay closure remain pending.
 
-## Release policy and local builds
+## Public release policy and local builds
 
-All five native-foundations prereleases, their 15 download assets and their tags
-have been removed at the project owner's request. No replacement native tag or
-download will be published until the complete native game is working. The gate
-includes static CPU execution, live native graphics, platform services, audio,
-controls, saves and restart through the supported gameplay path. The campaign
-has not met that gate.
+**Public game-linked binaries are prohibited.** Successful native gameplay
+does not authorize distribution of a game-linked executable, generated title
+module, shader cache or asset. Only audited authored source, documentation and
+game-free synthetic tools can be publicly considered after provenance review.
 
-Historical component source and verification records remain in the repository.
-Development binaries, private diagnostic bundles and closed verification receipts
-remain local for continued implementation and regression checks. See
-[development build notes](native-builds.md) for the policy and retained source.
-No game code, generated game archives, caches, NSOs or keys are published. Keep
-locally supplied title data separate from public source; see [LEGAL.md](../LEGAL.md).
+The five native-foundations prereleases, their 15 assets and tags were removed.
+Development builds and receipts remain local. Native CPU, graphics, platform,
+audio, controls, saves and restart remain an independent local completion goal.
+See [native-builds.md](native-builds.md), [LEGAL.md](../LEGAL.md) and
+[distribution audit](distribution-audit.md).
 
 ## Completion gates
 
@@ -1666,6 +1663,6 @@ locally supplied title data separate from public source; see [LEGAL.md](../LEGAL
 | Native graphics | Actual-game resource/state/shader/draw/submit/present coverage without Maxwell processing |
 | Native platform | Required service, memory, scheduling and synchronization behavior without the general emulator runtime |
 | Audio/input/storage | Audible output, usable controls and save/reload persistence through native adapters |
-| Standalone package | Reproducible supported build and boot/menu/race/restart sequence with all required native dependencies accounted for |
+| Local standalone build | Reproducible private boot/menu/race/restart sequence with all required native dependencies accounted for, not a public compiled game |
 
 Performance measurements remain useful diagnostics. Correctness and native dependency coverage determine completion. September 2026 suyu-hosted FPS figures in the [README](../README.md) are historical results, not measurements of a completed native port.

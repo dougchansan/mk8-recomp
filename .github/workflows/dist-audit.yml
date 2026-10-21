@@ -25,7 +25,7 @@ jobs:
       - name: Flag assets on a published release
         if: github.event_name == 'release'
         env:
-          EVENT_PATH: \${{ github.event_path }}
+          EVENT_PATH: ${{ github.event_path }}
         run: |
           python3 - <<'PY'
           import json, os, sys

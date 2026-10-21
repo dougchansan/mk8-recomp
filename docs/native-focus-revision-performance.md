@@ -1,5 +1,9 @@
 # Stable focus-policy reads
 
+A later [clock audit](native-frame-clock-audit.md) found that the experimental
+360 Hz override accelerates the race clock. The uncapped presentation figures
+below describe throughput; they do not establish normal-speed gameplay FPS.
+
 The focus gate is called about 98,000 times per presentation frame in the
 reviewed R304 Stadium CPU profile, aggregated across threads. Its sampled,
 weighted timing includes observer overhead and is not an additive frame budget.

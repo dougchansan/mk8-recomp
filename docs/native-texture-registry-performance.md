@@ -1,5 +1,9 @@
 # Faster copied-texture registry lookups
 
+A later [clock audit](native-frame-clock-audit.md) found that the experimental
+360 Hz override accelerates the race clock. The uncapped presentation figures
+below describe throughput; they do not establish normal-speed gameplay FPS.
+
 The reviewed 100cc Stadium diagnostic found a costly fallback in copied
 texture descriptor admission. It averaged 7,734 registry entries per fallback
 lookup. Fully contained diagnostic batches recorded 2.517 ms of fallback wall

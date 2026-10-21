@@ -1,4 +1,4 @@
-# Belmante runtime integration for MK8D
+# MK8 native runtime integration
 
 This experimental adaptation uses the MIT-licensed
 [SuperMarioWonderRecomp](https://github.com/BelmanteGu/SuperMarioWonderRecomp)
@@ -6,12 +6,15 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-The current recipe reconstructs R284 (212 generic files). It keeps optional
-profiling and codec-trace state out of ordinary indirect dispatch while retaining
-every focus check. Authored dispatch benchmarks and GPU/component controls pass;
-see [measurements and sweep limits](../../docs/native-dispatch-optimization.md).
-R284 also outlines the common focus gate and records minimum presentation
-intervals; see [main-thread measurements](../../docs/native-main-thread-focus.md).
+The current recipe reconstructs R324 (214 generic files). It includes retired
+hardware-counter collection and sampled asynchronous GPU phases. The reviewed
+normal-speed four-course comparison averages 59.50-59.96 FPS for the candidate;
+paths and desktop load vary. All 44 component suites, 3,253 native GPU fixture
+checks and sync/readback controls pass, with zero final changed-source analysis
+diagnostics. See [counter correctness and measurements](../../docs/native-counter-retirement-performance.md),
+[phase tooling](../../docs/native-gpu-phase-profile.md) and the
+[clock qualification](../../docs/native-frame-clock-audit.md). True125/250FPS
+render/simulation decoupling is a separate remaining goal.
 
 R212 now passes a clean 24,000-target flight from Stadium's first-place/15-point
 results through native screenshot readback to Water Park driving, underwater

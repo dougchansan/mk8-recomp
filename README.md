@@ -1,12 +1,12 @@
 # mk8-recomp
 
-The current goal is a standalone native Mario Kart 8 Deluxe application: statically recompiled CPU code connected to native graphics, platform services, audio, input and storage. The Belmante-based native runtime now completes a three-lap Mario Kart Stadium race and renders first place with 15 points. It also advances normally into Water Park and completes its first lap, including underwater driving. Interactive play now works with a keyboard, XInput pads and wired Switch-layout USB pads (PowerA, HORI). Full-speed performance, audible audio and broader gameplay verification remain in progress.
+The current goal is a standalone native Mario Kart 8 Deluxe application: statically recompiled CPU code connected to native graphics, platform services, audio, input and storage. The MK8 native runtime completes the four-course Mushroom Cup race sequence, including underwater and anti-gravity driving. The latest normal-speed comparison averages 59.50-59.96 FPS across those courses. Interactive play supports a keyboard, XInput pads and wired Switch-layout USB pads (PowerA, HORI). Full-game compatibility, subjective audio/control checks and true 125/250 FPS remain in progress.
 
 See [native runtime progress](docs/native-runtime-progress.md) for verified results and remaining work. This repository is `dougchansan/mk8-recomp`.
 
 **Release policy:** all five native-foundations prereleases, their 15 download assets and their tags have been removed. No new native release, tag or download will be published until the full native game is working: static CPU execution, live native graphics, platform services, audio, controls, saves and restart. Development builds and verification receipts remain local. See [development build notes](docs/native-builds.md).
 
-The [Belmante runtime integration](integrations/belmante-runtime/README.md) uses static CPU modules and native Vulkan. R201 completes all three laps, the FINISH sequence and the results table without a fatal error. The native game commits its post-race save; a fresh process reloads an exact copy and reaches mode selection. A measured 11,280-frame racing window averages about 25 FPS (26.5 ms median interval), with profiling disabled and sparse readbacks enabled. Forty component suites, 2,327 native GPU checks and separate 300-check sync/cutoff regressions pass. The offline cache held 7,365 stages at the time (see R276 below for current coverage). No native release, tag or download is available. See [native runtime progress](docs/native-runtime-progress.md) for the remaining verification gates.
+The [MK8 native runtime integration](integrations/belmante-runtime/README.md) uses static CPU modules and native Vulkan. R201 completes all three laps, the FINISH sequence and the results table without a fatal error. The native game commits its post-race save; a fresh process reloads an exact copy and reaches mode selection. A measured 11,280-frame racing window averages about 25 FPS (26.5 ms median interval), with profiling disabled and sparse readbacks enabled. Forty component suites, 2,327 native GPU checks and separate 300-check sync/cutoff regressions pass. The offline cache held 7,365 stages at the time (see R276 below for current coverage). No native release, tag or download is available. See [native runtime progress](docs/native-runtime-progress.md) for the remaining verification gates.
 
 R202 repeats the full race with the real native audio device processing at zero gain: first place, 15 points, over 129,000 completed audio packets and no reported mixer drops or underruns. Its observed racing window averages about 29 FPS; sustained full speed and subjective listening remain unverified.
 
@@ -74,6 +74,15 @@ first matching owner and complete identity validation. The isolated fixture
 improves by 47.2%; a separate racing diagnostic also measures lower lookup cost.
 Four-course presentation results remain mixed. See
 [texture registry measurements](docs/native-texture-registry-performance.md).
+
+R324 removes a measured GPU query-resolution stall by collecting actual completed
+queries after existing full retirement. Normal-speed four-course averages improve
+from 53.25-57.80 to 59.50-59.96 FPS in the observed controls; paths vary. See
+[counter measurements and correctness](docs/native-counter-retirement-performance.md),
+[asynchronous GPU phases](docs/native-gpu-phase-profile.md) and the
+[simulation-clock audit](docs/native-frame-clock-audit.md). Raising the display
+override accelerates the race clock, so older uncapped readings do not establish
+normal-speed high refresh. The source recipe contains 214 generic files.
 
 R282 moves optional diagnostics out of ordinary CPU dispatch. Authored alternating
 benchmarks show lower dispatch overhead, with all 44 suites and 3,212 GPU checks

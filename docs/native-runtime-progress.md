@@ -1,8 +1,26 @@
 # Native runtime progress
 
-Updated 2026-10-20. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
+Updated 2026-10-21. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
 
-## Belmante runtime adoption
+## MK8 native runtime
+
+R324 resolves eligible precise hardware sample queries after existing full
+retirement and keeps the GPU fallback when that guarantee is absent. The
+normal-speed 100cc comparison covers reviewed lap-1-through-lap-3 windows on
+Mario Kart Stadium, Water Park, Sweet Sweet Canyon and Thwomp Ruins. Candidate
+means are 59.50-59.96 FPS, against 53.25-57.80 in the observed baseline; paths
+vary. All four p99 intervals improve. The native source passes 44 component
+suites, 3,253 GPU fixture checks, 300 sync/cutoff and 259 readback checks, with
+zero analysis diagnostics on all 11 final changed translation units. The recipe
+contains 214 generic files. See [counter measurements](native-counter-retirement-performance.md)
+and [sampled GPU phases](native-gpu-phase-profile.md).
+
+The [clock audit](native-frame-clock-audit.md) confirms that the experimental
+360 Hz override accelerates the race clock. Earlier uncapped readings describe
+throughput and cannot establish normal-speed high refresh. The next goal is
+true 125 FPS, then 250 FPS, with rendering separated from simulation. Neither
+milestone is verified. Upstream credits remain in license and provenance
+records; new authored revisions and branches use MK8 naming.
 
 Following main-thread focus-gate phase profiling, R284 moves optional profiling
 and parking/notification frames out of its common path while retaining every

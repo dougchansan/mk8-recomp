@@ -1,5 +1,9 @@
 # Native performance work
 
+For current query-retirement results, see [R324 measurements](native-counter-retirement-performance.md).
+The [clock audit](native-frame-clock-audit.md) qualifies historical uncapped
+figures: raising display cadence can accelerate simulation.
+
 **R212 now advances into Water Park and completes its first lap.** A clean
 24,000-target flight finishes Stadium first/15 points, performs the real native
 480×270 RGBA8 readback, advances normally into the second Mushroom Cup race,

@@ -38,6 +38,14 @@ class AuditTests(unittest.TestCase):
                 f.writestr("generated/code.cpp", "game code")
             self.assertTrue(audit.archive_audit(path))
 
+    def test_nested_private_dist_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "dist"
+            nested = root / "generated"
+            nested.mkdir(parents=True)
+            (nested / "module.cpp").write_text("private")
+            self.assertTrue(audit.candidate_audit(root))
+
     def test_tar_and_unknown(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "source.tar.gz"

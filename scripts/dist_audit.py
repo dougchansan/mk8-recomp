@@ -118,20 +118,26 @@ def archive_audit(path):
     return errors
 
 
-def candidate_audit(path):
+def candidate_audit(path, base=None):
+    # Preserve directory components: "dist/generated/main.cpp" must be rejected
+    # even though "main.cpp" alone has a permitted source extension.
+    if base is None:
+        base = path if path.is_dir() else path.parent
     if path.is_symlink():
         return [str(path) + ": symlink not allowed"]
     if path.is_dir():
         errors = []
         for child in sorted(path.rglob("*")):
             if child.is_file() or child.is_symlink():
-                errors.extend(candidate_audit(child))
+                errors.extend(candidate_audit(child, base))
         return errors
     if not path.is_file():
         return [str(path) + ": candidate missing"]
+    relative = path.relative_to(base).as_posix()
     if path.suffix.lower() in {".zip", ".tar", ".tgz"} or path.name.endswith(".tar.gz"):
-        return archive_audit(path)
-    errors = [str(path) + ": " + x for x in check_name(path.name, source_only=True)]
+        errors = [str(path) + ": " + x for x in check_name(relative)]
+        return errors + archive_audit(path)
+    errors = [str(path) + ": " + x for x in check_name(relative, source_only=True)]
     if not errors:
         errors.extend(str(path) + ": " + x for x in check_data(path.read_bytes()))
     return errors

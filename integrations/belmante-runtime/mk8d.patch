@@ -195,7 +195,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,19 +332,65 @@
+@@ -208,19 +332,76 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -228,6 +228,17 @@
 +        target_link_libraries(native_device_fixture PRIVATE game_main game_sdk game_subsdk0 xinput xaudio2 ole32 psapi bcrypt mfplat mfuuid wmcodecdspuuid mfreadwrite)
 +        target_link_options(native_device_fixture PRIVATE /STACK:67108864 /HIGHENTROPYVA:NO /MAP)
 +        add_test(NAME native_device_cpu COMMAND native_device_fixture)
++        add_test(NAME native_call_phase_cpu COMMAND native_device_fixture --call-phase)
++        set_tests_properties(native_call_phase_cpu PROPERTIES ENVIRONMENT "NX_LOG=${CMAKE_BINARY_DIR}/call-phase-test.log")
++        add_test(NAME native_call_phase_callbacks_cpu COMMAND native_device_fixture --call-phase-callbacks)
++        set_tests_properties(native_call_phase_callbacks_cpu PROPERTIES ENVIRONMENT "NX_LOG=${CMAKE_BINARY_DIR}/call-phase-callback-test.log")
++        add_test(NAME native_frame_context_cpu COMMAND native_device_fixture --frame-context)
++        set_tests_properties(native_frame_context_cpu PROPERTIES ENVIRONMENT
++            "NX_LOG=${CMAKE_BINARY_DIR}/frame-context-test.log;NX_FRAME_CONTEXT=1;NX_FRAME_CONTEXT_START=0;NX_FRAME_CONTEXT_STOP=2;NX_FRAME_CONTEXT_EVERY=1;NX_FRAME_CONTEXT_LIMIT=6")
++        add_test(NAME native_frame_mutex_cpu COMMAND native_device_fixture --frame-context-mutex)
++        set_tests_properties(native_frame_mutex_cpu PROPERTIES ENVIRONMENT
++            "NX_LOG=${CMAKE_BINARY_DIR}/frame-context-mutex-test.log;NX_FRAME_CONTEXT=1;NX_FRAME_CONTEXT_START=0;NX_FRAME_CONTEXT_STOP=0;NX_FRAME_CONTEXT_EVERY=1;NX_FRAME_CONTEXT_LIMIT=8"
++            TIMEOUT 10)
 +        add_test(NAME native_pipeline_recipes COMMAND native_device_fixture --pipeline-recipes)
 +        add_test(NAME native_overlay COMMAND native_device_fixture --overlay)
 +        add_test(NAME native_thread_host_default COMMAND native_device_fixture --thread-policy)
@@ -1321,16 +1332,17 @@
  // A small Horizon kernel: handles, threads, synchronization (mutex/condvar/address arbitration), events,
  // memory and GetInfo. Services (IPC) live in ipc.cpp.
  #include <algorithm>
-@@ -18,6 +21,8 @@
+@@ -18,6 +21,9 @@
  
  #include "kernel_state.h"
  #include "platform.h"
 +#include "native_cpu_cycles.h"
 +#include "native_frame_attribution.h"
++#include "native_frame_context.h"
  
  namespace nx {
  
-@@ -43,6 +48,17 @@
+@@ -43,6 +49,17 @@
  
  using namespace kstate;
  
@@ -1348,7 +1360,7 @@
  uint32_t handle_add(std::shared_ptr<KObject> o) {
      std::lock_guard lk(g_k);
      uint32_t h = g_next_handle++;
-@@ -53,6 +69,7 @@
+@@ -53,6 +70,7 @@
  std::shared_ptr<KObject> handle_get(uint32_t h) {
      std::lock_guard lk(g_k);
      if (h == kPseudoCurrentThread && t_self) return t_self->self.lock();
@@ -1356,7 +1368,7 @@
      auto it = g_handles.find(h);
      return it == g_handles.end() ? nullptr : it->second;
  }
-@@ -67,6 +84,7 @@
+@@ -67,6 +85,7 @@
  // every waiting thread of the process on each signal (the engine's job system broadcasts all the time).
  void notify_all() {
      std::lock_guard lk(g_k);
@@ -1364,7 +1376,7 @@
      for (KThread* t : g_sync_waiters) t->cv.notify_one();
  }
  
-@@ -75,6 +93,7 @@
+@@ -75,6 +94,7 @@
  uint64_t heap_size() { return g_heap_size; }
  
  CPU& current_cpu() { return t_self->ctx; }
@@ -1372,7 +1384,7 @@
  
  uint64_t system_tick() { return plat::monotonic_ns() * 192 / 10000; }  // 19.2 MHz
  
-@@ -127,6 +146,7 @@
+@@ -127,6 +147,7 @@
  
  // Wake a blocked thread (with g_k held).
  static void wake(KThread* t) {
@@ -1380,7 +1392,21 @@
      t->wake = true;
      t->wait_result = 0;
      t->cv.notify_one();
-@@ -337,7 +357,8 @@
+@@ -163,10 +184,12 @@
+ 
+ // ---- svc implementations --------------------------------------------------------------------------------------
+ 
+-static uint32_t svc_arbitrate_lock(uint32_t owner, uint64_t addr, uint32_t tag) {
++static uint32_t svc_arbitrate_lock(uint32_t owner, uint64_t addr, uint32_t tag, bool* blocking_path = nullptr) {
++    if (blocking_path) *blocking_path = false;
+     std::unique_lock lk(g_k);
+     KThread* self = t_self;
+     if (load32(addr) != (owner | kHandleWaitMask)) return 0;
++    if (blocking_path) *blocking_path = true;
+     self->wake = false;
+     self->wait_mutex = addr;
+     self->wait_tag = tag;
+@@ -337,7 +360,8 @@
      };
      auto until = std::chrono::steady_clock::now() + std::chrono::nanoseconds(timeout < 0 ? 0 : timeout);
      KThread* self = t_self;
@@ -1390,7 +1416,7 @@
      g_sync_waiters.push_back(self);
      struct Leave {
          KThread* t;
-@@ -350,11 +371,12 @@
+@@ -350,11 +374,12 @@
              objs[i]->consume();
              return 0;
          }
@@ -1404,7 +1430,7 @@
          if (timeout < 0)
              self->cv.wait(lk);
          else if (self->cv.wait_until(lk, until) == std::cv_status::timeout && ready() < 0)
-@@ -364,13 +386,21 @@
+@@ -364,13 +389,22 @@
  
  // ---- threads --------------------------------------------------------------------------------------------------
  
@@ -1427,19 +1453,21 @@
 -    std::snprintf(name, sizeof name, "g%llx", (unsigned long long)t->id);
 -    plat::set_thread_name(name);
 +    configure_current_host_thread(*t);
++    if (frame_context::enabled()) frame_context::bind(t->ctx);
      call(t->ctx, t->entry);
      // Returning from the entry point is like svcExitThread.
      std::lock_guard lk(g_k);
-@@ -407,7 +437,7 @@
+@@ -407,7 +441,8 @@
      auto t = new_thread(0, 0, stack + stack_size, 44, 0);
      t->started = true;
      t_self = t.get();
 -    t->host_tid = plat::current_thread_id();
 +    configure_current_host_thread(*t);
++    if (frame_context::enabled()) frame_context::bind(t->ctx);
      return t->handle;
  }
  
-@@ -516,13 +546,18 @@
+@@ -516,13 +551,18 @@
              return;
          }
          case 0x0C: {  // GetThreadPriority(handle) -> prio
@@ -1459,7 +1487,7 @@
              break;
          }
          case 0x0E: {  // GetThreadCoreMask(handle) -> core, mask
-@@ -587,7 +622,8 @@
+@@ -587,19 +627,30 @@
          case 0x19: {  // CancelSynchronization(thread handle)
              auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[0])));
              std::lock_guard lk(g_k);
@@ -1469,7 +1497,34 @@
              notify_all();
              break;
          }
-@@ -616,9 +652,13 @@
+-        case 0x1A:
+-            rc = svc_arbitrate_lock(uint32_t(c.x[0]), c.x[1], uint32_t(c.x[2]));
+-            break;
++        case 0x1A: {
++            const auto context = frame_context::enabled() && t_self && t_self->entry == 0
++                ? frame_context::wait_begin(c, c.x[1], 0, 0x1a, uint32_t(c.x[0]), uint32_t(c.x[2]))
++                : frame_context::WaitToken{};
++            bool blocking_path = false;
++            rc = svc_arbitrate_lock(uint32_t(c.x[0]), c.x[1], uint32_t(c.x[2]), context.id ? &blocking_path : nullptr);
++            if (context.id) frame_context::wait_end(c, context, rc, int(blocking_path));
++            break;
++        }
+         case 0x1B:
+             rc = svc_arbitrate_unlock(c.x[0]);
+             break;
+-        case 0x1C:
++        case 0x1C: {
++            const auto context = frame_context::enabled() && t_self && t_self->entry == 0
++                ? frame_context::wait_begin(c, c.x[0], c.x[1], 0x1c, 0, uint32_t(c.x[2])) : frame_context::WaitToken{};
+             rc = svc_wait_process_wide_key(c.x[0], c.x[1], uint32_t(c.x[2]), int64_t(c.x[3]));
+-            break;
++            if (context.id) frame_context::wait_end(c, context, rc);
++            break;
++        }
+         case 0x1D:
+             rc = svc_signal_process_wide_key(c.x[0], int32_t(c.x[1]));
+             break;
+@@ -616,9 +667,13 @@
          case 0x22:  // SendSyncRequestWithUserBuffer(buf, size, handle)
              rc = ipc_request(c, uint32_t(c.x[2]), c.x[0], c.x[1]);
              break;
@@ -1486,7 +1541,7 @@
          case 0x25: {  // GetThreadId(handle) -> id
              auto t = std::dynamic_pointer_cast<KThread>(handle_get(uint32_t(c.x[1])));
              c.x[1] = t ? t->id : 0;
-@@ -678,7 +718,7 @@
+@@ -678,7 +733,7 @@
              rc = unmap_transfer_memory(uint32_t(c.x[0]), c.x[1], c.x[2]);
              break;
          default:
@@ -1495,7 +1550,7 @@
                  (unsigned long long)c.x[0], (unsigned long long)c.x[1], (unsigned long long)c.x[2]);
              rc = 0;
      }
-@@ -691,14 +731,18 @@
+@@ -691,14 +746,18 @@
  namespace {
  thread_local int t_svc_role = 0;  // 1 game main, 2 the thread that presents
  std::mutex g_svc_lock;
@@ -1515,7 +1570,7 @@
  
  void svc_profile_report(uint64_t frames, int role) {
      if (!svc_profile_on()) return;
-@@ -706,28 +750,127 @@
+@@ -706,28 +765,127 @@
      std::vector<std::pair<uint64_t, std::tuple<int, uint32_t, uint64_t>>> v;
      uint64_t total = 0;
      for (auto& [k, val] : g_svc_prof)
@@ -1674,7 +1729,172 @@
  struct KEvent : KObject {
 --- a/runtime/src/kernel_watch.cpp
 +++ b/runtime/src/kernel_watch.cpp
-@@ -153,6 +153,10 @@
+@@ -2,6 +2,7 @@
+ // profiler request (a profile file), the stall sampler (NX_THREAD_DUMP_AT, stalls over 100 ms) and guest backtraces.
+ // Split from kernel.cpp (700-line rule); the state it reads is kernel_state.h.
+ #include <algorithm>
++#include <charconv>
+ #include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
+@@ -13,6 +14,9 @@
+ 
+ #include "kernel_state.h"
+ #include "platform.h"
++#include "native_frame_context.h"
++#include "native_measurement.h"
++#include "nvn/native_guest_span.h"
+ 
+ namespace nx {
+ 
+@@ -32,6 +36,146 @@
+         fp = ld<uint64_t>(fp);
+     }
+ }
++
++namespace frame_context {
++namespace {
++struct Config {
++    bool on = false;
++    uint64_t first = 3600, last = 5400, every = 127, limit = 1024;
++};
++const Config& config() {
++    static const Config value = [] {
++        Config c;
++        const char* flag = std::getenv("NX_FRAME_CONTEXT");
++        if (!flag || std::strcmp(flag, "1")) return c;
++        auto parse = [](const char* name, uint64_t& number) {
++            const char* text = std::getenv(name);
++            if (!text) return true;
++            const auto result = std::from_chars(text, text + std::strlen(text), number);
++            return result.ec == std::errc{} && result.ptr == text + std::strlen(text);
++        };
++        if (!parse("NX_FRAME_CONTEXT_START", c.first) || !parse("NX_FRAME_CONTEXT_STOP", c.last) ||
++            !parse("NX_FRAME_CONTEXT_EVERY", c.every) || !parse("NX_FRAME_CONTEXT_LIMIT", c.limit) ||
++            c.last < c.first || c.last - c.first > 100000 || !c.every || c.limit < 2 || c.limit > 8192) {
++            log("frame context: disabled invalid configuration");
++            return c;
++        }
++        c.on = true;
++        log("frame context: enabled first %llu last %llu every %llu limit %llu stack-records 16 wait-sites 8; v2 svc/owner/tag/handle/blocking-path; diagnostic overhead; completed-frame IDs",
++            (unsigned long long)c.first, (unsigned long long)c.last,
++            (unsigned long long)c.every, (unsigned long long)c.limit);
++        return c;
++    }();
++    return value;
++}
++std::atomic<uint64_t> record_count{0};
++std::atomic<bool> exhausted{false};
++struct Owner {
++    CPU* cpu = nullptr;
++    uint64_t initial_sp{}, present_frame = UINT64_MAX, wait_frame = UINT64_MAX;
++    struct Site { uint64_t mutex{}, key{}, lr{}; uint32_t svc{}; };
++    std::array<Site, 8> sites{};
++    size_t sites_used{};
++    bool sites_capped = false;
++    WaitToken active{};
++};
++thread_local Owner owner;
++bool sampled(uint64_t frame) {
++    const auto& c = config();
++    return c.on && !exhausted.load(std::memory_order_relaxed) &&
++        frame >= c.first && frame <= c.last && (frame - c.first) % c.every == 0;
++}
++uint64_t reserve(uint64_t count) {
++    auto previous = record_count.load(std::memory_order_relaxed);
++    for (;;) {
++        if (count > config().limit - previous) {
++            if (!exhausted.exchange(true, std::memory_order_relaxed))
++                log("frame context: truncated limit %llu records %llu", (unsigned long long)config().limit,
++                    (unsigned long long)previous);
++            return 0;
++        }
++        if (record_count.compare_exchange_weak(previous, previous + count, std::memory_order_relaxed))
++            return previous + 1;
++    }
++}
++void emit(CPU& cpu, const char* kind, uint64_t id, uint64_t pair, uint64_t frame,
++          uint64_t started, uint64_t mutex, uint64_t key, uint32_t result,
++          uint32_t svc = 0, uint32_t lock_owner = 0, uint32_t tag = 0, int blocking_path = -1) {
++    const auto* thread = self_thread();
++    const bool owned = thread && &thread->ctx == &cpu && owner.cpu == &cpu;
++    const auto top = owned ? owner.initial_sp : 0;
++    const auto stack = capture(cpu.x[30], cpu.x[29], cpu.x[31], top,
++        [](uint64_t address, std::array<uint64_t, 2>& record) {
++            if (!nvn::native_guest_span(address, sizeof(record), 1)) return false;
++            std::memcpy(record.data(), reinterpret_cast<const void*>(address), sizeof(record));
++            return true;
++        });
++    static constexpr const char* stops[] = {"complete", "zero-lr", "unbound-stack", "alignment",
++        "outside-stack", "unreadable", "non-increasing", "limit"};
++    char pcs[17 * 18 + 1]{};
++    size_t used = 0;
++    for (size_t i = 0; i < stack.count; ++i)
++        used += size_t(std::snprintf(pcs + used, sizeof(pcs) - used, "%s%llx", i ? "," : "",
++                                   (unsigned long long)stack.pcs[i]));
++    const auto now = plat::monotonic_ns();
++    log("frame context: %s id %llu pair %llu frame %llu epoch %llu ns %llu elapsed %llu guest %llx tid %lld handle %x entry %llx mutex %llx key %llx svc %x owner %x tag %x blocking %d result %x sp %llx fp %llx top %llx stop %s pcs %s",
++        kind, (unsigned long long)id, (unsigned long long)pair, (unsigned long long)frame,
++        (unsigned long long)measurement::present_epoch.load(std::memory_order_relaxed),
++        (unsigned long long)now, (unsigned long long)(started && now >= started ? now - started : 0),
++        (unsigned long long)(thread ? thread->id : 0), (long long)plat::current_thread_id(),
++        thread ? thread->handle : 0, (unsigned long long)(thread ? thread->entry : 0), (unsigned long long)mutex,
++        (unsigned long long)key, svc, lock_owner, tag, blocking_path, result,
++        (unsigned long long)cpu.x[31], (unsigned long long)cpu.x[29],
++        (unsigned long long)top, stops[size_t(stack.stop)], pcs);
++}
++}  // namespace
++
++bool enabled() { return config().on; }
++void bind(CPU& cpu) {
++    owner = Owner{};
++    owner.cpu = &cpu;
++    owner.initial_sp = cpu.x[31];
++}
++void present(CPU& cpu) {
++    const auto frame = g_frame.load(std::memory_order_relaxed);
++    if (!sampled(frame) || owner.present_frame == frame) return;
++    owner.present_frame = frame;
++    if (const auto id = reserve(1)) emit(cpu, "present", id, 0, frame, 0, 0, 0, 0);
++}
++WaitToken wait_begin(CPU& cpu, uint64_t mutex, uint64_t key, uint32_t svc, uint32_t lock_owner, uint32_t tag) {
++    const auto frame = g_frame.load(std::memory_order_relaxed);
++    if (!sampled(frame) || owner.active.id) return {};
++    if (owner.wait_frame != frame) {
++        owner.wait_frame = frame;
++        owner.sites_used = 0;
++        owner.sites_capped = false;
++    }
++    for (size_t i = 0; i < owner.sites_used; ++i)
++        if (owner.sites[i].mutex == mutex && owner.sites[i].key == key &&
++            owner.sites[i].lr == cpu.x[30] && owner.sites[i].svc == svc) return {};
++    if (owner.sites_used == owner.sites.size()) {
++        if (!owner.sites_capped) {
++            log("frame context: wait-sites-capped frame %llu tid %lld limit 8",
++                (unsigned long long)frame, (long long)plat::current_thread_id());
++            owner.sites_capped = true;
++        }
++        return {};
++    }
++    owner.sites[owner.sites_used++] = {mutex, key, cpu.x[30], svc};
++    const auto id = reserve(2);  // Completion is reserved too, even if retirement crosses the window or cap.
++    if (!id) return {};
++    owner.active = {id, frame, plat::monotonic_ns(), mutex, key, svc, lock_owner, tag};
++    emit(cpu, svc == 0x1a ? "mutex-begin" : "wait-begin", id, id, frame, 0, mutex, key, 0,
++         svc, lock_owner, tag);
++    return owner.active;
++}
++void wait_end(CPU& cpu, const WaitToken& token, uint32_t result, int blocking_path) {
++    if (!token.id || owner.cpu != &cpu || !(token == owner.active)) return;
++    emit(cpu, token.svc == 0x1a ? "mutex-end" : "wait-end", token.id + 1, token.id, token.frame,
++         token.started, token.mutex, token.key, result, token.svc, token.owner, token.tag, blocking_path);
++    owner.active = {};
++}
++}  // namespace frame_context
+ 
+ 
+ // ---- hang report: when frames stop for a while, log what every guest thread is doing --------------------------
+@@ -153,6 +297,10 @@
  }
  
  static void stall_sampler(void*) {
@@ -1687,7 +1907,7 @@
      uint64_t last_frame = 0, since = plat::monotonic_ns();
 --- a/runtime/src/loader.cpp
 +++ b/runtime/src/loader.cpp
-@@ -1,6 +1,8 @@
+@@ -1,8 +1,11 @@
 +#include "native_perf.h"
  // Module loader and dynamic linker (what rtld does on Horizon), indirect-call dispatch and HLE thunks.
  #include <algorithm>
@@ -1695,17 +1915,21 @@
 +#include <cstring>
  #include <cstdio>
  #include <fstream>
++#include <exception>
  #include <mutex>
-@@ -11,6 +13,8 @@
+ #include <string>
+ #include <unordered_map>
+@@ -11,6 +14,9 @@
  #include <nx/runtime.h>
  
  #include "platform.h"
 +#include "mk8_focus_policy.h"
 +#include "native_cpu_cycles.h"
++#include "native_call_phase.h"
  
  namespace nx {
  
-@@ -39,11 +43,53 @@
+@@ -39,11 +45,53 @@
  
  thread_local const char* t_missing_name = nullptr;
  
@@ -1759,7 +1983,7 @@
      char buf[2048];
      va_list ap;
      va_start(ap, fmt);
-@@ -62,11 +108,20 @@
+@@ -62,11 +110,20 @@
          std::remove((file + ".prev").c_str());
          std::rename(file.c_str(), (file + ".prev").c_str());
          g_log_file = std::fopen(file.c_str(), "w");
@@ -1783,7 +2007,7 @@
      }
  }
  
-@@ -91,8 +146,8 @@
+@@ -91,8 +148,8 @@
  
  static void missing_stub(CPU& c) {
      // Name comes from the thunk that dispatched here.
@@ -1794,7 +2018,7 @@
  }
  
  uint64_t hle_address_or(const char* name, HleFn fallback) {
-@@ -160,7 +215,32 @@
+@@ -160,7 +217,32 @@
  FastModule g_fast[4];
  size_t g_fast_count = 0;
  
@@ -1828,7 +2052,7 @@
      for (size_t k = 0; k < g_fast_count; k++) {
          const FastModule& m = g_fast[k];
          uint64_t off = t - m.base;
-@@ -174,7 +254,9 @@
+@@ -174,7 +256,9 @@
                  backtrace(c);
                  fatal("call into the middle of a function: %s (lr %s)", describe(t).c_str(), describe(c.x[30]).c_str());
              }
@@ -1839,7 +2063,7 @@
              return;
          }
      }
-@@ -189,6 +271,20 @@
+@@ -189,6 +273,32 @@
          return;
      }
      fatal("call to %llx (%s), lr %s", (unsigned long long)t, describe(t).c_str(), describe(c.x[30]).c_str());
@@ -1850,17 +2074,29 @@
 +}
 +}  // namespace
 +
++#include "native_call_phase_impl.h"
++
++namespace {
++[[gnu::noinline]] void observed_call(CPU& c, uint64_t target, unsigned mode) {
++    call_phase::CallbackScope callback(c, target);
++    call_phase::Scope phase(c, target);
++    call_phase::hle(target);
++    if (mode & 1) profiled_call(c, target);
++    else dispatch(c, target);
++}
++}
++
 +void call(CPU& c, uint64_t t) {
-+    static const bool profile = [] {
++    static const unsigned mode = [] {
 +        const auto* value = std::getenv("NX_CPU_CALL_PROFILE");
-+        return value && value[0] == '1';
++        return (value && value[0] == '1' ? 1u : 0u) | (call_phase::config().on ? 2u : 0u);
 +    }();
-+    if (profile) profiled_call(c, t);
++    if (mode) observed_call(c, t, mode);
 +    else dispatch(c, t);
  }
  
  void trace_sp(CPU& c, uint64_t pc) {
-@@ -270,8 +366,8 @@
+@@ -270,8 +380,8 @@
              }
              if (!target && !s.imported) target = lm.base + s.value;
              if (!target) {
@@ -2352,6 +2588,319 @@
 +}
 +}
 --- /dev/null
++++ b/runtime/src/native_call_phase.h
+@@ -0,0 +1,44 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <array>
++#include <charconv>
++#include <cstdint>
++#include <string_view>
++
++namespace nx::call_phase {
++struct Site { uint64_t caller{}, target{}; };
++struct Sites { std::array<Site, 8> values{}; size_t count{}; };
++inline bool number(std::string_view text, uint64_t& value, int base = 10) {
++    if (base == 16 && text.starts_with("0x")) text.remove_prefix(2);
++    if (text.empty()) return false;
++    const auto result = std::from_chars(text.data(), text.data() + text.size(), value, base);
++    return result.ec == std::errc{} && result.ptr == text.data() + text.size();
++}
++// Exact private caller:target pairs, root first. Never infer a title ABI or
++// symbol offset in generic code. An invalid list disables the entire observer.
++inline bool parse(std::string_view text, Sites& out) {
++    Sites result;
++    while (!text.empty()) {
++        if (result.count == result.values.size()) return false;
++        const auto comma = text.find(',');
++        const auto item = text.substr(0, comma);
++        const auto colon = item.find(':');
++        Site site;
++        if (colon == item.npos || !number(item.substr(0, colon), site.caller, 16) ||
++            !number(item.substr(colon + 1), site.target, 16) || !site.caller || !site.target ||
++            (site.caller & 3) || (site.target & 3)) return false;
++        for (size_t i = 0; i < result.count; ++i)
++            if (result.values[i].caller == site.caller) return false;
++        result.values[result.count++] = site;
++        if (comma == text.npos) break;
++        text.remove_prefix(comma + 1);
++        if (text.empty()) return false;
++    }
++    if (!result.count) return false;
++    out = result;
++    return true;
++}
++inline bool sampled(uint64_t frame, uint64_t first, uint64_t last, uint64_t every) {
++    return every && frame >= first && frame <= last && (frame - first) % every == 0;
++}
++}  // namespace nx::call_phase
+--- /dev/null
++++ b/runtime/src/native_call_phase_impl.h
+@@ -0,0 +1,263 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Included only by loader.cpp after its dispatch tables. Passive observer;
++// never owns CPU state, target lifetime, scheduling, or guest synchronization.
++namespace call_phase {
++namespace {
++struct Config {
++    Sites sites;
++    uint64_t first = 9000, last = 12600, every = 127, limit = 32;
++    uint64_t callback_caller{};
++    bool on = false;
++};
++const Config& config() {
++    static const Config value = [] {
++        Config c;
++        const auto* flag = std::getenv("NX_CPU_PHASE_PROFILE");
++        if (!flag || std::strcmp(flag, "1")) return c;
++        const auto* sites = std::getenv("NX_CPU_PHASE_SITES");
++        auto option = [](const char* name, uint64_t& value) {
++            const auto* text = std::getenv(name);
++            return !text || number(text, value);
++        };
++        const auto* callback = std::getenv("NX_CPU_PHASE_CALLBACK_CALLER");
++        if ((callback && (!number(callback, c.callback_caller, 16) || !c.callback_caller || (c.callback_caller & 3))) ||
++            !sites || !parse(sites, c.sites) || !option("NX_CPU_PHASE_START", c.first) ||
++            !option("NX_CPU_PHASE_STOP", c.last) || !option("NX_CPU_PHASE_EVERY", c.every) ||
++            !option("NX_CPU_PHASE_LIMIT", c.limit) || c.last < c.first ||
++            c.last - c.first > 100000 || !c.every || !c.limit || c.limit > 128) {
++            log("call phase: disabled invalid configuration");
++            return c;
++        }
++        c.on = true;
++        log("call phase: enabled sites=%zu first=%llu last=%llu every=%llu limit=%llu; inclusive wall/cycles/HLE, observer overhead, no scheduling changes",
++            c.sites.count, (unsigned long long)c.first, (unsigned long long)c.last,
++            (unsigned long long)c.every, (unsigned long long)c.limit);
++        return c;
++    }();
++    return value;
++}
++struct HleCount { uint64_t target{}, calls{}; };
++struct Result {
++    uint64_t object{}, vptr{}, calls{}, wall{}, cycles{}, cpu_samples{}, hle_calls{}, hle_overflow{};
++    bool readable = false, active = false, threw = false;
++    std::array<HleCount, 128> hle{};
++    size_t used{};
++};
++struct CallbackResult {
++    uint64_t target{}, object{}, vptr{}, calls{}, wall{}, exclusive_wall{}, cycles{}, exclusive_cycles{}, cpu_samples{}, exclusive_cpu_samples{};
++    uint64_t hle_calls{}, draw_calls{}, command_calls{}, input_calls{}, tick_calls{}, submit_calls{}, compute_calls{};
++    unsigned max_depth{};
++    bool readable{}, threw{};
++};
++struct Session {
++    uint64_t id{}, frame{};
++    std::array<Result, 8> results{};
++    std::array<CallbackResult, 128> callbacks{};
++    size_t callbacks_used{};
++    uint64_t callbacks_dropped{};
++};
++thread_local Session session;
++thread_local uint64_t last_frame = UINT64_MAX;
++std::atomic<uint64_t> roots{0};
++uint64_t reserve() {
++    auto previous = roots.load(std::memory_order_relaxed);
++    while (previous < config().limit) {
++        if (roots.compare_exchange_weak(previous, previous + 1, std::memory_order_relaxed)) return previous + 1;
++    }
++    return 0;
++}
++void object_snapshot(Result& result, uint64_t object) {
++    result.object = object;
++    if (!object || (object & 7) || object > UINT64_MAX - 8) return;
++    const auto region = vm_query(object);
++    if (!(region.perm & 1) || object < region.addr || region.size < 8 ||
++        object - region.addr > region.size - 8) return;
++    std::memcpy(&result.vptr, reinterpret_cast<const void*>(object), 8);
++    result.readable = true;
++}
++class CallbackScope {
++    inline static thread_local CallbackScope* current{};
++    CallbackScope* parent{};
++    size_t index = 128;
++    uint64_t started{}, cycles{}, children_wall{}, children_cycles{};
++    unsigned depth{};
++    int exceptions{};
++    bool cpu_valid{}, children_cpu_valid = true;
++public:
++    CallbackScope(CPU& cpu, uint64_t target) {
++        if (!session.id || !config().callback_caller || cpu.x[30] != config().callback_caller) return;
++        Result object;
++        object_snapshot(object, cpu.x[0]);
++        size_t i = 0;
++        while (i < session.callbacks_used) {
++            const auto& row = session.callbacks[i];
++            if (row.target == target && row.object == object.object && row.vptr == object.vptr && row.readable == object.readable) break;
++            ++i;
++        }
++        if (i == session.callbacks_used) {
++            if (i == session.callbacks.size()) { ++session.callbacks_dropped; return; }
++            auto& row = session.callbacks[session.callbacks_used++];
++            row.target = target; row.object = object.object; row.vptr = object.vptr; row.readable = object.readable;
++        }
++        index = i;
++        parent = current;
++        depth = parent ? parent->depth + 1 : 0;
++        current = this;
++        ++session.callbacks[index].calls;
++        session.callbacks[index].max_depth = std::max(depth, session.callbacks[index].max_depth);
++        exceptions = std::uncaught_exceptions();
++        cpu_valid = read_thread_cycles(cycles);
++        started = perf::now();
++    }
++    CallbackScope(const CallbackScope&) = delete;
++    CallbackScope& operator=(const CallbackScope&) = delete;
++    ~CallbackScope() {
++        if (index == 128) return;
++        const auto wall = perf::now() - started;
++        uint64_t after = 0;
++        const bool valid = read_thread_cycles(after) && cpu_valid && after >= cycles;
++        auto& row = session.callbacks[index];
++        row.wall += wall;
++        row.exclusive_wall += wall > children_wall ? wall - children_wall : 0;
++        if (valid) {
++            ++row.cpu_samples;
++            row.cycles += after - cycles;
++            if (children_cpu_valid && after - cycles >= children_cycles) {
++                ++row.exclusive_cpu_samples;
++                row.exclusive_cycles += after - cycles - children_cycles;
++            }
++        }
++        row.threw |= std::uncaught_exceptions() > exceptions;
++        current = parent;
++        if (parent) {
++            parent->children_wall += wall;
++            if (valid) parent->children_cycles += after - cycles;
++            else parent->children_cpu_valid = false;
++        }
++    }
++    static void hle(const char* name) {
++        for (auto* scope = current; scope; scope = scope->parent) {
++            auto& row = session.callbacks[scope->index];
++            ++row.hle_calls;
++            const std::string_view value(name);
++            row.command_calls += value.starts_with("nvnCommandBuffer"); // Includes draw/compute calls.
++            row.draw_calls += value.starts_with("nvnCommandBufferDraw");
++            row.compute_calls += value == "nvnCommandBufferDispatchCompute";
++            row.input_calls += value.starts_with("_ZN2nn3hid");
++            row.tick_calls += value == "_ZN2nn2os13GetSystemTickEv";
++            row.submit_calls += value == "nvnQueueSubmitCommands";
++        }
++    }
++};
++void hle(uint64_t target) {
++    if (!session.id) return;
++    const auto off = target - kThunkBase;
++    if (off >= kThunkSize || off / 16 >= g_thunks.size()) return;
++    CallbackScope::hle(g_thunks[off / 16].name.c_str());
++    for (size_t i = 0; i < config().sites.count; ++i) {
++        auto& r = session.results[i];
++        if (!r.active) continue;
++        ++r.hle_calls;
++        size_t n = 0;
++        while (n < r.used && r.hle[n].target != target) ++n;
++        if (n == r.used) {
++            if (r.used == r.hle.size()) { ++r.hle_overflow; continue; }
++            r.hle[r.used++] = {target, 0};
++        }
++        ++r.hle[n].calls;
++    }
++}
++void emit() {
++    const auto& c = config();
++    for (size_t i = 0; i < c.sites.count; ++i) {
++        const auto& r = session.results[i];
++        log("call phase: v=1 root=%llu tid=%llu frame=%llu end_frame=%llu site=%zu caller=%llx target=%llx object=%llx vptr=%llx readable=%u calls=%llu wall_ns=%llu cpu_samples=%llu cycles=%llu hle_calls=%llu hle_kinds=%zu hle_overflow=%llu threw=%u",
++            (unsigned long long)session.id, (unsigned long long)profile_thread_id(),
++            (unsigned long long)session.frame, (unsigned long long)g_frame.load(std::memory_order_relaxed), i,
++            (unsigned long long)c.sites.values[i].caller, (unsigned long long)c.sites.values[i].target,
++            (unsigned long long)r.object, (unsigned long long)r.vptr, r.readable ? 1u : 0u,
++            (unsigned long long)r.calls, (unsigned long long)r.wall, (unsigned long long)r.cpu_samples,
++            (unsigned long long)r.cycles, (unsigned long long)r.hle_calls, r.used,
++            (unsigned long long)r.hle_overflow, r.threw ? 1u : 0u);
++        for (size_t n = 0; n < r.used; ++n) {
++            const auto& count = r.hle[n];
++            const auto& thunk = g_thunks[(count.target - kThunkBase) / 16];
++            log("call phase hle: root=%llu site=%zu target=%llx calls=%llu name=%s",
++                (unsigned long long)session.id, i, (unsigned long long)count.target,
++                (unsigned long long)count.calls, thunk.name.c_str());
++        }
++    }
++    if (c.callback_caller) {
++        log("call phase callback summary: root=%llu entries=%zu dropped_calls=%llu capacity=128; per-root address/vptr observations, not resource incarnation IDs; HLE inclusive; command counts include draws/compute",
++            (unsigned long long)session.id, session.callbacks_used, (unsigned long long)session.callbacks_dropped);
++        for (size_t i = 0; i < session.callbacks_used; ++i) {
++            const auto& r = session.callbacks[i];
++            log("call phase callback: v=1 root=%llu tid=%llu frame=%llu index=%zu caller=%llx target=%llx object=%llx vptr=%llx readable=%u calls=%llu wall_ns=%llu exclusive_ns=%llu cpu_samples=%llu cycles=%llu exclusive_cpu_samples=%llu exclusive_cycles=%llu hle_calls=%llu draw_calls=%llu command_calls=%llu input_calls=%llu tick_calls=%llu submit_calls=%llu compute_calls=%llu max_depth=%u threw=%u",
++                (unsigned long long)session.id, (unsigned long long)profile_thread_id(), (unsigned long long)session.frame, i,
++                (unsigned long long)c.callback_caller, (unsigned long long)r.target, (unsigned long long)r.object,
++                (unsigned long long)r.vptr, r.readable ? 1u : 0u, (unsigned long long)r.calls,
++                (unsigned long long)r.wall, (unsigned long long)r.exclusive_wall, (unsigned long long)r.cpu_samples,
++                (unsigned long long)r.cycles, (unsigned long long)r.exclusive_cpu_samples, (unsigned long long)r.exclusive_cycles, (unsigned long long)r.hle_calls,
++                (unsigned long long)r.draw_calls, (unsigned long long)r.command_calls, (unsigned long long)r.input_calls,
++                (unsigned long long)r.tick_calls, (unsigned long long)r.submit_calls, (unsigned long long)r.compute_calls,
++                r.max_depth, r.threw ? 1u : 0u);
++        }
++    }
++}
++class Scope {
++    size_t site = 8;
++    uint64_t started{}, cycles{};
++    int exceptions{};
++    bool cpu_valid = false;
++public:
++    Scope(CPU& cpu, uint64_t target) {
++        const auto& c = config();
++        if (!c.on) return;
++        // Unsampled dispatch only compares the configured root. Inner sites
++        // are inspected during an already-owned sampled root, not every call.
++        if (!session.id && (c.sites.values[0].caller != cpu.x[30] || c.sites.values[0].target != target)) return;
++        size_t index = 0;
++        while (index < c.sites.count &&
++            (c.sites.values[index].caller != cpu.x[30] || c.sites.values[index].target != target)) ++index;
++        if (index == c.sites.count) return;
++        if (!session.id) {
++            if (index) return;
++            const auto frame = g_frame.load(std::memory_order_relaxed);
++            if (!sampled(frame, c.first, c.last, c.every) || last_frame == frame) return;
++            last_frame = frame;
++            const auto id = reserve();
++            if (!id) return;
++            session = {};
++            session.id = id;
++            session.frame = frame;
++        } else if (!index || session.results[index].active) {
++            // A tail call retains LR; recursive calls must not replace the
++            // owning root or double-count a currently open inclusive phase.
++            return;
++        }
++        site = index;
++        auto& result = session.results[site];
++        if (!result.calls) object_snapshot(result, cpu.x[0]);
++        ++result.calls;
++        result.active = true;
++        exceptions = std::uncaught_exceptions();
++        cpu_valid = read_thread_cycles(cycles);
++        started = perf::now();
++    }
++    Scope(const Scope&) = delete;
++    Scope& operator=(const Scope&) = delete;
++    ~Scope() {
++        if (site == 8) return;
++        const auto wall = perf::now() - started;
++        uint64_t after = 0;
++        const auto valid = read_thread_cycles(after) && cpu_valid && after >= cycles;
++        auto& result = session.results[site];
++        result.wall += wall;
++        if (valid) { ++result.cpu_samples; result.cycles += after - cycles; }
++        result.active = false;
++        result.threw |= std::uncaught_exceptions() > exceptions;
++        if (!site) { emit(); session.id = 0; }
++    }
++};
++}  // namespace
++}  // namespace call_phase
+--- /dev/null
 +++ b/runtime/src/native_control_metadata.h
 @@ -0,0 +1,16 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -2548,6 +3097,69 @@
 +void guest_thread_cycles(std::vector<GuestCycles>& out);
 +std::string guest_thread_label(uint64_t id);  // "g<id> <entry symbol>"
 +
++}  // namespace nx
+--- /dev/null
++++ b/runtime/src/native_frame_context.h
+@@ -0,0 +1,60 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <array>
++#include <cstddef>
++#include <cstdint>
++
++namespace nx {
++struct CPU;
++namespace frame_context {
++enum class Stop { Complete, ZeroLr, UnboundStack, Alignment, OutsideStack, Unreadable, NonIncreasing, Limit };
++struct Stack {
++    std::array<uint64_t, 17> pcs{};
++    size_t count{};
++    Stop stop = Stop::Complete;
++};
++
++// The caller owns the active stack [sp, initial_sp). The reader must validate
++// and copy the complete two-word frame record before returning success.
++template<class Reader>
++Stack capture(uint64_t lr, uint64_t fp, uint64_t sp, uint64_t initial_sp, Reader&& read) {
++    Stack result;
++    if (!lr) { result.stop = Stop::ZeroLr; return result; }
++    result.pcs[result.count++] = lr;
++    if (!sp || initial_sp < sp || initial_sp < 16) {
++        result.stop = Stop::UnboundStack;
++        return result;
++    }
++    for (size_t n = 0; fp && n < 16; ++n) {
++        if (fp & 7) { result.stop = Stop::Alignment; return result; }
++        if (fp < sp || fp > initial_sp - 16) { result.stop = Stop::OutsideStack; return result; }
++        std::array<uint64_t, 2> record{};
++        if (!read(fp, record)) { result.stop = Stop::Unreadable; return result; }
++        // A native-started guest thread has no guest caller. Its outer frame
++        // can contain {previous_fp=0, lr=0}; an interior zero LR is incomplete.
++        if (!record[1]) {
++            result.stop = record[0] ? Stop::ZeroLr : Stop::Complete;
++            return result;
++        }
++        result.pcs[result.count++] = record[1];
++        if (!record[0]) return result;
++        if (record[0] <= fp) { result.stop = Stop::NonIncreasing; return result; }
++        fp = record[0];
++    }
++    if (fp) result.stop = Stop::Limit;
++    return result;
++}
++
++struct WaitToken {
++    uint64_t id{}, frame{}, started{}, mutex{}, key{};
++    uint32_t svc = 0x1c, owner = 0, tag = 0;
++    bool operator==(const WaitToken&) const = default;
++};
++bool enabled();
++void bind(CPU& cpu);
++void present(CPU& cpu);
++WaitToken wait_begin(CPU& cpu, uint64_t mutex, uint64_t key,
++                     uint32_t svc = 0x1c, uint32_t owner = 0, uint32_t tag = 0);
++void wait_end(CPU& cpu, const WaitToken& token, uint32_t result, int blocking_path = -1);
++}  // namespace frame_context
 +}  // namespace nx
 --- /dev/null
 +++ b/runtime/src/native_hid_policy.h
@@ -7999,15 +8611,41 @@
  }
  
  void SetScissor(CPU& c) {
-@@ -371,6 +510,7 @@
+@@ -371,16 +510,36 @@
          g_no_cb++;
          return;
      }
-+    ensure_capacity(guest,2); // Reserve the command and its eventual end marker.
++    auto append = [&] {
++        if (blob) {
++            cmd.blob = uint32_t(cb->recording->blobs.size());
++            auto* p = static_cast<const uint8_t*>(blob);
++            cb->recording->blobs.emplace_back(p, p + size);
++        }
++        cb->recording->cmds.push_back(cmd);
++    };
++    static const bool fast = [] { const auto* e=std::getenv("NX_RECORD_CAPACITY_FAST");return !e||e[0]!='0'; }();
++    if (fast) {
++        std::lock_guard lk(cb->lock);
++        const auto count = cb->recording->cmds.size();
++        if (count > UINT64_MAX / kCommandBytes - 2) fatal("native command count overflow");
++        const auto reserved = uint64_t(count) + 2; // Command plus its eventual end marker.
++        if (cb->command_base <= cb->command_size && reserved * kCommandBytes <= cb->command_size - cb->command_base &&
++            cb->control_base <= cb->control_size && reserved * kControlBytes <= cb->control_size - cb->control_base) {
++            append();
++            return;
++        }
++    }
++    // Replenishment can invoke guest code. Keep the original callback,
++    // owner-thread, retry and resource-identity checks outside the buffer lock.
++    ensure_capacity(guest,2);
      std::lock_guard lk(cb->lock);
-     if (blob) {
-         cmd.blob = uint32_t(cb->recording->blobs.size());
-@@ -381,6 +521,8 @@
+-    if (blob) {
+-        cmd.blob = uint32_t(cb->recording->blobs.size());
+-        auto* p = static_cast<const uint8_t*>(blob);
+-        cb->recording->blobs.emplace_back(p, p + size);
+-    }
+-    cb->recording->cmds.push_back(cmd);
++    append();
  }
  
  // A handle's list for the traces, without marking it used (which would keep it from being dropped).
@@ -8016,7 +8654,7 @@
  std::shared_ptr<CmdList> peek_list(uint64_t handle) {
      std::lock_guard lk(g_handles_lock);
      auto it = g_handles.find(handle);
-@@ -507,6 +649,9 @@
+@@ -507,6 +666,9 @@
  NX_HLE("nvnCommandBufferClearDepthStencil", ClearDepthStencil);
  NX_HLE("nvnCommandBufferSetViewport", SetViewport);
  NX_HLE("nvnCommandBufferSetScissor", SetScissor);
@@ -8026,7 +8664,7 @@
  NX_HLE("nvnCommandBufferCallCommands", CallCommands);
  NX_HLE("nvnCommandBufferAddCommandMemory", AddCommandMemory);
  NX_HLE("nvnCommandBufferAddControlMemory", AddControlMemory);
-@@ -518,3 +663,10 @@
+@@ -518,3 +680,10 @@
  NX_HLE("nvnCommandBufferGetControlMemoryFree", (memory_query<false, 2>));
  
  }  // namespace nx::nvn
@@ -12357,12 +12995,13 @@
      auto* p = get<Program>(program);
 --- a/runtime/src/nvn/nvn_queue.cpp
 +++ b/runtime/src/nvn/nvn_queue.cpp
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,5 @@
 +#include "native_measurement.h"
++#include "native_frame_context.h"
  // NVN queues, command buffers, windows and syncs (docs/NVN.md, N3). Synchronously every command completes at
  // submit: fences are signaled right away, the window hands out its textures in turn, and presents are counted. With
  // NX_ASYNC_GPU a fence is the submit it follows, and waiting for it waits for that submit (nvn_frames.cpp). With
-@@ -17,14 +18,24 @@
+@@ -17,14 +19,24 @@
  #include <atomic>
  #include <vector>
  #include <map>
@@ -12387,7 +13026,7 @@
  
  namespace nx {
  void svc_profile_mark(int role);
-@@ -33,6 +44,7 @@
+@@ -33,6 +45,7 @@
  extern std::atomic<uint64_t> g_tick_calls, g_yield_calls, g_sleep_calls;
  }
  namespace nx::nvn {
@@ -12395,7 +13034,7 @@
  
  // Submits the game made and submits whose replay (and GPU work, write-backs) finished. The game records the next frame
  // on one thread while another submits the last one, and our replay runs inside nvnQueueSubmitCommands: a fence the
-@@ -76,6 +88,7 @@
+@@ -76,6 +89,7 @@
  
  // Where the game waits for the replay (docs/nvn/android-perf/PHASE3.md I1): calls, the ones that blocked and for how
  // long, per 600 presents; frame_ns is this main-thread frame's blocked time, for the hitch lines (frame_time_probe).
@@ -12403,7 +13042,7 @@
  struct WaitSite {
      const char* name;
      std::atomic<uint64_t> calls{0}, blocked{0}, ns{0}, frame_ns{0};
-@@ -97,6 +110,7 @@
+@@ -97,6 +111,7 @@
              (unsigned long long)g_sub_done);
      uint64_t dt = plat::monotonic_ns() - t0;
      w.blocked++, w.ns += dt, w.frame_ns += dt;
@@ -12411,7 +13050,7 @@
  }
  
  void log_wait_sites() {
-@@ -123,7 +137,14 @@
+@@ -123,7 +138,14 @@
  
  // ---- syncs ------------------------------------------------------------------------------------------------------
  
@@ -12426,7 +13065,7 @@
      std::atomic<bool> signaled{false};
      std::atomic<uint64_t> serial{0};  // NX_ASYNC_GPU: the submit it waits for (0: none; always 0 otherwise)
      std::atomic<uint64_t> job{0};     // the replay-thread job that fences it (0: none)
-@@ -138,27 +159,58 @@
+@@ -138,27 +160,58 @@
  void SyncFinalize(CPU& c) { destroy(c.x[0]); }
  
  void signal_sync(uint64_t guest) {
@@ -12495,7 +13134,7 @@
      plat::perf_hint_thread();  // this thread replays: part of every frame (perf_hint.cpp)
      std::vector<std::shared_ptr<CmdList>> lists;
      static uint64_t submitted = 0, missing = 0;
-@@ -180,49 +232,48 @@
+@@ -180,49 +233,48 @@
      // NX_DEFERRED_SNAPSHOT=1: read the Deferred arrays here; by default they are read when the submit is replayed.
      static const bool snap = std::getenv("NX_DEFERRED_SNAPSHOT") != nullptr;
      auto deferred = snap ? std::make_shared<const DeferredValues>(deferred_snapshot(lists)) : nullptr;
@@ -12569,7 +13208,7 @@
  }
  
  void WindowFinalize(CPU& c) { destroy(c.x[0]); }
-@@ -238,6 +289,14 @@
+@@ -238,6 +290,14 @@
      if (c.x[2]) st<int32_t>(c.x[2], index);
      signal_sync(c.x[1]);
      c.x[0] = 0;
@@ -12584,7 +13223,7 @@
  }
  
  void WindowGetNumTextures(CPU& c) {
-@@ -489,12 +548,182 @@
+@@ -489,12 +549,182 @@
  // one. On the Switch the texture-available sync of the next acquire does this; ours is signaled at once, so without
  // it the game runs as fast as it can once it is faster than 60 fps. A late frame is not snapped to the next vsync
  // (an 18 ms frame stays 18 ms, not 33). NX_NO_FRAME_LIMIT=1: unpaced.
@@ -12768,10 +13407,11 @@
      static uint64_t presents = 0, at2 = 0;  // how often the game asks for 30 fps (interval 2), per 600 presents
      at2 += interval >= 2;
      if (++presents % 600 == 0)
-@@ -504,6 +733,25 @@
+@@ -504,6 +734,26 @@
  }
  
  void QueuePresentTexture(CPU& c) {
++    if (frame_context::enabled()) frame_context::present(c);
 +    if(measurement::frames_on()) {
 +        static thread_local uint64_t previous=0,previous_cpu=0;
 +        uint64_t cpu=0;long faults[2]{},switches[2]{};
@@ -12794,7 +13434,7 @@
      // The frame's work, from the end of the last present's pacing to now (perf_hint.cpp: ADPF on Android).
      static uint64_t work_from = 0;
      uint64_t t_in = plat::monotonic_ns();
-@@ -520,11 +768,19 @@
+@@ -520,11 +770,19 @@
          // At most two presents queued: the game runs at most two frames ahead of the replay.
          static uint64_t queued[2] = {};
          static int next_slot = 0;
@@ -12815,7 +13455,7 @@
              next_slot ^= 1;
          }
          pace_present(w->interval);
-@@ -561,6 +817,7 @@
+@@ -561,6 +819,7 @@
  }  // namespace
  
  NX_HLE("nvnWindowSetCrop", WindowSetCrop);
@@ -12823,7 +13463,7 @@
  NX_HLE("nvnSyncInitialize", SyncInitialize);
  NX_HLE("nvnSyncFinalize", SyncFinalize);
  NX_HLE("nvnSyncWait", SyncWait);
-@@ -572,6 +829,7 @@
+@@ -572,6 +831,7 @@
  NX_HLE("nvnQueueFenceSync", QueueFenceSync);
  NX_HLE("nvnQueueWaitSync", QueueWaitSync);
  NX_HLE("nvnQueuePresentTexture", QueuePresentTexture);
@@ -16562,7 +17202,7 @@
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/loader_symbol_test.cpp
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,65 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +// Exercise real module relocation and indirect dispatch with an authored module image.
 +#include <nx/runtime.h>
@@ -16579,6 +17219,10 @@
 +void mk8_focus_gate(){++focus_calls;}
 +bool commit(uint64_t a,uint64_t n){return a==reinterpret_cast<uint64_t>(memory.data())&&n<=memory.size();}
 +void vm_set(uint64_t,uint64_t,uint32_t,uint32_t){}
++VmInfo vm_query(uint64_t addr){
++ const auto base=reinterpret_cast<uint64_t>(memory.data());
++ return addr>=base&&addr-base<memory.size()?VmInfo{base,memory.size(),kMemStatic,3}:VmInfo{addr,0,kMemFree,0};
++}
 +void backtrace(CPU&){}
 +}
 +namespace nx::plat {
@@ -16953,6 +17597,116 @@
 +  call.x[0]=command_key;api("nvnCommandBufferFinalize");call.x[0]=pool_key;api("nvnMemoryPoolFinalize");destroy(texture_key);
 + }
 +}
+--- /dev/null
++++ b/tests/native_call_phase_probe.h
+@@ -0,0 +1,107 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "native_call_phase.h"
++#include "kernel.h"
++#include <cstring>
++#include <cstdio>
++#include <iostream>
++#include <stdexcept>
++#include <string>
++
++namespace authored_call_phase {
++inline uint64_t root_target{}, child_target{}, leaf_target{};
++inline unsigned root_calls{}, child_calls{}, leaf_calls{};
++inline bool should_throw = false;
++inline bool callbacks = false;
++inline uint64_t callback_objects{};
++inline void leaf(nx::CPU& c) { ++leaf_calls; c.x[2] = 0x8765; }
++inline void child(nx::CPU& c) {
++    ++child_calls;
++    // The nested leaf retains LR but has a different target: no false phase.
++    nx::call(c, leaf_target);
++    nx::g_frame = 100;  // A phase completion must survive sampling-window end.
++    if (should_throw) throw std::runtime_error("authored phase throw");
++    c.x[1] = 0x4321;
++}
++inline void root(nx::CPU& c) {
++    ++root_calls;
++    c.x[30] = 0x200;
++    nx::call(c, child_target);
++    if (callbacks) for (unsigned i = 0; i <= 140; ++i) {
++        c.x[0] = callback_objects + (i % 140) * 16;
++        c.x[30] = 0x200;
++        nx::call(c, leaf_target);
++    }
++    c.x[0] = 0xabcd;
++}
++inline int run(bool callback_probe = false) {
++    using namespace nx::call_phase;
++    unsigned checks = 0;
++    auto check = [&](bool ok) { ++checks; if (!ok) throw std::runtime_error("call phase assertion " + std::to_string(checks)); };
++    Sites sites;
++    check(parse("0x100:200,300:0x400", sites) && sites.count == 2);
++    check(sites.values[0].caller == 0x100 && sites.values[1].target == 0x400);
++    for (const auto text : {"", "100", "100:", ":200", "100:200,", "100:200,100:400", "0:200",
++                           "101:200", "100:201", "100:200:300", "100:200garbage", " 100:200",
++                           "100:fffffffffffffffff", "100:200,300:400,500:600,700:800,900:a00,b00:c00,d00:e00,f00:1000,1100:1200"}) {
++        check(!parse(text, sites));
++        check(sites.count == 2 && sites.values[0].caller == 0x100); // Failure is transactional.
++    }
++    check(sampled(4, 4, 6, 2) && sampled(6, 4, 6, 2));
++    check(!sampled(3, 4, 6, 2) && !sampled(5, 4, 6, 2) && !sampled(7, 4, 6, 2) && !sampled(4, 4, 6, 0));
++    nx::memory_init();
++    nx::create_main_thread(0x4000);
++    auto& cpu = nx::current_cpu();
++    const auto object = nx::kernel_alloc(16, 16);
++    nx::vm_set(object, 16, nx::kMemHeap, 3);
++    nx::st<uint64_t>(object, 0x123400);
++    callbacks = callback_probe;
++    if (callbacks) {
++        callback_objects = nx::kernel_alloc(140 * 16, 16);
++        nx::vm_set(callback_objects, 140 * 16, nx::kMemHeap, 3);
++        for (unsigned i = 0; i < 140; ++i) nx::st<uint64_t>(callback_objects + i * 16, 0x200000 + i * 16);
++    }
++    root_target = nx::hle_address_or("authoredPhaseRoot", root);
++    child_target = nx::hle_address_or("authoredPhaseChild", child);
++    leaf_target = nx::hle_address_or(callbacks ? "nvnCommandBufferDrawAuthoredPhase" : "authoredPhaseLeaf", leaf);
++    auto hex = [](uint64_t value) { char text[32]; std::snprintf(text, sizeof text, "%llx", (unsigned long long)value); return std::string(text); };
++    _putenv_s("NX_CPU_PHASE_PROFILE", "1");
++    _putenv_s("NX_CPU_PHASE_SITES", ("100:" + hex(root_target) + ",200:" + hex(child_target) + ",300:" + hex(leaf_target)).c_str());
++    _putenv_s("NX_CPU_PHASE_START", "0");
++    _putenv_s("NX_CPU_PHASE_STOP", "4");
++    _putenv_s("NX_CPU_PHASE_EVERY", "2");
++    _putenv_s("NX_CPU_PHASE_LIMIT", "2");
++    if (callbacks) _putenv_s("NX_CPU_PHASE_CALLBACK_CALLER", "200");
++    std::array<uint8_t, sizeof(nx::CPU)> before{};
++    nx::CPU expected;
++    std::memcpy(before.data(), &cpu, sizeof cpu);
++    auto invoke = [&](uint64_t frame, uint64_t obj) {
++        std::memcpy(&cpu, before.data(), sizeof cpu);
++        cpu.x[0] = obj;
++        cpu.x[30] = 0x100;
++        nx::g_frame = frame;
++        nx::call(cpu, root_target);
++    };
++    invoke(0, object);
++    const unsigned leaves = callbacks ? 142 : 1;
++    check(root_calls == 1 && child_calls == 1 && leaf_calls == leaves);
++    check(cpu.x[0] == 0xabcd && cpu.x[1] == 0x4321 && cpu.x[2] == 0x8765 && cpu.x[30] == 0x200);
++    std::memcpy(&expected, before.data(), sizeof cpu);
++    // Compare the remaining registers and CPU state, not just return values.
++    expected.x[0] = 0xabcd; expected.x[1] = 0x4321; expected.x[2] = 0x8765; expected.x[30] = 0x200;
++    check(!std::memcmp(&cpu, &expected, sizeof cpu));
++    invoke(0, object); // Same-frame dedup does not suppress the original call.
++    check(root_calls == 2 && child_calls == 2 && leaf_calls == 2 * leaves);
++    invoke(1, object); // Unsampled frame still executes normally.
++    check(root_calls == 3 && child_calls == 3 && leaf_calls == 3 * leaves);
++    should_throw = true;
++    bool threw = false;
++    try { invoke(2, 1); } catch (const std::runtime_error& error) { threw = std::string(error.what()) == "authored phase throw"; }
++    check(threw && root_calls == 4 && child_calls == 4 && leaf_calls == 3 * leaves + 1 && cpu.x[2] == 0x8765);
++    should_throw = false;
++    invoke(4, object); // Cap never changes guest execution.
++    check(root_calls == 5 && child_calls == 5 && leaf_calls == 4 * leaves + 1);
++    std::cout << "native call phase checks=" << checks << " callbacks=" << callbacks << " guest_modules=0 PASS\n";
++    return 0;
++}
++}  // namespace authored_call_phase
 --- /dev/null
 +++ b/tests/native_command_tail_probe.h
 @@ -0,0 +1,29 @@
@@ -17763,7 +18517,7 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,890 @@
+@@ -0,0 +1,898 @@
 +#include "native_thread_policy_probe.h"
 +#include "native_measurement.h"
 +#include <source_location>
@@ -17840,7 +18594,15 @@
 +#include "native_depth_contract_probe.h"
 +#include "native_counter_sync_probe.h"
 +#include "native_wait_cancellation_probe.h"
++#include "native_frame_context_probe.h"
++#include "native_call_phase_probe.h"
++#include "native_record_capacity_probe.h"
 +int main(int argc,char** argv){try{
++ if(argc==2&&std::string_view(argv[1])=="--record-capacity-bench")return native_record_capacity_bench();
++ if(argc==2&&std::string_view(argv[1])=="--call-phase")return authored_call_phase::run();
++ if(argc==2&&std::string_view(argv[1])=="--call-phase-callbacks")return authored_call_phase::run(true);
++ if(argc==2&&std::string_view(argv[1])=="--frame-context")return authored_frame_context::run();
++ if(argc==2&&std::string_view(argv[1])=="--frame-context-mutex")return authored_frame_context::run_mutex();
 + if(argc==2&&std::string_view(argv[1])=="--thread-policy")return authored_thread_probe::run();
 + if(argc==2&&std::string_view(argv[1])=="--overlay"){unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("overlay assertion "+std::to_string(n));};std::vector<uint32_t> px;uint32_t w=0,h=0;check(nx::overlay_raster({"FPS 59.9","MAX 16.67 MS"},2,px,w,h));check(w==12*12+8&&h==2*18+8&&px.size()==size_t(w)*h);size_t lit=0;for(uint32_t p:px)lit+=p==0xFF40FF40u;check(lit>0&&lit<px.size()/2);check(px[0]==0xFF101010u&&px[size_t(w)*h-1]==0xFF101010u);std::vector<uint32_t> one;check(nx::overlay_raster({"1"},1,one,w,h));check(w==10&&h==13);const char* expect[7]={"..#..",".##..","..#..","..#..","..#..","..#..",".###."};for(uint32_t y=0;y<7;y++)for(uint32_t x=0;x<5;x++)check((one[size_t(y+2)*w+x+2]==0xFF40FF40u)==(expect[y][x]=='#'));check(!nx::overlay_raster({"FPS~"},1,one,w,h));std::cout<<"native overlay checks="<<n<<" PASS"<<std::endl;return 0;}
 + if(argc==2&&std::string_view(argv[1])=="--pipeline-recipes"){unsigned n=0;auto check=[&](bool b,const std::source_location site=std::source_location::current()){++n;if(!b)throw std::runtime_error("pipeline recipe assertion "+std::to_string(n)+" at "+std::to_string(site.line()));};pipeline_recipe_probe::unit(check);std::cout<<"native pipeline recipes checks="<<n<<" PASS"<<std::endl;return 0;}
@@ -18760,6 +19522,204 @@
 +#include <iostream>
 +int main(){unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("font bundle assertion");};std::vector<uint8_t> bytes(0x100+32);std::memcpy(bytes.data(),"NFB1",4);auto put=[&](size_t offset,uint32_t value){std::memcpy(bytes.data()+offset,&value,4);};put(4,1);put(8,32);put(16,8);put(20,16);bytes[0x109]=1;auto layout=nx::native_font_layout(bytes);check(layout.count==1&&layout.regions[0].offset==8&&layout.regions[0].size==16);for(unsigned mode=0;mode<3;++mode){auto bad=bytes;if(mode==0)bad[0]=0;if(mode==1){uint32_t value=33;std::memcpy(bad.data()+20,&value,4);}if(mode==2)bad[0x109]=0;bool rejected=false;try{nx::native_font_layout(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"font bundle checks="<<checks<<" PASS\n";}
 --- /dev/null
++++ b/tests/native_frame_context_probe.h
+@@ -0,0 +1,195 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <cstring>
++#include <iostream>
++#include <map>
++#include <stdexcept>
++#include <string>
++#include <thread>
++#include <atomic>
++#include <chrono>
++#include <algorithm>
++#include "kernel.h"
++#include "kernel_state.h"
++#include "native_frame_context.h"
++
++namespace authored_frame_context {
++inline int run() {
++    using namespace nx::frame_context;
++    unsigned checks = 0;
++    auto check = [&](bool ok) {
++        ++checks;
++        if (!ok) throw std::runtime_error("frame context assertion " + std::to_string(checks));
++    };
++    std::map<uint64_t, std::array<uint64_t, 2>> records{{0x1010, {0x1030, 0xaaaa}}, {0x1030, {0, 0xbbbb}}};
++    unsigned reads = 0;
++    auto read = [&](uint64_t address, std::array<uint64_t, 2>& value) {
++        ++reads;
++        const auto found = records.find(address);
++        if (found == records.end()) return false;
++        value = found->second;
++        return true;
++    };
++    const auto good = capture(0xcccc, 0x1010, 0x1000, 0x1100, read);
++    check(good.stop == Stop::Complete && good.count == 3 && reads == 2);
++    check(good.pcs[0] == 0xcccc && good.pcs[1] == 0xaaaa && good.pcs[2] == 0xbbbb);
++    records[0x1010][1] = 0xffff;
++    check(good.pcs[1] == 0xaaaa);  // The snapshot owns values after the source changes.
++    records[0x1010][1] = 0xaaaa;
++    reads = 0;
++    check(capture(0, 0x1010, 0x1000, 0x1100, read).stop == Stop::ZeroLr && !reads);
++    check(capture(1, 0x1010, 0x1100, 0x1000, read).stop == Stop::UnboundStack && !reads);
++    check(capture(1, 0x1010, 0, 0x1100, read).stop == Stop::UnboundStack && !reads);
++    check(capture(1, 0x1011, 0x1000, 0x1100, read).stop == Stop::Alignment && !reads);
++    check(capture(1, 0xff0, 0x1000, 0x1100, read).stop == Stop::OutsideStack && !reads);
++    check(capture(1, 0x10f8, 0x1000, 0x1100, read).stop == Stop::OutsideStack && !reads);
++    const auto empty = capture(1, 0, 0x1000, 0x1100, read);
++    check(empty.stop == Stop::Complete && empty.count == 1 && !reads);
++    auto revoked = capture(1, 0x1020, 0x1000, 0x1100, read);
++    check(revoked.stop == Stop::Unreadable && revoked.count == 1);
++    records[0x1030][1] = 0;
++    auto zero = capture(1, 0x1010, 0x1000, 0x1100, read);
++    check(zero.stop == Stop::Complete && zero.count == 2 && zero.pcs[1] == 0xaaaa);
++    records[0x1030][0] = 0x1040;
++    check(capture(1, 0x1010, 0x1000, 0x1100, read).stop == Stop::ZeroLr);
++    records[0x1030][0] = 0;
++    records[0x1030][1] = 0xbbbb;
++    records[0x1010][0] = 0x1010;
++    auto cycle = capture(1, 0x1010, 0x1000, 0x1100, read);
++    check(cycle.stop == Stop::NonIncreasing && cycle.count == 2);
++    records[0x1010][0] = 0x1000;
++    check(capture(1, 0x1010, 0x1000, 0x1100, read).stop == Stop::NonIncreasing);
++    records[0x1010][0] = UINT64_MAX - 7;
++    check(capture(1, 0x1010, 0x1000, 0x1100, read).stop == Stop::OutsideStack);
++    records[0x1010][0] = 0x1030;
++    records.erase(0x1030);
++    revoked = capture(1, 0x1010, 0x1000, 0x1100, read);
++    check(revoked.stop == Stop::Unreadable && revoked.count == 2 && revoked.pcs[1] == 0xaaaa);
++    for (unsigned i = 0; i < 17; ++i) records[0x1000 + i * 16] = {0x1010 + i * 16, 0xd000 + i};
++    const auto capped = capture(1, 0x1000, 0x1000, 0x1200, read);
++    check(capped.stop == Stop::Limit && capped.count == 17 && capped.pcs[16] == 0xd00f);
++
++    // Exercise the production stream without guest modules or a GPU. The
++    // CTest configuration reserves exactly six lines across frames 0..2.
++    check(enabled());
++    nx::memory_init();
++    nx::create_main_thread(0x4000);
++    auto& cpu = nx::current_cpu();
++    const auto top = cpu.x[31];
++    cpu.x[31] = top - 0x100;
++    cpu.x[29] = top - 0x80;
++    cpu.x[30] = 0x1111;
++    nx::st<uint64_t>(top - 0x80, 0);
++    nx::st<uint64_t>(top - 0x78, 0x2222);
++    std::array<uint8_t, sizeof(nx::CPU)> before{};
++    std::memcpy(before.data(), &cpu, before.size());
++    nx::g_frame = 0;
++    present(cpu);  // id 1
++    present(cpu);  // Same completed-frame ID is not emitted twice.
++    const auto first = wait_begin(cpu, 0x100, 0x200);  // ids 2/3
++    check(first.id == 2);
++    auto forged = first;
++    ++forged.started;
++    wait_end(cpu, forged, 0);
++    forged = first;
++    forged.svc = 0x1a;
++    wait_end(cpu, forged, 0);
++    wait_end(cpu, first, 0x1234);
++    wait_end(cpu, first, 0);
++    check(!wait_begin(cpu, 0x100, 0x200).id);
++    nx::g_frame = 1;
++    const auto crossing = wait_begin(cpu, 0x300, 0x400);  // ids 4/5
++    check(crossing.id == 4);
++    nx::g_frame = 2;
++    present(cpu);  // id 6
++    nx::g_frame = 100;
++    wait_end(cpu, crossing, 0x5678);  // Reserved completion survives the window/cap.
++    present(cpu);
++    check(nx::g_frame.load() == 100);
++    nx::g_frame = 2;
++    check(!wait_begin(cpu, 0x500, 0x600).id);  // Explicit global cap.
++    check(!std::memcmp(before.data(), &cpu, before.size()));
++    std::cout << "native frame context checks=" << checks << " guest_modules=0 PASS\n";
++    return 0;
++}
++
++inline int run_mutex() {
++    unsigned checks = 0;
++    auto check = [&](bool ok) {
++        ++checks;
++        if (!ok) throw std::runtime_error("frame mutex assertion " + std::to_string(checks));
++    };
++    check(nx::frame_context::enabled());
++    nx::memory_init();
++    nx::create_main_thread(0x4000);
++    auto* main = nx::self_thread();
++    auto& cpu = nx::current_cpu();
++    const auto top = cpu.x[31];
++    cpu.x[31] = top - 0x100;
++    cpu.x[29] = top - 0x80;
++    cpu.x[30] = 0x1111;
++    nx::st<uint64_t>(top - 0x80, 0);
++    nx::st<uint64_t>(top - 0x78, 0x2222);
++    const auto mutex = nx::kernel_alloc(32, 16);
++    nx::vm_set(mutex, 32, nx::kMemHeap, 3);
++    auto holder = std::make_shared<nx::KThread>();
++    holder->self = holder;
++    holder->id = nx::kstate::g_next_thread_id.fetch_add(1);
++    holder->handle = nx::handle_add(holder);
++    auto acquire = [&](uint64_t address) {
++        cpu.x[0] = holder->handle;
++        cpu.x[1] = address;
++        cpu.x[2] = main->handle;
++        std::array<uint8_t, sizeof(nx::CPU)> before{};
++        std::memcpy(before.data(), &cpu, before.size());
++        nx::svc(cpu, 0x1a, 0);
++        const bool success = cpu.x[0] == 0;
++        cpu.x[0] = holder->handle;
++        const bool preserved = !std::memcmp(before.data(), &cpu, before.size());
++        cpu.x[0] = 0;
++        return std::pair{success, preserved};
++    };
++    nx::g_frame = 0;
++    nx::st<uint32_t>(mutex, 0);
++    const auto fast = acquire(mutex);  // Original owner-word mismatch fast return; no blocking path.
++    check(fast.first);
++    check(fast.second);
++    check(nx::ld<uint32_t>(mutex) == 0);
++
++    const auto blocked_mutex = mutex + 16;
++    nx::st<uint32_t>(blocked_mutex, holder->handle | nx::kstate::kHandleWaitMask);
++    std::atomic<bool> observed_queue{false};
++    std::thread releaser([&] {
++        nx::kstate::t_self = holder.get();
++        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
++        while (std::chrono::steady_clock::now() < deadline) {
++            bool queued;
++            {
++                std::lock_guard lock(nx::kstate::g_k);
++                queued = std::find(nx::kstate::g_mutex_waiters.begin(), nx::kstate::g_mutex_waiters.end(), main)
++                    != nx::kstate::g_mutex_waiters.end();
++            }
++            if (queued) { observed_queue = true; break; }
++            std::this_thread::yield();
++        }
++        // Release even on timeout so a failing queue assertion cannot strand the caller.
++        nx::CPU release{};
++        release.x[0] = blocked_mutex;
++        nx::svc(release, 0x1b, 0);
++        nx::kstate::t_self = nullptr;
++    });
++    const auto waited = acquire(blocked_mutex);
++    releaser.join();
++    check(waited.first);
++    check(waited.second);
++    check(observed_queue.load());
++    check(nx::ld<uint32_t>(blocked_mutex) == main->handle);
++    cpu.x[0] = blocked_mutex;
++    nx::svc(cpu, 0x1b, 0);
++    check(cpu.x[0] == 0 && nx::ld<uint32_t>(blocked_mutex) == 0);
++    check(nx::g_frame.load() == 0);
++    nx::handle_close(holder->handle);
++    std::cout << "native frame mutex checks=" << checks << " guest_modules=0 PASS\n";
++    return 0;
++}
++}  // namespace authored_frame_context
+--- /dev/null
 +++ b/tests/native_gpu_volume_probe.h
 @@ -0,0 +1,8 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -19477,6 +20437,72 @@
 +#include "native_readonly_storage.h"
 +#include <iostream>
 +int main(int argc,char** argv){try{if(argc!=2)throw std::runtime_error("fixture directory required");unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("readonly storage assertion");};auto path=std::filesystem::path(argv[1])/"valid.bin";nx::NativeReadonlyStorage image(path,"9ac056b20af5fb961ccf89de921573d4b4b87e0c7a4640f98fcc2fcc6436e3fc");check(image.size()==std::filesystem::file_size(path));auto header=image.read(0,8);check(header.size()==8&&header[0]==80);check(image.read(image.size(),0).empty());bool rejected=false;try{image.read(image.size(),1);}catch(const std::out_of_range&){rejected=true;}check(rejected);rejected=false;try{nx::NativeReadonlyStorage bad(path,std::string(64,'0'));}catch(const std::invalid_argument&){rejected=true;}check(rejected);auto writer=_wfsopen(path.c_str(),L"r+b",_SH_DENYNO);check(writer==nullptr);if(writer)fclose(writer);std::cout<<"readonly storage checks="<<checks<<" PASS\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
+--- /dev/null
++++ b/tests/native_record_capacity_probe.h
+@@ -0,0 +1,63 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "nvn/nvn.h"
++#include "native_perf.h"
++#include "native_cpu_cycles.h"
++#include <array>
++#include <iostream>
++#include <stdexcept>
++
++inline int native_record_capacity_bench() {
++    using namespace nx;
++    using namespace nx::nvn;
++    unsigned checks=0;
++    auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("record capacity assertion "+std::to_string(checks));};
++    memory_init();
++    auto alloc=[](uint64_t bytes){const auto p=kernel_alloc(bytes,4096);vm_set(p,bytes,kMemHeap,3);return p;};
++    const auto device=alloc(7008);check(initialize_native_device(device,0));
++    const auto cb=alloc(256),pool_key=alloc(128);
++    constexpr uint64_t bytes=2*1024*1024;
++    const auto memory=alloc(bytes),control=alloc(bytes);
++    auto& pool=make<MemoryPool>(pool_key);pool.memory=memory;pool.size=bytes;pool.gpu=gpu_alloc(bytes);
++    CPU c{};
++    auto api=[&](const char* name){const auto fn=hle_lookup(name);check(fn!=nullptr);fn(c);};
++    c.x[0]=cb;c.x[1]=device;api("nvnCommandBufferInitialize");check(c.x[0]==1);
++    uint64_t offset=0,checksum=0,records=0,wall=0,cycles=0,cycle_samples=0;
++    for(unsigned count:{16u,64u,512u})for(unsigned list_index=0;list_index<64;++list_index){
++        const uint64_t capacity=uint64_t(count+1)*16;
++        c.x[0]=cb;c.x[1]=pool_key;c.x[2]=offset;c.x[3]=capacity;api("nvnCommandBufferAddCommandMemory");
++        c.x[0]=cb;c.x[1]=control+offset;c.x[2]=uint64_t(count+1)*4;api("nvnCommandBufferAddControlMemory");
++        c.x[0]=cb;api("nvnCommandBufferBeginRecording");
++        uint64_t before=0,after=0;const auto valid=read_thread_cycles(before);
++        const auto start=perf::now();
++        for(unsigned i=0;i<count;++i){
++            Cmd command{i%8?Cmd::SetViewport:Cmd::UpdateUniformBuffer};
++            command.a[0]=pool.gpu;command.a[1]=i;command.i[0]=list_index;command.i[1]=count;
++            std::array<uint32_t,4> payload{i,list_index,count,0xfeedbeef};
++            record(cb,command,i%8?nullptr:payload.data(),i%8?0:sizeof(payload));
++            payload.fill(0); // The recorded blob must own the bytes.
++        }
++        wall+=perf::now()-start;
++        if(read_thread_cycles(after)&&valid&&after>=before){cycles+=after-before;++cycle_samples;}
++        c.x[0]=cb;api("nvnCommandBufferEndRecording");const auto handle=c.x[0];check(handle!=0);
++        const auto list=command_list(handle);check(list&&list->cmds.size()==count&&list->blobs.size()==count/8);
++        for(unsigned i=0;i<count;++i){
++            const auto& command=list->cmds[i];
++            check(command.op==(i%8?Cmd::SetViewport:Cmd::UpdateUniformBuffer)&&command.a[0]==pool.gpu&&command.a[1]==i&&command.i[0]==int32_t(list_index)&&command.i[1]==int32_t(count));
++            if(!(i%8)){
++                const auto& blob=list->blobs.at(command.blob);std::array<uint32_t,4> payload{};
++                check(blob.size()==sizeof(payload));std::memcpy(payload.data(),blob.data(),blob.size());
++                check(payload==std::array<uint32_t,4>{i,list_index,count,0xfeedbeef});
++            }
++            checksum+=command.a[1]+uint64_t(command.i[0])*17+uint64_t(command.i[1])*31;
++        }
++        c.x[0]=cb;api("nvnCommandBufferGetCommandMemoryUsed");check(c.x[0]==capacity);
++        c.x[0]=cb;api("nvnCommandBufferGetControlMemoryUsed");check(c.x[0]==uint64_t(count+1)*4);
++        records+=count;offset+=capacity;
++    }
++    check(offset<=bytes&&records==37888&&cycle_samples==192);
++    c.x[0]=cb;api("nvnCommandBufferFinalize");c.x[0]=pool_key;api("nvnMemoryPoolFinalize");
++    std::cout<<"native record capacity checks="<<checks<<" records="<<records<<" checksum="<<checksum
++             <<" wall_ns="<<wall<<" cycles="<<cycles<<" cycle_samples="<<cycle_samples<<" PASS\n";
++    return 0;
++}
 --- /dev/null
 +++ b/tests/native_rgb565_probe.h
 @@ -0,0 +1,62 @@

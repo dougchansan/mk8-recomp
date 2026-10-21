@@ -75,6 +75,14 @@ improves by 47.2%; a separate racing diagnostic also measures lower lookup cost.
 Four-course presentation results remain mixed. See
 [texture registry measurements](docs/native-texture-registry-performance.md).
 
+R330 reduces repeated locking in native command recording. A 24-process authored
+benchmark reduces recording time by 13.96%; four normal 60 Hz Stadium controls
+observe lower sampled draw-recording callback time while presentation remains
+16.67 ms. The 220-file recipe passes 48 component suites, 3,253 native GPU checks
+and the existing sync/readback controls. See [recording results and limits](docs/native-command-recording-performance.md)
+and [bounded main-loop profiling](docs/native-main-loop-profiler.md). True normal-speed
+125/250 FPS remains open.
+
 R324 removes a measured GPU query-resolution stall by collecting actual completed
 queries after existing full retirement. Normal-speed four-course averages improve
 from 53.25-57.80 to 59.50-59.96 FPS in the observed controls; paths vary. See
@@ -82,7 +90,7 @@ from 53.25-57.80 to 59.50-59.96 FPS in the observed controls; paths vary. See
 [asynchronous GPU phases](docs/native-gpu-phase-profile.md) and the
 [simulation-clock audit](docs/native-frame-clock-audit.md). Raising the display
 override accelerates the race clock, so older uncapped readings do not establish
-normal-speed high refresh. The source recipe contains 214 generic files.
+normal-speed high refresh. That R324 recipe contained 214 generic files.
 
 R282 moves optional diagnostics out of ordinary CPU dispatch. Authored alternating
 benchmarks show lower dispatch overhead, with all 44 suites and 3,212 GPU checks

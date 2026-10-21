@@ -6,15 +6,18 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-The current recipe reconstructs R324 (214 generic files). It includes retired
-hardware-counter collection and sampled asynchronous GPU phases. The reviewed
-normal-speed four-course comparison averages 59.50-59.96 FPS for the candidate;
-paths and desktop load vary. All 44 component suites, 3,253 native GPU fixture
-checks and sync/readback controls pass, with zero final changed-source analysis
-diagnostics. See [counter correctness and measurements](../../docs/native-counter-retirement-performance.md),
-[phase tooling](../../docs/native-gpu-phase-profile.md) and the
-[clock qualification](../../docs/native-frame-clock-audit.md). True125/250FPS
-render/simulation decoupling is a separate remaining goal.
+The current recipe reconstructs R330 (220 generic files). It retains retired
+hardware-counter collection and sampled asynchronous GPU phases, reduces
+capacity-check locking in command recording, and adds bounded main-loop/callback
+observations. All 48 component suites, 3,253 native GPU fixture checks and the
+sync/readback controls pass, with zero analysis diagnostics on the seven final
+changed C++ units. The recording-only benchmark improves 13.96%; a normal 60 Hz
+Stadium ABBA comparison shows lower sampled recording-callback time while
+presentation remains 16.67 ms. See [recording measurements](../../docs/native-command-recording-performance.md),
+[main-loop profiling](../../docs/native-main-loop-profiler.md),
+[counter correctness](../../docs/native-counter-retirement-performance.md) and the
+[clock qualification](../../docs/native-frame-clock-audit.md). True 125/250 FPS
+render/simulation decoupling remains open.
 
 R212 now passes a clean 24,000-target flight from Stadium's first-place/15-point
 results through native screenshot readback to Water Park driving, underwater

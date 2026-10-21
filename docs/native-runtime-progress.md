@@ -4,6 +4,17 @@ Updated 2026-10-21. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## MK8 native runtime
 
+R330 reduces capacity-check locking before appending a recorded command, keeping
+both arena limits and the original replenishment/identity checks. The authored
+24-process recording benchmark improves 13.96%; four normal 60 Hz Stadium flights
+show sampled renderer-callback means 7.024 ms original and 5.974 ms candidate with
+diagnostics. Presentation stays 16.67 ms and p99 results are mixed. All 48 suites,
+3,253 native GPU checks, existing counter/phase/sync/readback controls and seven
+final changed-source analyses pass. The recipe contains 220 generic files and
+adds bounded caller/callback profiling. See [recording results](native-command-recording-performance.md)
+and [profiler scope](native-main-loop-profiler.md). No 8 ms or 4 ms presentation
+milestone is claimed.
+
 R324 resolves eligible precise hardware sample queries after existing full
 retirement and keeps the GPU fallback when that guarantee is absent. The
 normal-speed 100cc comparison covers reviewed lap-1-through-lap-3 windows on

@@ -1,6 +1,10 @@
 # Native performance work
 
-For current query-retirement results, see [R324 measurements](native-counter-retirement-performance.md).
+For current command-recording results, see [R330 measurements](native-command-recording-performance.md).
+The same-executable normal 60 Hz comparison measures CPU headroom; presentation
+remains 16.67 ms. [Main-loop profiling](native-main-loop-profiler.md) separates
+recording callbacks from inclusive waits. Query-retirement results remain in
+[R324 measurements](native-counter-retirement-performance.md).
 The [clock audit](native-frame-clock-audit.md) qualifies historical uncapped
 figures: raising display cadence can accelerate simulation.
 

@@ -14,11 +14,16 @@
 param(
     [Parameter(Mandatory)][string]$Label,
     [string]$Hole = '',
-    [string]$Root = 'G:\mk8-recomp',
+    [string]$Root = $env:MK8R_ROOT,
+    [string]$Rom = $env:MK8R_ROM,
     [int]$RunSeconds = 600
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $Root) { $Root = Split-Path -Parent $PSScriptRoot }
+if (-not $Rom -or -not (Test-Path -LiteralPath $Rom -PathType Leaf)) {
+    throw 'Supply your own game dump with -Rom or MK8R_ROM.'
+}
 
 Get-Process suyu* -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 8
@@ -29,7 +34,7 @@ else { Remove-Item Env:\SUYU_RECOMP_MAIN_HOLE -ErrorAction SilentlyContinue }
 $out = Join-Path $Root "local\bench\hole-$Label"
 & (Join-Path $Root 'scripts\bench-tas.ps1') `
     -Target title-01006a800016e000 `
-    -Rom "F:\Emulation\MIG Switch Game Collection\Super Smash Bros Ultimate.xci\Super Smash Bros Ultimate.xci" `
+    -Rom $Rom `
     -TasFixtureDirectory (Join-Path $Root 'local\tas-fixtures\01006A800016E000-baseline') `
     -Arms static -NoStrict -RunSeconds $RunSeconds -OutDir $out *>&1 |
     Out-File -Encoding utf8 (Join-Path $Root "local\bench\hole-$Label-console.log")

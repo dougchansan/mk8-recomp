@@ -4,13 +4,13 @@
 Passing JSON on a PowerShell command line does not survive: PowerShell strips
 the inner double quotes when handing the argument to python.exe, so
 
-    python mcp.py call launch_game_path '{"path":"F:\\game.xci"}'
+    python mcp.py call launch_game_path '{"path":"./own-dump/game.xci"}'
 
-arrives as {path:F:\\game.xci} and fails to parse. Taking each value as its own
+arrives as {path:./own-dump/game.xci} and fails to parse. Taking each value as its own
 argv element sidesteps the quoting entirely - a value with spaces is quoted once
 by the shell and arrives intact.
 
-  python scripts/mcp-call.py launch_game_path --path "F:\\Games\\Foo.xci"
+  python scripts/mcp-call.py launch_game_path --path "./own-dump/Foo.xci"
   python scripts/mcp-call.py trigger_ui_action --action tas_start_stop
   python scripts/mcp-call.py get_emulator_state
 """

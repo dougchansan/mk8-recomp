@@ -173,8 +173,8 @@ bridge and its current specialization limits.
 Supply a checkout at the pinned upstream commit and an unused local output path:
 
 ```powershell
-python integrations/belmante-runtime/prepare.py --upstream C:/src/SuperMarioWonderRecomp --output ./local/belmante-mk8 --vulkan-registry C:/deps/Vulkan-Headers/registry/vk.xml
-python integrations/belmante-runtime/generate.py --prepared ./local/belmante-mk8 --exefs C:/own-dump/exefs
+python integrations/belmante-runtime/prepare.py --upstream ./SuperMarioWonderRecomp --output ./local/mk8-native --vulkan-registry ./Vulkan-Headers/registry/vk.xml
+python integrations/belmante-runtime/generate.py --prepared ./local/mk8-native --exefs ./own-dump/exefs
 ```
 
 Generation requires an existing Python Capstone installation. Prepared source

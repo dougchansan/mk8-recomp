@@ -122,7 +122,7 @@ index 0000000000000000000000000000000000000000..24ab852d6550227771320cc94c244f3f
 +
 diff --git a/native-runtime/README.md b/native-runtime/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..1196a58182e7792dad6cc182379ab7c42d0c7b83
+index 0000000000000000000000000000000000000000..aec404b33cd44acdadfbeb2c924e917a7e23851a
 --- /dev/null
 +++ b/native-runtime/README.md
 @@ -0,0 +1,46 @@
@@ -130,10 +130,10 @@ index 0000000000000000000000000000000000000000..1196a58182e7792dad6cc182379ab7c4
 +
 +Configure from this directory, without the suyu root build graph. The current target is a synthetic Stage A/B verification host, not an MK8-capable platform.
 +
-+Run from any directory:
++Run from the prepared source checkout root:
 +
 +```
-+python G:/suyu/mk8-native-runtime/source/tests/native_platform/run.py --build G:/suyu/mk8-native-runtime/native-platform/build
++python tests/native_platform/run.py --build ./build/native-platform
 +```
 +
 +Existing Python, CMake, C11 and C++20 are sufficient. No downloaded dependencies, keys, firmware or game assets are required. The runner bootstraps the existing emitter, generates two synthetic modules plus the existing synthetic extracted NSO fixture, then links the emitted static module projects and one shared C runtime. It uses hosted SVC/barrier/unhandled semantics without linking Core, HLE or Dynarmic targets. MSVC builds use the static CRT; dependency and symbol-map checks reject host/graphics/JIT imports.
@@ -1368,16 +1368,22 @@ index 0000000000000000000000000000000000000000..524d3e8c497d5c896e0461e1d352f872
 +} // namespace native
 diff --git a/native-runtime/graphics/CMakeLists.txt b/native-runtime/graphics/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..eb55eaf2dcd7bb447ab7135542d4700deda2488a
+index 0000000000000000000000000000000000000000..79292bcf3e4278e325b9585394b9302313e0662a
 --- /dev/null
 +++ b/native-runtime/graphics/CMakeLists.txt
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,28 @@
 +cmake_minimum_required(VERSION 3.22)
 +if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 +    project(native_graphics_probe LANGUAGES CXX)
 +endif()
-+set(NATIVE_GRAPHICS_VULKAN_INCLUDE "G:/sxm/.cache/cpm/vulkanheaders/v1.4.345/include" CACHE PATH "Existing Vulkan headers")
-+set(NATIVE_GRAPHICS_SIRIT_ROOT "G:/sxm/.cache/cpm/sirit/1.0.5-windows-amd64" CACHE PATH "Existing Sirit installation")
++set(NATIVE_GRAPHICS_VULKAN_INCLUDE "" CACHE PATH "Existing Vulkan headers")
++if(NOT EXISTS "${NATIVE_GRAPHICS_VULKAN_INCLUDE}/vulkan/vulkan.h")
++  message(FATAL_ERROR "Set -DNATIVE_GRAPHICS_VULKAN_INCLUDE=<existing dependency path>")
++endif()
++set(NATIVE_GRAPHICS_SIRIT_ROOT "" CACHE PATH "Existing Sirit installation")
++if(NOT EXISTS "${NATIVE_GRAPHICS_SIRIT_ROOT}/lib/sirit-static.lib")
++  message(FATAL_ERROR "Set -DNATIVE_GRAPHICS_SIRIT_ROOT=<existing dependency path>")
++endif()
 +add_library(native_graphics STATIC native_graphics.cpp vulkan_resources.cpp)
 +target_compile_features(native_graphics PUBLIC cxx_std_20)
 +target_include_directories(native_graphics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE "${NATIVE_GRAPHICS_VULKAN_INCLUDE}" "${NATIVE_GRAPHICS_SIRIT_ROOT}/include")
@@ -4764,15 +4770,18 @@ index 0000000000000000000000000000000000000000..e64f1d70eb68b470a65d9e6e977ab4d0
 +} // namespace native
 diff --git a/native-runtime/nvn/CMakeLists.txt b/native-runtime/nvn/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..e1fed90a963c5632a3626429fba7e53ec6337a47
+index 0000000000000000000000000000000000000000..f31a579c3ab7801456fb52cb5ccf855797d9a2dc
 --- /dev/null
 +++ b/native-runtime/nvn/CMakeLists.txt
-@@ -0,0 +1,76 @@
+@@ -0,0 +1,82 @@
 +cmake_minimum_required(VERSION 3.22)
 +if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 +  project(native_nvn_resources LANGUAGES CXX)
 +endif()
-+set(NATIVE_GRAPHICS_VULKAN_INCLUDE "G:/sxm/.cache/cpm/vulkanheaders/v1.4.345/include" CACHE PATH "Existing Vulkan headers")
++set(NATIVE_GRAPHICS_VULKAN_INCLUDE "" CACHE PATH "Existing Vulkan headers")
++if(NOT EXISTS "${NATIVE_GRAPHICS_VULKAN_INCLUDE}/vulkan/vulkan.h")
++  message(FATAL_ERROR "Set -DNATIVE_GRAPHICS_VULKAN_INCLUDE=<existing dependency path>")
++endif()
 +if(NOT TARGET native_graphics)
 +  add_library(native_nvn_vulkan_backend STATIC ../graphics/vulkan_resources.cpp)
 +  target_compile_features(native_nvn_vulkan_backend PUBLIC cxx_std_20)
@@ -4792,7 +4801,10 @@ index 0000000000000000000000000000000000000000..e1fed90a963c5632a3626429fba7e53e
 +enable_testing()
 +add_test(NAME native_nvn_resources COMMAND native_nvn_resource_test)
 +set_tests_properties(native_nvn_resources PROPERTIES TIMEOUT 30)
-+set(NATIVE_GRAPHICS_SIRIT_ROOT "G:/sxm/.cache/cpm/sirit/1.0.5-windows-amd64" CACHE PATH "Existing Sirit installation")
++set(NATIVE_GRAPHICS_SIRIT_ROOT "" CACHE PATH "Existing Sirit installation")
++if(NOT EXISTS "${NATIVE_GRAPHICS_SIRIT_ROOT}/lib/sirit-static.lib")
++  message(FATAL_ERROR "Set -DNATIVE_GRAPHICS_SIRIT_ROOT=<existing dependency path>")
++endif()
 +add_executable(native_nvn_draw_test draw_test.cpp)
 +target_include_directories(native_nvn_draw_test PRIVATE "${NATIVE_GRAPHICS_SIRIT_ROOT}/include")
 +target_link_libraries(native_nvn_draw_test PRIVATE native_nvn_resources "${NATIVE_GRAPHICS_SIRIT_ROOT}/lib/sirit-static.lib")
@@ -15607,22 +15619,44 @@ index 0000000000000000000000000000000000000000..0606b7fc7b790b7ac87f7dddf5102cb5
 +}
 diff --git a/native-runtime/shaders/CMakeLists.txt b/native-runtime/shaders/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..9a049f754dbcc36f41bf6ed8e5a116814c6dd8b0
+index 0000000000000000000000000000000000000000..e65110b95df85875f9563b3c951fb171557156f7
 --- /dev/null
 +++ b/native-runtime/shaders/CMakeLists.txt
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,76 @@
 +cmake_minimum_required(VERSION 3.22)
 +if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 +    project(native_shader_bridge LANGUAGES CXX)
 +endif()
-+set(NATIVE_SHADER_SOURCE "G:/suyu/mk8-native-runtime/source" CACHE PATH "Matched source headers")
-+set(NATIVE_SHADER_KIT "G:/suyu/mk8-native-runtime/current-host/kit" CACHE PATH "Frozen current host inputs")
-+file(GLOB BOOST_INCLUDE LIST_DIRECTORIES true "G:/sxm/.cache/cpm/boost/boost-1.90.0/libs/*/include")
++set(NATIVE_SHADER_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/../.." CACHE PATH "Matched source headers")
++set(NATIVE_SHADER_KIT "" CACHE PATH "Frozen matching host inputs")
++set(NATIVE_SHADER_INCLUDE_DIRS "" CACHE STRING "Additional matched header directories: Boost, fmt, Sirit, unordered_dense and optional source overlay")
++set(NATIVE_GRAPHICS_VULKAN_INCLUDE "" CACHE PATH "Existing Vulkan headers")
++set(NATIVE_SHADER_GRAPHICS_LIBRARY "" CACHE FILEPATH "Matching built native_graphics library")
++if(NOT IS_DIRECTORY "${NATIVE_SHADER_SOURCE}/src")
++  message(FATAL_ERROR "Set -DNATIVE_SHADER_SOURCE=<matched source checkout>")
++endif()
++if(NOT IS_DIRECTORY "${NATIVE_SHADER_KIT}/inputs")
++  message(FATAL_ERROR "Set -DNATIVE_SHADER_KIT=<matching frozen kit>")
++endif()
++if(NOT NATIVE_SHADER_INCLUDE_DIRS)
++  message(FATAL_ERROR "Set -DNATIVE_SHADER_INCLUDE_DIRS=<semicolon-separated matched include directories>")
++endif()
++foreach(directory IN LISTS NATIVE_SHADER_INCLUDE_DIRS)
++  if(NOT IS_DIRECTORY "${directory}")
++    message(FATAL_ERROR "NATIVE_SHADER_INCLUDE_DIRS contains a missing directory: ${directory}")
++  endif()
++endforeach()
++if(NOT EXISTS "${NATIVE_GRAPHICS_VULKAN_INCLUDE}/vulkan/vulkan.h")
++  message(FATAL_ERROR "Set -DNATIVE_GRAPHICS_VULKAN_INCLUDE=<existing Vulkan include directory>")
++endif()
++if(NOT EXISTS "${NATIVE_SHADER_GRAPHICS_LIBRARY}")
++  message(FATAL_ERROR "Set -DNATIVE_SHADER_GRAPHICS_LIBRARY=<matching built native_graphics library>")
++endif()
 +add_library(native_shader_bridge STATIC native_shaders.cpp cache_index.cpp)
 +target_compile_features(native_shader_bridge PUBLIC cxx_std_20)
 +target_compile_definitions(native_shader_bridge PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN ARCHITECTURE_x86_64=1 BOOST_CONTAINER_NO_LIB BOOST_CONTAINER_STATIC_LINK)
 +target_include_directories(native_shader_bridge PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${NATIVE_SHADER_SOURCE}/src")
-+target_include_directories(native_shader_bridge SYSTEM PUBLIC "G:/sxmb/src" "G:/sxm/.cache/cpm/unordered_dense/7b55cab841/include" "G:/sxm/.cache/cpm/fmt/12.1.0/include" "G:/sxm/.cache/cpm/sirit/1.0.5-windows-amd64/include" ${BOOST_INCLUDE})
++target_include_directories(native_shader_bridge SYSTEM PUBLIC ${NATIVE_SHADER_INCLUDE_DIRS})
 +foreach(name shader_recompiler common fmt sirit-static libboost_container-vc145-mt-x64-1_90 libboost_filesystem-vc145-mt-x64-1_90 libboost_date_time-vc145-mt-x64-1_90)
 + file(GLOB LIB "${NATIVE_SHADER_KIT}/inputs/*-${name}.lib")
 + list(LENGTH LIB COUNT)
@@ -15638,8 +15672,8 @@ index 0000000000000000000000000000000000000000..9a049f754dbcc36f41bf6ed8e5a11681
 +add_executable(native_shader_module_check module_check.cpp)
 +target_compile_features(native_shader_module_check PRIVATE cxx_std_20)
 +target_compile_options(native_shader_module_check PRIVATE /utf-8)
-+target_include_directories(native_shader_module_check PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../graphics" "G:/sxm/.cache/cpm/vulkanheaders/v1.4.345/include")
-+target_link_libraries(native_shader_module_check PRIVATE "G:/suyu/mk8-native-runtime/native-platform/graphics-build/native_graphics.lib")
++target_include_directories(native_shader_module_check PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../graphics" "${NATIVE_GRAPHICS_VULKAN_INCLUDE}")
++target_link_libraries(native_shader_module_check PRIVATE "${NATIVE_SHADER_GRAPHICS_LIBRARY}")
 +
 +set(NATIVE_SHADER_TEST_CACHE "" CACHE FILEPATH "Owned version18 shader cache for integration tests")
 +if(NATIVE_SHADER_TEST_CACHE)
@@ -17603,14 +17637,17 @@ index 0000000000000000000000000000000000000000..dd3b389abaa3eba3b93a65e080fec977
 +}
 diff --git a/native-runtime/textures/CMakeLists.txt b/native-runtime/textures/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..0358427e9661824d25c646b7b3b3924ca98f04b6
+index 0000000000000000000000000000000000000000..d7ebf4b7255bf0fef1e68382953b79f1fa1b60ba
 --- /dev/null
 +++ b/native-runtime/textures/CMakeLists.txt
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,31 @@
 +cmake_minimum_required(VERSION 3.22)
 +project(native_texture_codec LANGUAGES CXX)
 +get_filename_component(SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
-+set(NATIVE_TEXTURE_FMT_ROOT "G:/sxm/.cache/cpm/fmt/12.1.0" CACHE PATH "Existing fmt installation")
++set(NATIVE_TEXTURE_FMT_ROOT "" CACHE PATH "Existing fmt installation")
++if(NOT EXISTS "${NATIVE_TEXTURE_FMT_ROOT}/include/fmt/base.h")
++  message(FATAL_ERROR "Set -DNATIVE_TEXTURE_FMT_ROOT=<existing dependency path>")
++endif()
 +add_library(native_texture_codec STATIC codec.cpp tiling.cpp
 +  "${SOURCE_ROOT}/externals/bc_decoder/bc_decoder.cpp")
 +target_compile_features(native_texture_codec PUBLIC cxx_std_20)
@@ -20935,10 +20972,10 @@ index cb0f096ef247bef53be630bcdcaf4af6f2f3dc97..48be0077decc0d8867ea36a99eb24bde
  namespace Tegra::Texture {
 diff --git a/tests/native_api/CMakeLists.txt b/tests/native_api/CMakeLists.txt
 new file mode 100644
-index 0000000000000000000000000000000000000000..db5394f51f7c8f92d9b6af6af8655549e20e670a
+index 0000000000000000000000000000000000000000..2f11401bcbedd1ba74b87c6bca5468755794e98a
 --- /dev/null
 +++ b/tests/native_api/CMakeLists.txt
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,27 @@
 +cmake_minimum_required(VERSION 3.22)
 +project(native_api LANGUAGES C CXX)
 +file(TO_CMAKE_PATH "${SUYU_SOURCE}" SUYU_SOURCE)
@@ -20947,7 +20984,10 @@ index 0000000000000000000000000000000000000000..db5394f51f7c8f92d9b6af6af8655549
 +target_include_directories(api_gen PRIVATE "${SUYU_SOURCE}/src")
 +add_library(api_resources STATIC "${SUYU_SOURCE}/native-runtime/nvn/resources.cpp" "${SUYU_SOURCE}/native-runtime/nvn/buffer_init.cpp" "${SUYU_SOURCE}/native-runtime/graphics/vulkan_resources.cpp")
 +target_compile_features(api_resources PUBLIC cxx_std_20)
-+set(NATIVE_GRAPHICS_VULKAN_INCLUDE "G:/sxm/.cache/cpm/vulkanheaders/v1.4.345/include" CACHE PATH "Existing Vulkan headers")
++set(NATIVE_GRAPHICS_VULKAN_INCLUDE "" CACHE PATH "Existing Vulkan headers")
++if(NOT EXISTS "${NATIVE_GRAPHICS_VULKAN_INCLUDE}/vulkan/vulkan.h")
++  message(FATAL_ERROR "Set -DNATIVE_GRAPHICS_VULKAN_INCLUDE=<existing dependency path>")
++endif()
 +target_include_directories(api_resources PUBLIC "${SUYU_SOURCE}/native-runtime/nvn" PRIVATE "${NATIVE_GRAPHICS_VULKAN_INCLUDE}")
 +add_executable(buffer_init_test buffer_init_test.cpp)
 +target_link_libraries(buffer_init_test PRIVATE api_resources)
@@ -22073,10 +22113,11 @@ index 0000000000000000000000000000000000000000..b3dc62b57577422e025a35d69bac0c7e
 +}
 diff --git a/tests/native_guest_callback/run.py b/tests/native_guest_callback/run.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..3189eb8172aff2ee068a6d63ea378ebf9c0cd64d
+index 0000000000000000000000000000000000000000..64e2c9ae950feb9f630e9ab8c45a764aab88526a
 --- /dev/null
 +++ b/tests/native_guest_callback/run.py
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,26 @@
++import shutil
 +import argparse, pathlib, subprocess, os, json, hashlib
 +p=argparse.ArgumentParser();p.add_argument('--build',type=pathlib.Path,required=True);p.add_argument('--pending',type=pathlib.Path,required=True);p.add_argument('--native-profile',action='store_true');a=p.parse_args()
 +b=a.build.resolve();b.mkdir(parents=True,exist_ok=True);here=pathlib.Path(__file__).resolve().parent;source=here.parents[1]
@@ -22090,7 +22131,8 @@ index 0000000000000000000000000000000000000000..3189eb8172aff2ee068a6d63ea378ebf
 + run(['cmake','-S',here,'-B',d,'-DCALLBACK_GENERATED_DIR='+str(b/'generated'),'-DPENDING_GENERATED_DIR='+str(a.pending.resolve()),'-DFIXTURE_MODE='+mode,'-DCALLBACK_NATIVE_PROFILE='+('ON'if a.native_profile else 'OFF')]);run(['cmake','--build',d,'--config','Release','--target','native_guest_callback_test','--parallel','2']);e=exe(d,'native_guest_callback_test');run([e]);proof['modes'][mode]={'result':'PASS','sha256':hashlib.sha256(e.read_bytes()).hexdigest()}
 + if os.name=='nt':
 +  import re
-+  dumpbin=next(iter(sorted(pathlib.Path('C:/Program Files/Microsoft Visual Studio').glob('*/*/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe'))))
++  dumpbin = shutil.which('dumpbin')
++  if not dumpbin: raise RuntimeError('dumpbin not found; use a Visual Studio developer shell')
 +  deps=subprocess.run([str(dumpbin),'/DEPENDENTS',str(e)],capture_output=True,text=True,check=True,**flags).stdout
 +  (d/'dependencies.txt').write_text(deps)
 +  dlls=re.findall(r'^\s+([^\s]+\.dll)\s*$',deps,re.M|re.I)
@@ -26141,10 +26183,11 @@ index 0000000000000000000000000000000000000000..894abd870ac1ee0bfafb140529a94ec2
 +}
 diff --git a/tests/native_ownership_memory/run.py b/tests/native_ownership_memory/run.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..b2d7a48cf6f8e1aaccaf59961cf5b7d44ee77f2b
+index 0000000000000000000000000000000000000000..f3a0c7516252537fdd2b69413afdb05e7d8455ad
 --- /dev/null
 +++ b/tests/native_ownership_memory/run.py
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,53 @@
++import shutil
 +"""Synthetic central memory, emitted preflight, and strict accounting verification."""
 +import argparse
 +import hashlib
@@ -26184,7 +26227,8 @@ index 0000000000000000000000000000000000000000..b2d7a48cf6f8e1aaccaf59961cf5b7d4
 +    result.check_returncode()
 +    row = {'result': 'PASS', 'stdout': result.stdout, 'exe_sha256': hashlib.sha256(exe.read_bytes()).hexdigest()}
 +    if os.name == 'nt':
-+        dumpbin = next(iter(sorted(Path('C:/Program Files/Microsoft Visual Studio').glob('*/*/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe'))))
++        dumpbin = shutil.which('dumpbin')
++        if not dumpbin: raise RuntimeError('dumpbin not found; use a Visual Studio developer shell')
 +        deps = subprocess.run([str(dumpbin), '/DEPENDENTS', str(exe)], capture_output=True, text=True, check=True, **flags).stdout
 +        (b / (target + '-dependencies.txt')).write_text(deps)
 +        dlls = re.findall(r'^\s+([^\s]+\.dll)\s*$', deps, re.M | re.I)
@@ -27856,10 +27900,11 @@ index 0000000000000000000000000000000000000000..70d395a93253c72850e3740924041652
 +The same owner suite also runs against the emitted native profile (ABI6/features7, FM1+GG1+FPX1) by selecting `native-pending-native-profile/generated` with `--generated` and a separate `--build` directory. Both target and caller negotiate exact fastmem offsets/mask, guard generation and FPX offsets/inhibit. The Host uses authoritative memory callbacks and immutable sealed code; this proves the production context layout and transport without claiming a raw-fastmem or graphics backend. Profile assertions require genuine first-entry verification and no guest reentry while parked. The FM0 fixture remains a separate regression.
 diff --git a/tests/native_pending_host/run.py b/tests/native_pending_host/run.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..e438295670e0e0eddc78a6343fe7be922ee790ec
+index 0000000000000000000000000000000000000000..c13ab6078d20b79406b02de4b8d36329803c74a1
 --- /dev/null
 +++ b/tests/native_pending_host/run.py
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,30 @@
++import shutil
 +"""CPU owner scheduler tests using the separately verified emitted v3 fixtures."""
 +import argparse,os,subprocess,re,hashlib,json
 +from pathlib import Path
@@ -27873,7 +27918,8 @@ index 0000000000000000000000000000000000000000..e438295670e0e0eddc78a6343fe7be92
 + exe=next(p for p in [d/'Release/native_pending_host_test.exe',d/'native_pending_host_test.exe',d/'native_pending_host_test'] if p.exists())
 + subprocess.run([str(exe)],check=True,**flags)
 + if os.name=='nt':
-+  dumpbin=next(iter(sorted(Path('C:/Program Files/Microsoft Visual Studio').glob('*/*/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe'))))
++  dumpbin = shutil.which('dumpbin')
++  if not dumpbin: raise RuntimeError('dumpbin not found; use a Visual Studio developer shell')
 +  deps=subprocess.run([str(dumpbin),'/DEPENDENTS',str(exe)],text=True,capture_output=True,check=True,**flags).stdout
 +  (d/'dependencies.txt').write_text(deps)
 +  dlls=re.findall(r'^\s+([^\s]+\.dll)\s*$',deps,re.M|re.I)
@@ -29962,10 +30008,11 @@ index 0000000000000000000000000000000000000000..7ea8f9f5de9cb4f0fcf15a7e27911cd9
 +}
 diff --git a/tests/native_platform/run.py b/tests/native_platform/run.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..61979ac407177cba8331f0b213a1255e078d492a
+index 0000000000000000000000000000000000000000..7523066d7966c42888d400578491977db3a98641
 --- /dev/null
 +++ b/tests/native_platform/run.py
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,91 @@
++import shutil
 +"""Independent native target bootstrap. Synthetic inputs; no game assets or keys."""
 +import argparse
 +import os
@@ -30029,7 +30076,8 @@ index 0000000000000000000000000000000000000000..61979ac407177cba8331f0b213a1255e
 +    run([exe('native_platform_test'),target,'load'],1)
 +if os.name=='nt':
 +    import re
-+    dumpbin=next(iter(sorted(Path('C:/Program Files/Microsoft Visual Studio').glob('*/*/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe'))),None)
++    dumpbin = shutil.which('dumpbin')
++    if not dumpbin: raise RuntimeError('dumpbin not found; use a Visual Studio developer shell')
 +    assert dumpbin,'MSVC dumpbin required for static dependency proof'
 +    for target in ('native_platform_test','native_loader_test','native_admit','native_primitive_test','native_ipc_test','native_event_test','native_wait_test'):
 +        text=(build/(target+'.map')).read_text(errors='replace')
@@ -30057,10 +30105,11 @@ index 0000000000000000000000000000000000000000..61979ac407177cba8331f0b213a1255e
 +
 diff --git a/tests/native_platform/run_boot.py b/tests/native_platform/run_boot.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..503ec9e59293d159419f0b917ce8d1aecadabeff
+index 0000000000000000000000000000000000000000..fb141623bb359322f7492429012f1a865930c787
 --- /dev/null
 +++ b/tests/native_platform/run_boot.py
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,73 @@
++import shutil
 +"""Optional actual static CPU diagnostic. No emulator, renderer or GPU process."""
 +import argparse,hashlib,json,os,re,subprocess
 +from datetime import datetime,timezone
@@ -30122,7 +30171,8 @@ index 0000000000000000000000000000000000000000..503ec9e59293d159419f0b917ce8d1ae
 +map_text=(build/'native_boot.map').read_text(errors='replace')
 +assert not re.search(r'Dynarmic|ArmRecomp|KThread|Core@System|vulkan|SDL_|Qt[0-9]',map_text,re.I),'Forbidden runtime host dependency'
 +if os.name=='nt':
-+    dumpbin=next(iter(sorted(Path('C:/Program Files/Microsoft Visual Studio').glob('*/*/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe'))))
++    dumpbin = shutil.which('dumpbin')
++    if not dumpbin: raise RuntimeError('dumpbin not found; use a Visual Studio developer shell')
 +    deps=subprocess.run([str(dumpbin),'/DEPENDENTS',str(exe)],text=True,capture_output=True,check=True,**flags).stdout
 +    (build/'dependencies.txt').write_text(deps)
 +    proof['dlls']=re.findall(r'^\s+([^\s]+\.dll)\s*$',deps,re.I|re.M)
@@ -30863,13 +30913,13 @@ index 0000000000000000000000000000000000000000..feea95c86ba8e21cba7281337e3416fe
 +target_compile_features(rsqrt_test PRIVATE c_std_11)
 diff --git a/tests/native_rsqrt/README.md b/tests/native_rsqrt/README.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..b1d88d039683a99305a66b53a4edeeff74f6edbc
+index 0000000000000000000000000000000000000000..ca45351683ce3148f62310eff5059f36723827eb
 --- /dev/null
 +++ b/tests/native_rsqrt/README.md
 @@ -0,0 +1,10 @@
 +# Exact rsqrt lookup synthetic checks
 +
-+Run `python run.py --build G:/suyu/mk8-native-runtime/native-rsqrt-test` from a shell with CMake and a C/C++ compiler. The runner uses two build jobs and BelowNormal subprocess priority on Windows. Generated outputs stay in the supplied build directory.
++Run `python run.py --build ./build/native-rsqrt` from a shell with CMake and a C/C++ compiler. The runner uses two build jobs and BelowNormal subprocess priority on Windows. Generated outputs stay in the supplied build directory.
 +
 +The generator obtains original and lookup code from the real emitter, renames only the public helper function, and compiles both against the emitted GuestContext header. It emits complete projects off/on/off in one process compares all disabled project files byte for byte, checks disabled runtime/header against the unchanged canonical RuntimeC/RuntimeH functions, and checks lookup text is present only in the enabled runtime.
 +

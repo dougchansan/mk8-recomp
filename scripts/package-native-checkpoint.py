@@ -3,15 +3,26 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def public_command(command, replacements, python_executable=sys.executable):
+    words = []
+    for word in map(str, command):
+        if word == python_executable:
+            word = "python"
+        for local, portable in sorted(replacements.items(), key=lambda item: len(item[0]), reverse=True):
+            word = word.replace(local, portable)
+        words.append(word)
+    return words
 
 
 def main():
@@ -55,17 +66,12 @@ def main():
         log = build / f"{label}.log"
         with log.open("w", encoding="utf-8") as stream:
             result = subprocess.run(command, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT,
-                                    creationflags=subprocess.NORMAL_PRIORITY_CLASS, timeout=timeout)
+                                    creationflags=subprocess.NORMAL_PRIORITY_CLASS, timeout=timeout, check=False)
         if result.returncode:
             raise RuntimeError(f"{label} failed ({result.returncode}); see {log}")
         replacements = {str(source): "<source>", str(build): "<build>",
                         str(vulkan): "<vulkan-include>", str(sirit): "<sirit-root>", str(fmt): "<fmt-root>"}
-        public_command = []
-        for word in command:
-            for local, portable in replacements.items():
-                word = word.replace(local, portable)
-            public_command.append(word)
-        records.append({"step": label, "command": public_command, "exit_code": 0,
+        records.append({"step": label, "command": public_command(command, replacements), "exit_code": 0,
                         "log_sha256": sha(log)})
         return log
 

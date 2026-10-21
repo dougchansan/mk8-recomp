@@ -283,9 +283,11 @@ Not established:
 
 ### Next steps
 
-- Canonical recipe keys: zero vertex attributes and streams the vertex stage
-  does not read before encoding (most observed misses differ only there), after
-  proving byte-identical create infos.
-- Seed management: ship nothing title-specific; document generating a local
-  seed with `NX_PIPELINE_RECIPES=capture`, and merge seeds from several flights.
+- Do not assume unused vertex attributes explain the remaining misses: the
+  R249 analysis found zero merges among 1,142 keys after normalizing them.
+  Preserve exact admission and investigate the actual newly consumed states.
+- Seed management: R299 adds read-only `NX_PIPELINE_RECIPE_SEED` import across
+  data roots, preserving active-root priority and exact admission. Generate
+  captures locally; no title-specific catalog is shipped. See
+  [catalog verification and current racing readings](native-pipeline-catalogs.md).
 - Compute pipelines (two per run here) and the masked-clear family stay inline.

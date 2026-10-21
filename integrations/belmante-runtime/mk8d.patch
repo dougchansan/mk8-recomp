@@ -10655,7 +10655,7 @@
  }  // namespace nx::nvn
 --- /dev/null
 +++ b/runtime/src/nvn/nvn_pipeline_prewarm.cpp
-@@ -0,0 +1,583 @@
+@@ -0,0 +1,601 @@
 +// The recipe engine (nvn_pipeline_recipes.h): records the graphics pipelines a run makes, loads the last run's
 +// recipes and builds them on bounded background workers, and hands them to the draws that need them.
 +//
@@ -11022,11 +11022,29 @@
 +    std::string bytes, why = "no file";
 +    FileInfo saved;
 +    bool loaded = read_whole_file(e.path, bytes, kMaxFileBytes) && parse(bytes, e.older, &saved, &why);
++    bool have_recipes = loaded;
 +    log("nvn/vk: pipeline recipes %s: %s%s, %zu loaded (profile %016llx, saved %016llx)%s", e.path.c_str(),
 +        mode() == Mode::Capture ? "capture" : "prewarm", e.prewarm || mode() == Mode::Capture ? "" : " disabled here",
 +        e.older.size(), (unsigned long long)e.info.profile, (unsigned long long)(loaded ? saved.profile : 0),
 +        loaded ? "" : (" (" + why + ")").c_str());
-+    if (e.prewarm && loaded) {
++    // Import a prior local capture without sharing a mutable cache/data root.
++    // Keep the active file's priority and runs metadata; the catalog is read-only.
++    const char* seed_path = std::getenv("NX_PIPELINE_RECIPE_SEED");
++    if (seed_path && *seed_path && e.path != seed_path) {
++        std::string seed_bytes, seed_why = "unreadable or oversized file";
++        std::vector<Recipe> seed;
++        if (read_whole_file(seed_path, seed_bytes, kMaxFileBytes) && parse(seed_bytes, seed, nullptr, &seed_why)) {
++            std::vector<Recipe> combined = e.older;
++            combined.insert(combined.end(), seed.begin(), seed.end());
++            for (size_t i = 0; i < combined.size(); ++i) combined[i].order = uint32_t(i);
++            e.older = merge_for_save({}, combined, kMaxRecipes);
++            have_recipes = true;
++            log("nvn/vk: pipeline seed catalog %s: %zu entries, %zu merged; read-only", seed_path, seed.size(), e.older.size());
++        } else {
++            log("nvn/vk: pipeline seed catalog %s not loaded: %s", seed_path, seed_why.c_str());
++        }
++    }
++    if (e.prewarm && have_recipes) {
 +        enqueue_locked(e, e.older);
 +        log("nvn/vk: pipeline prewarm: %zu queued; private bytes %.1f MB", e.queue.size(),
 +            double(private_bytes()) / (1 << 20));

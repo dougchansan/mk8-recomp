@@ -46,6 +46,12 @@ R284 reduces single-thread focus-gate overhead while preserving every ownership
 and visibility check, and records minimum presentation intervals for future
 course reports. See [main-thread measurements and per-course FPS](docs/native-main-thread-focus.md).
 
+R299 imports a prior local pipeline catalog without sharing mutable caches.
+With a covering private capture, Sweet Sweet Canyon and Thwomp Ruins entry
+peaks fall from 3.0–3.4 s and 2.7–3.3 s to 417 ms and 319 ms. This moves known
+compilation ahead of course entry; it is not a steady-FPS gain. See
+[catalog measurements and current racing readings](docs/native-pipeline-catalogs.md).
+
 R282 moves optional diagnostics out of ordinary CPU dispatch. Authored alternating
 benchmarks show lower dispatch overhead, with all 44 suites and 3,212 GPU checks
 passing. See [dispatch measurements and sweep limits](docs/native-dispatch-optimization.md);

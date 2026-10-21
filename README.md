@@ -69,6 +69,12 @@ ownership, generation and visibility queries on every enabled gate call.
 Unprofiled gate benchmarks improve; the two gameplay runs have mixed
 per-course results. See [focus revision measurements](docs/native-focus-revision-performance.md).
 
+R313 reduces RTTI work in copied-texture registry lookups while preserving the
+first matching owner and complete identity validation. The isolated fixture
+improves by 47.2%; a separate racing diagnostic also measures lower lookup cost.
+Four-course presentation results remain mixed. See
+[texture registry measurements](docs/native-texture-registry-performance.md).
+
 R282 moves optional diagnostics out of ordinary CPU dispatch. Authored alternating
 benchmarks show lower dispatch overhead, with all 44 suites and 3,212 GPU checks
 passing. See [dispatch measurements and sweep limits](docs/native-dispatch-optimization.md);

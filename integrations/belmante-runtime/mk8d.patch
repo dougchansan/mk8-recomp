@@ -7459,15 +7459,31 @@
  #include <atomic>
  #include <functional>
  #include <map>
-@@ -45,6 +46,7 @@
+@@ -44,8 +45,15 @@
+ 
  // ---- host objects ---------------------------------------------------------------------------------------------
  
++struct Texture;
  struct Object {
 +    std::string debug_label;
      virtual ~Object() = default;
++    // The copied-descriptor fallback walks a mixed registry in legacy order.
++    // Typed dispatch avoids an RTTI search for each unrelated object. This is
++    // only a type query; ownership, generation and descriptor checks stay with
++    // the caller holding objects_lock.
++    virtual Texture* as_texture() noexcept { return nullptr; }
  };
  
-@@ -206,6 +208,7 @@
+ // Looked up for every command recorded and every draw replayed, from several threads: a hash map under a
+@@ -190,6 +198,7 @@
+ struct GpuImage;  // the Vulkan side of a texture (nvn_vk.cpp)
+ 
+ struct Texture : Object {
++    Texture* as_texture() noexcept override { return this; }
+     uint32_t target = 0, format = 0, flags = 0, levels = 0, samples = 0, depth_stencil_mode = 0;
+     uint32_t width = 0, height = 0, depth = 0, stride = 0;
+     uint64_t pool = 0, offset = 0, storage_size = 0;
+@@ -206,6 +215,7 @@
      // Whether `writes` holds anything: set and cleared with it, under objects_lock() alone, and read without the lock
      // (every sampled texture of every replayed draw asks; docs/nvn/PERF-PLAN.md).
      std::atomic<bool> has_writes{false};
@@ -7475,7 +7491,7 @@
      // The CPU wrote the texture's memory (nvnMemoryPoolFlushMappedRange over it, e.g. a glyph cache): upload again.
      std::atomic<bool> dirty{false};
      // What of the memory the CPU wrote, as bytes from `memory` ([lo, hi); UINT64_MAX / 0: nothing known yet). Merged by
-@@ -305,17 +308,22 @@
+@@ -305,17 +315,22 @@
  // objects (blend, depth/stencil, vertex layouts, ...) are decoded when recorded, through the SDK driver's getters,
  // and kept in the list's blobs: the game may reuse its structs right after the call.
  
@@ -7499,7 +7515,7 @@
      } op;
      uint32_t n = 0, mask = 0;
      uint64_t a[9] = {};  // textures (render targets: colors then depth), handles, GPU addresses, sizes, ...
-@@ -375,6 +383,7 @@
+@@ -375,6 +390,7 @@
      uint16_t format[9] = {};  // the views' NVN formats (0: the texture's own)
  };
  
@@ -9971,7 +9987,7 @@
 +            if(candidate&&!ambiguous){hit={key,candidate,generation};return candidate;}
 +        }
 +        for(const auto& [owner,object]:objects()) {
-+            const auto* texture=dynamic_cast<Texture*>(object.get());if(!texture||!matches(*texture))continue;
++            const auto* texture=object?object->as_texture():nullptr;if(!texture||!matches(*texture))continue;
 +            hit={key,owner,generation};static std::atomic<uint64_t> logged=0;if(logged.fetch_add(1,std::memory_order_relaxed)<32)log("nvn: descriptor copy matched live native texture");return owner;
 +        }
 +    }
@@ -17230,7 +17246,7 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,789 @@
+@@ -0,0 +1,834 @@
 +#include "native_thread_policy_probe.h"
 +#include <source_location>
 +#include "nvn/native_readback_memory.h"
@@ -17346,6 +17362,51 @@
 +  for(uint64_t i=0;i<rgb.size();++i)require(rgb[i]==(i%3?0:255));
 +  p_vkUnmapMemory(vk_device(),memory);p_vkDestroyFence(vk_device(),fence,nullptr);p_vkDestroyCommandPool(vk_device(),pool,nullptr);p_vkDestroyBuffer(vk_device(),buffer,nullptr);p_vkFreeMemory(vk_device(),memory,nullptr);
 +  std::printf("native GPU-written readback 1920x1080 type=%u flags=%x RGB-copy-ns=%llu exact-red PASS\n",allocation.memoryTypeIndex,flags,(unsigned long long)elapsed);return 0;
++ }
++
++ if(argc==2&&std::string_view(argv[1])=="--texture-registry-bench") {
++  // Exercise the fallback with a mixed registry and invalidate the positive
++  // cache between queries. No pool-index hint may hide the measured scan.
++  nx::memory_init();const auto device=nx::kernel_alloc(7008,16);nx::vm_set(device,7008,nx::kMemHeap,3);
++  if(!nx::nvn::initialize_native_device(device,0))throw std::runtime_error("registry benchmark device initialization");
++  unsigned checks=0;auto require=[&](bool value){++checks;if(!value)throw std::runtime_error("registry identity regression "+std::to_string(checks));};
++  constexpr unsigned count=8192,queries=2000;
++  const auto owners=nx::kernel_alloc(512,16),noise=nx::kernel_alloc(count*256,16),descriptor=nx::kernel_alloc(0xb0,16);
++  nx::vm_set(descriptor,0xb0,nx::kMemHeap,3);
++  auto fill=[](nx::nvn::Texture& t){t.pool=0xaba000;t.gpu=0x1fa000000;t.offset=64;t.stride=32;t.target=1;t.format=0x25;t.width=t.height=8;t.depth=t.levels=t.samples=1;};
++  fill(nx::nvn::make<nx::nvn::Texture>(owners));fill(nx::nvn::make<nx::nvn::Texture>(owners+256));
++  for(unsigned i=0;i<count;++i){if(i&1){auto& t=nx::nvn::make<nx::nvn::Texture>(noise+i*256);fill(t);t.gpu+=256+i;}else nx::nvn::make<nx::nvn::Object>(noise+i*256);}
++  auto copy=[&]{const auto* t=nx::nvn::get<nx::nvn::Texture>(owners);require(t!=nullptr);nx::nvn::Sdk53TextureWire wire;wire.device=device;wire.gpu=t->gpu;wire.pool=t->pool;wire.offset=t->offset;wire.stride=t->stride;wire.aspect=nx::nvn::format_aspect(t->format);wire.fields={t->flags,t->target,t->width,t->height,t->depth,t->levels,t->format,t->samples,t->swizzle[0],t->swizzle[1],t->swizzle[2],t->swizzle[3],t->depth_stencil_mode};const auto bytes=nx::nvn::sdk53_texture_wire(wire);std::memcpy(reinterpret_cast<void*>(descriptor),bytes.data(),bytes.size());};
++  uint64_t first=owners,second=owners+256;
++  copy();auto width=nx::hle_lookup("nvnTextureGetWidth");require(width!=nullptr);
++  auto query=[&]{nx::CPU c{};c.x[0]=descriptor;width(c);return c.x[0];};
++  // Equal descriptors with distinct owners must retain the registry's current
++  // first-match choice, including after a rehash and address reuse.
++  auto same_owner=[&]{uint64_t expected=0;{std::shared_lock guard(nx::nvn::objects_lock());for(const auto& [key,object]:nx::nvn::objects()){const auto* t=dynamic_cast<nx::nvn::Texture*>(object.get());if(t&&t->pool==0xaba000&&t->gpu==0x1fa000000){expected=key;break;}}}auto held=nx::nvn::NativeTextureRegistration::capture(descriptor);require(expected&&held.source_key()==expected);};
++  same_owner();{std::lock_guard guard(nx::nvn::objects_lock());nx::nvn::objects().rehash(nx::nvn::objects().bucket_count()*2);}same_owner();
++  // Rehash may place the original owners at the front. Select the last two
++  // current texture nodes so the timed path really traverses the mixed registry.
++  {std::lock_guard guard(nx::nvn::objects_lock());
++   for(const auto& [key,object]:nx::nvn::objects())if(dynamic_cast<nx::nvn::Texture*>(object.get())){second=first;first=key;}
++  }
++  {std::lock_guard guard(nx::nvn::objects_lock());
++   static_cast<nx::nvn::Texture*>(nx::nvn::objects().at(owners).get())->gpu+=100;
++   static_cast<nx::nvn::Texture*>(nx::nvn::objects().at(owners+256).get())->gpu+=200;
++   fill(*static_cast<nx::nvn::Texture*>(nx::nvn::objects().at(first).get()));
++   fill(*static_cast<nx::nvn::Texture*>(nx::nvn::objects().at(second).get()));
++  }
++  {const auto* t=nx::nvn::get<nx::nvn::Texture>(first);nx::nvn::Sdk53TextureWire wire;wire.device=device;wire.gpu=t->gpu;wire.pool=t->pool;wire.offset=t->offset;wire.stride=t->stride;wire.aspect=nx::nvn::format_aspect(t->format);wire.fields={t->flags,t->target,t->width,t->height,t->depth,t->levels,t->format,t->samples,t->swizzle[0],t->swizzle[1],t->swizzle[2],t->swizzle[3],t->depth_stencil_mode};const auto bytes=nx::nvn::sdk53_texture_wire(wire);std::memcpy(reinterpret_cast<void*>(descriptor),bytes.data(),bytes.size());}
++  unsigned visited=0;{std::shared_lock guard(nx::nvn::objects_lock());for(const auto& [key,object]:nx::nvn::objects()){++visited;if(key==first||key==second)break;}}require(visited>=count/2);
++  uint64_t checksum=0;const auto start=nx::plat::monotonic_ns();
++  for(unsigned q=0;q<queries;++q){{std::lock_guard churn(nx::nvn::objects_lock());}checksum+=query();}
++  const auto elapsed=nx::plat::monotonic_ns()-start;require(checksum==queries*8ull);
++  auto rejected=[&]{try{(void)query();return false;}catch(const std::invalid_argument&){return true;}};
++  for(unsigned field=0;field<13;++field){const auto address=descriptor+0x20+field*4;const auto original=nx::ld<uint32_t>(address);nx::st<uint32_t>(address,original+17);require(rejected());nx::st<uint32_t>(address,original);require(query()==8);}
++  nx::st<uint64_t>(descriptor+0x60,33);require(rejected());nx::st<uint64_t>(descriptor+0x60,32);
++  nx::nvn::destroy(second);same_owner();nx::nvn::destroy(first);require(rejected());
++  nx::nvn::make<nx::nvn::Object>(first);require(rejected());fill(nx::nvn::make<nx::nvn::Texture>(first));require(query()==8);same_owner();
++  for(unsigned i=0;i<count;++i)nx::nvn::destroy(noise+i*256);nx::nvn::destroy(owners);nx::nvn::destroy(owners+256);nx::nvn::destroy(first);
++  std::cout<<"native registry identity bench calls="<<queries<<" ns_per_call="<<double(elapsed)/queries<<" visited="<<visited<<" checksum="<<checksum<<" checks="<<checks<<" PASS\n";return 0;
 + }
 +
 + if(argc==2&&std::string_view(argv[1])=="--texture-identity-bench") {

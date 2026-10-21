@@ -52,6 +52,12 @@ peaks fall from 3.0–3.4 s and 2.7–3.3 s to 417 ms and 319 ms. This moves kno
 compilation ahead of course entry; it is not a steady-FPS gain. See
 [catalog measurements and current racing readings](docs/native-pipeline-catalogs.md).
 
+R300 adds opt-in individual frame intervals, submission IDs, asynchronous GPU
+execution records and timed hitch events. A short Stadium run verifies the
+measurement streams; no performance improvement is claimed. See
+[native timing measurements](docs/native-timing-measurements.md) for the
+plain/GPU comparison and separate diagnostic profiles.
+
 R282 moves optional diagnostics out of ordinary CPU dispatch. Authored alternating
 benchmarks show lower dispatch overhead, with all 44 suites and 3,212 GPU checks
 passing. See [dispatch measurements and sweep limits](docs/native-dispatch-optimization.md);

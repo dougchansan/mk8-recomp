@@ -535,7 +535,12 @@
          g_renderers.push_back(impl);
 --- a/runtime/src/hle_fs.cpp
 +++ b/runtime/src/hle_fs.cpp
-@@ -21,6 +21,10 @@
+@@ -1,3 +1,4 @@
++#include "native_measurement.h"
+ // nn::fs at the API level, on host files. The game imports these by name (main), so no fsp-srv IPC is involved:
+ //   rom:   -> private/extract/romfs (the RomFS with the update applied)
+ //   save:  -> private/user/save/<mount>
+@@ -21,6 +22,10 @@
  #include <nx/runtime.h>
  
  #include "platform.h"
@@ -546,7 +551,7 @@
  
  namespace fs = std::filesystem;
  
-@@ -66,10 +70,14 @@
+@@ -66,10 +71,14 @@
  struct File {
      FILE* f;
      std::string path;
@@ -562,7 +567,7 @@
  };
  std::map<uint64_t, std::shared_ptr<File>> g_files;
  
-@@ -94,7 +102,8 @@
+@@ -94,7 +103,8 @@
      return nullptr;
  }
  struct Dir {
@@ -572,7 +577,7 @@
      size_t pos = 0;
  };
  std::map<uint64_t, Dir> g_dirs;
-@@ -117,11 +126,30 @@
+@@ -117,11 +127,30 @@
      if (it == g_mounts.end()) return {};
      std::string rest = guest.substr(colon + 1);
      while (!rest.empty() && (rest[0] == '/' || rest[0] == '\\')) rest.erase(0, 1);
@@ -607,7 +612,7 @@
      g_mounts[name] = p;
      log("fs: mounted %s: -> %s", name.c_str(), p.string().c_str());
  }
-@@ -139,6 +167,15 @@
+@@ -139,6 +168,15 @@
      c.x[0] = kOk;
  }
  
@@ -623,7 +628,7 @@
  void EnsureSaveData(CPU& c) { c.x[0] = kOk; }
  
  void MountSaveData(CPU& c) {
-@@ -146,6 +183,23 @@
+@@ -146,6 +184,23 @@
      std::string name = cstr(c.x[0]);
      mount(name, data_root() / "user" / "save");
      c.x[0] = kOk;
@@ -647,7 +652,7 @@
  }
  
  void Unmount(CPU& c) {
-@@ -208,6 +262,11 @@
+@@ -208,6 +263,11 @@
  void GetEntryType(CPU& c) {  // (DirectoryEntryType* out, path)
      std::lock_guard lk(g_fs);
      fs::path p = resolve(cstr(c.x[1]));
@@ -659,7 +664,7 @@
      if (find_virtual(p)) {
          st<uint32_t>(c.x[0], 1);
          c.x[0] = kOk;
-@@ -227,6 +286,14 @@
+@@ -227,6 +287,14 @@
      std::string guest = cstr(c.x[1]);
      fs::path p = resolve(guest);
      int mode = int(c.x[2]);
@@ -674,7 +679,7 @@
      if (const std::string* v = find_virtual(p)) {  // served from memory, through a temporary file
          FILE* f = std::tmpfile();
          if (!f) {
-@@ -259,6 +326,7 @@
+@@ -259,6 +327,7 @@
      }
      uint64_t h = g_next++;
      g_files[h] = std::make_shared<File>(f, guest);
@@ -682,7 +687,7 @@
      st<uint64_t>(c.x[0], h);
      note_open("OpenFile", guest, "ok");
      if (trace_fs()) log("fs: OpenFile(%s, %d) -> %llu", guest.c_str(), mode, (unsigned long long)h);
-@@ -273,6 +341,13 @@
+@@ -273,6 +342,13 @@
  
  void CloseFile(CPU& c) {
      std::lock_guard lk(g_fs);
@@ -696,7 +701,7 @@
      g_files.erase(c.x[0]);
  }
  
-@@ -282,6 +357,7 @@
+@@ -282,6 +358,7 @@
          c.x[0] = kTargetNotFound;
          return;
      }
@@ -704,9 +709,11 @@
      std::lock_guard lk(g_fs);  // the FILE position is shared with writers
      FILE* f = file->f;
      int64_t cur = plat::ftell64(f);
-@@ -294,7 +370,8 @@
+@@ -293,8 +370,10 @@
+ }
  
  uint64_t read_at(const File& file, int64_t off, uint64_t buf, uint64_t size) {
++    measurement::Scope measured("asset-read",measurement::events_on()?measurement::asset_id(file.path.c_str()):0,size);
      uint64_t t0 = plat::monotonic_ns();
 -    uint64_t n = plat::read_at(file.f, off, reinterpret_cast<void*>(buf), size);
 +    if(off<0)throw std::runtime_error("negative native file offset");
@@ -714,7 +721,7 @@
      uint64_t ms = (plat::monotonic_ns() - t0) / 1'000'000;
      if (g_trace) log("fs: read %s at %lld size %llu -> %llu", file.path.c_str(), (long long)off, (unsigned long long)size,
                       (unsigned long long)n);
-@@ -337,6 +414,7 @@
+@@ -337,6 +416,7 @@
          c.x[0] = kTargetNotFound;
          return;
      }
@@ -722,7 +729,7 @@
      std::lock_guard lk(g_fs);
      plat::fseek64(file->f, int64_t(c.x[1]), SEEK_SET);
      fwrite(reinterpret_cast<const void*>(c.x[2]), 1, c.x[3], file->f);
-@@ -347,7 +425,7 @@
+@@ -347,7 +427,7 @@
  void FlushFile(CPU& c) {
      if (auto file = open_file(c.x[0])) {
          std::lock_guard lk(g_fs);
@@ -731,7 +738,7 @@
      }
      c.x[0] = kOk;
  }
-@@ -359,7 +437,9 @@
+@@ -359,7 +439,9 @@
      fs::path p = resolve(cstr(c.x[1]));
      int mode = int(c.x[2]);
      std::error_code ec;
@@ -742,7 +749,7 @@
      note_open("OpenDirectory", cstr(c.x[1]), found ? "ok" : "not found");
      if (trace_fs()) log("fs: OpenDirectory(%s, %d)%s", cstr(c.x[1]).c_str(), mode, found ? "" : " not found");
      if (!found) {
-@@ -367,9 +447,15 @@
+@@ -367,9 +449,15 @@
          return;
      }
      Dir d;
@@ -761,7 +768,7 @@
      }
      uint64_t h = g_next++;
      g_dirs[h] = std::move(d);
-@@ -471,6 +557,9 @@
+@@ -471,6 +559,9 @@
  NX_HLE("_ZN2nn2fs22QueryMountRomCacheSizeEPm", QueryMountRomCacheSize);
  NX_HLE("_ZN2nn2fs8MountRomEPKcPvm", MountRom);
  NX_HLE("_ZN2nn2fs14EnsureSaveDataERKNS_7account3UidE", EnsureSaveData);
@@ -771,7 +778,7 @@
  NX_HLE("_ZN2nn2fs13MountSaveDataEPKcRKNS_7account3UidE", MountSaveData);
  NX_HLE("_ZN2nn2fs7UnmountEPKc", Unmount);
  NX_HLE("_ZN2nn2fs10DeleteFileEPKc", DeleteFile);
-@@ -519,6 +608,11 @@
+@@ -519,6 +610,11 @@
  }
  
  std::string read_game_file(const std::string& relative_to_romfs) {
@@ -783,7 +790,7 @@
      FILE* f = plat::fopen_utf8(utf8(data_root() / "extract" / "romfs" / fs::u8path(relative_to_romfs)), "rb");
      if (!f) return {};
      std::string s;
-@@ -530,3 +624,6 @@
+@@ -530,3 +626,6 @@
  }
  
  }  // namespace nx
@@ -2547,6 +2554,54 @@
 + void disconnect(uint32_t id){std::lock_guard guard(lock);if(id==0)disconnected=true;}
 + uint32_t style(uint32_t id)const{std::lock_guard guard(lock);return initialized&&!disconnected&&id==0&&ids.contains(id)&&(supported&1)?1:0;}
 +};
++}
+--- /dev/null
++++ b/runtime/src/native_measurement.h
+@@ -0,0 +1,45 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Opt-in observations only. IDs correlate jobs, not CPU/GPU clock domains.
++#pragma once
++#include <atomic>
++#include <cstdlib>
++#include <cstring>
++#include "nx/runtime.h"
++#include "platform.h"
++
++namespace nx::measurement {
++inline bool frames_on() {
++    static const bool on = [] { const char* e=std::getenv("NX_MEASURE_FRAMES"); return e && std::strcmp(e,"1")==0; }();
++    return on;
++}
++inline bool events_on() {
++    static const bool on = [] { const char* e=std::getenv("NX_MEASURE_EVENTS"); return e && std::strcmp(e,"1")==0; }();
++    return on;
++}
++inline std::atomic<uint64_t> present_epoch{0}, lines{0};
++inline thread_local uint64_t submit_id=0, present_id=0;
++inline bool admit() {
++    static const uint64_t limit=[] { const char* e=std::getenv("NX_MEASURE_LIMIT"); return e?std::strtoull(e,nullptr,10):2'000'000ull; }();
++    const auto n=lines.fetch_add(1,std::memory_order_relaxed);
++    if(n==limit) log("measure: truncated limit %llu",(unsigned long long)limit);
++    return n<limit;
++}
++inline void event(const char* kind,uint64_t id,uint64_t start,uint64_t end,uint64_t value=0) {
++    if(!events_on()||!admit())return;
++    log("measure event: %s id %llu submit %llu present %llu epoch %llu start %llu end %llu value %llu tid %lld",kind,
++        (unsigned long long)id,(unsigned long long)submit_id,(unsigned long long)present_id,
++        (unsigned long long)present_epoch.load(std::memory_order_relaxed),(unsigned long long)start,
++        (unsigned long long)end,(unsigned long long)value,(long long)plat::current_thread_id());
++}
++struct Context {
++    uint64_t old_submit=submit_id,old_present=present_id;
++    Context(uint64_t submit,uint64_t present){submit_id=submit;present_id=present;}
++    ~Context(){submit_id=old_submit;present_id=old_present;}
++};
++struct Scope {
++    const char* kind;uint64_t id,value,start;
++    Scope(const char* k,uint64_t i=0,uint64_t v=0):kind(k),id(i),value(v),start(events_on()?plat::monotonic_ns():0){}
++    ~Scope(){if(start)event(kind,id,start,plat::monotonic_ns(),value);}
++};
++inline uint64_t asset_id(const char* path){uint64_t h=14695981039346656037ull;while(*path){h^=uint8_t(*path++);h*=1099511628211ull;}return h;}
 +}
 --- /dev/null
 +++ b/runtime/src/native_memory_epoch.h
@@ -9225,30 +9280,48 @@
      // old render, and swizzle/alpha_from_r come from the old texture (review of #34). The pass breaks it avoided came
 --- a/runtime/src/nvn/nvn_gpu_busy.cpp
 +++ b/runtime/src/nvn/nvn_gpu_busy.cpp
-@@ -21,6 +21,9 @@
+@@ -1,3 +1,4 @@
++#include "native_measurement.h"
+ // The GPU's busy time per frame at the real load (NX_GPU_PROFILE=3; docs/nvn/android-perf/PHASE4.md G0). The per-pass
+ // profile (NX_GPU_PROFILE=1, nvn_debug.cpp) waits for every submit, so the GPU idles between frames and its clock
+ // drops: it measured a slower GPU than the game runs on. Here each queued part of a submit or present gets a timestamp
+@@ -21,6 +22,10 @@
  double g_period_ns = 1.0;
  double g_busy_ns = 0, g_span_ns = 0;
  uint64_t g_parts = 0, g_not_ready = 0;
 +bool g_replay[kSlots] = {};
++uint64_t g_submit_ids[kSlots]{},g_present_ids[kSlots]{};
 +double g_class_ns[2] = {};
 +uint64_t g_class_parts[2] = {};
  
  uint64_t read_sysfs(const char* path) {
      FILE* f = std::fopen(path, "r");
-@@ -39,6 +42,10 @@
+@@ -39,6 +44,11 @@
          return e && std::atoi(e) == 3;
      }();
      return on;
 +}
 +
 +void gpu_busy_note_kind(uint32_t slot,bool replay) {
-+    if(gpu_busy_on()&&slot<kSlots)g_replay[slot]=replay;
++    if(gpu_busy_on()&&slot<kSlots){g_replay[slot]=replay;
++        g_submit_ids[slot]=measurement::submit_id;g_present_ids[slot]=measurement::present_id;}
  }
  
  void gpu_busy_part_begin(uint32_t slot, uint32_t part, VkCommandBuffer cb) {
-@@ -79,6 +86,9 @@
+@@ -75,10 +85,20 @@
+         if (p_vkGetQueryPoolResults(vk_device(), g_pools[slot], 2 * p, 2, sizeof t, t, 8, VK_QUERY_RESULT_64_BIT) !=
+             VK_SUCCESS) {
+             g_not_ready++;
++            if(measurement::frames_on()&&measurement::admit())
++                log("measure gpu: submit %llu present %llu slot %u part %u ready 0 duration 0",
++                    (unsigned long long)g_submit_ids[slot],(unsigned long long)g_present_ids[slot],slot,p);
+             continue;
          }
          if (t[1] < t[0]) continue;
++        if(measurement::frames_on()&&measurement::admit())
++            log("measure gpu: submit %llu present %llu slot %u part %u ready 1 duration %llu",
++                (unsigned long long)g_submit_ids[slot],(unsigned long long)g_present_ids[slot],slot,p,
++                (unsigned long long)(double(t[1]-t[0])*g_period_ns));
          g_busy_ns += double(t[1] - t[0]) * g_period_ns, g_parts++;
 +        const auto kind=g_replay[slot]?0u:1u;
 +        g_class_ns[kind]+=double(t[1]-t[0])*g_period_ns;
@@ -9256,7 +9329,7 @@
          first = std::min(first, t[0]), last = std::max(last, t[1]);
      }
      if (last > first) g_span_ns += double(last - first) * g_period_ns;
-@@ -91,6 +101,10 @@
+@@ -91,6 +111,10 @@
      log("gpu busy: %.2f ms/frame (%.1f parts/frame), span %.2f ms/frame, %llu not ready; clock %llu MHz, busy %llu%%",
          g_busy_ns / 1e6 / double(frames), double(g_parts) / double(frames), g_span_ns / 1e6 / double(frames),
          (unsigned long long)g_not_ready, (unsigned long long)(clk / 1000000), (unsigned long long)busy_pct);
@@ -9269,7 +9342,12 @@
  
 --- a/runtime/src/nvn/nvn_image.cpp
 +++ b/runtime/src/nvn/nvn_image.cpp
-@@ -6,6 +6,13 @@
+@@ -1,3 +1,4 @@
++#include "native_measurement.h"
+ // The VkImage behind an NVN texture, and its layout transitions (split from nvn_vk.cpp). Under the GPU lock.
+ #include <algorithm>
+ #include <cstdlib>
+@@ -6,6 +7,13 @@
  #include <tuple>
  
  #include "nvn_vk.h"
@@ -9283,7 +9361,7 @@
  
  namespace nx::nvn {
  
-@@ -61,6 +68,80 @@
+@@ -61,6 +69,80 @@
  
  }  // namespace
  
@@ -9364,7 +9442,7 @@
  // The VkImage behind an NVN texture, made on first use. NVN texture targets (GL order): 0 1D, 1 2D, 2 3D, 3 1D array,
  // 4 2D array, 5 2D multisample, 6 2D multisample array, 7 rectangle, 8 cube map, 9 cube map array, 10 buffer.
  // Arrays and cube maps keep their layer count in the builder's depth.
-@@ -101,6 +182,7 @@
+@@ -101,6 +183,7 @@
                  return shared.get();
              }
      if ((t->image = reuse_image(*t))) return t->image.get();
@@ -9372,7 +9450,7 @@
      auto img = std::make_shared<GpuImage>();
      img->format = bc_host_decode(t->format) ? bc_decoded_format(t->format) : vk_format(t->format);  // nvn_bc.cpp
      img->nvn_format = t->format;
-@@ -181,6 +263,13 @@
+@@ -181,6 +264,13 @@
      ci.tiling = VK_IMAGE_TILING_OPTIMAL;
      ci.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
      if (!compressed) ci.usage |= aspect ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
@@ -9386,7 +9464,7 @@
      {
          VkFormatProperties fp{};
          p_vkGetPhysicalDeviceFormatProperties(vk_physical(), ci.format, &fp);
-@@ -189,6 +278,7 @@
+@@ -189,13 +279,17 @@
      }
      ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
      if (!image_supported(ci, t->format)) return nullptr;
@@ -9394,7 +9472,18 @@
      if (!check(p_vkCreateImage(vk_device(), &ci, nullptr, &img->image), "vkCreateImage")) return nullptr;
      VkMemoryRequirements req{};
      p_vkGetImageMemoryRequirements(vk_device(), img->image, &req);
-@@ -204,6 +294,11 @@
+     VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+     ai.allocationSize = req.size;
+     ai.memoryTypeIndex = memory_type(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+-    if (!check(p_vkAllocateMemory(vk_device(), &ai, nullptr, &img->memory), "vkAllocateMemory")) return nullptr;
++    {
++        measurement::Scope measured("image-allocation",0,ai.allocationSize);
++        if (!check(p_vkAllocateMemory(vk_device(), &ai, nullptr, &img->memory), "vkAllocateMemory")) return nullptr;
++    }
+     p_vkBindImageMemory(vk_device(), img->image, img->memory, 0);
+     constexpr VkComponentSwizzle kSwizzle[] = {VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_ONE, VK_COMPONENT_SWIZZLE_R,
+                                                VK_COMPONENT_SWIZZLE_G,    VK_COMPONENT_SWIZZLE_B,   VK_COMPONENT_SWIZZLE_A};
+@@ -204,6 +298,11 @@
      vi.image = img->image;
      vi.viewType = img->view_type;
      vi.format = img->format;
@@ -9489,7 +9578,8 @@
  }
 --- a/runtime/src/nvn/nvn_objects.cpp
 +++ b/runtime/src/nvn/nvn_objects.cpp
-@@ -1,18 +1,32 @@
+@@ -1,18 +1,33 @@
++#include "native_measurement.h"
 +#include "native_perf.h"
  // NVN objects, CPU side (docs/NVN.md, N3): memory pools and GPU addresses, buffers, textures, samplers, texture and
  // sampler pools. Signatures come from the game's call sites (nvn_trace.txt); builder state is read back
@@ -9522,7 +9612,7 @@
  
  std::recursive_mutex& gpu_lock();  // nvn_vk.cpp
  
-@@ -23,9 +37,21 @@
+@@ -23,9 +38,21 @@
  std::mutex g_gpu_lock;
  std::map<uint64_t, MemoryPool*> g_pools_by_gpu;  // gpu start -> pool
  std::atomic<uint64_t> g_pools_generation{1};     // bumped with every change of the map, under g_gpu_lock
@@ -9544,7 +9634,7 @@
  
  uint64_t gpu_alloc(uint64_t size) {
      std::lock_guard lk(g_gpu_lock);
-@@ -67,6 +93,7 @@
+@@ -67,6 +94,7 @@
  }
  
  ViewInfo read_view(CPU& c, uint64_t view) {
@@ -9552,7 +9642,15 @@
      ViewInfo v;
      if (!view) return v;
      uint64_t tmp = scratch(c, 16);
-@@ -111,6 +138,28 @@
+@@ -99,6 +127,7 @@
+ 
+ // NVNboolean nvnMemoryPoolInitialize(NVNmemoryPool*, const NVNmemoryPoolBuilder*)
+ void MemoryPoolInitialize(CPU& c) {
++    measurement::Scope measured("pool-init");
+     uint64_t guest = c.x[0], builder = c.x[1];
+     auto& p = make<MemoryPool>(guest);
+     p.memory = driver(c, "nvnMemoryPoolBuilderGetMemory", {builder});
+@@ -111,6 +140,28 @@
              (unsigned long long)p.memory, (unsigned long long)p.size, p.flags, (unsigned long long)p.gpu);
      c.x[0] = 1;
  }
@@ -9581,7 +9679,7 @@
  
  void MemoryPoolFinalize(CPU& c) {
      wait_submits_so_far(kWaitInvalidate);  // a submit replayed on another thread may still read it
-@@ -167,12 +216,6 @@
+@@ -167,12 +218,6 @@
      c.x[0] = 1;
  }
  
@@ -9594,7 +9692,7 @@
  // Guest memory is host memory, so buffers need nothing. Textures are copies on the GPU (untiled at first use): a
  // flush over one means the CPU wrote it (a glyph cache rasterises text this way), so it is uploaded again.
  // (NVNmemoryPool*, ptrdiff_t offset, size_t size)
-@@ -206,6 +249,8 @@
+@@ -206,6 +251,8 @@
      uint64_t memory = 0, gpu = 0;
  };
  
@@ -9603,7 +9701,7 @@
  void BufferInitialize(CPU& c) {  // NVNboolean (NVNbuffer*, const NVNbufferBuilder*)
      uint64_t guest = c.x[0], builder = c.x[1];
      auto& b = make<Buffer>(guest);
-@@ -272,6 +317,7 @@
+@@ -272,6 +319,7 @@
  void TextureInitialize(CPU& c) {  // NVNboolean (NVNtexture*, const NVNtextureBuilder*)
      auto guard = reinit_guard();
      uint64_t guest = c.x[0], builder = c.x[1];
@@ -9611,7 +9709,7 @@
      // Re-initializing a texture a pool slot still names (without finalizing it: Wonder reuses the structs of its
      // dynamic-resolution targets every frame) keeps the old one for those slots, as the pool's descriptor copy
      // would: replayed later, a frame's draws sampled another frame's AO and ambient-light buffers (dark course
-@@ -305,18 +351,40 @@
+@@ -305,18 +353,40 @@
          std::lock_guard lk(objects_lock());
          pool_textures()[t.pool].insert(guest);
      }
@@ -9664,7 +9762,7 @@
      }
  
      // Swizzle: single-channel textures are often read through it (a font atlas in R8 read as alpha = R); without
-@@ -336,6 +404,11 @@
+@@ -336,6 +406,11 @@
              "swizzle %u%u%u%u", (unsigned long long)guest, (unsigned long long)t.memory, t.target, t.format, t.width, t.height, t.depth, t.levels,
              t.samples, t.flags, (unsigned long long)t.storage_size, t.block_height_gobs, t.swizzle[0], t.swizzle[1],
              t.swizzle[2], t.swizzle[3]);
@@ -9676,7 +9774,7 @@
      if (!old) {
          std::lock_guard lk(objects_lock());
          note_replaced(guest);
-@@ -415,6 +488,11 @@
+@@ -415,6 +490,11 @@
      }
  }
  
@@ -9688,7 +9786,7 @@
  void TextureFinalize(CPU& c) {
      auto guard = reinit_guard();
      uint64_t guest = c.x[0];
-@@ -445,6 +523,11 @@
+@@ -445,6 +525,11 @@
  // copy when the slot's texture is gone or no longer has the registered target and format.
  constexpr uint64_t kSnapshot = 0xE000000000000000ull;
  uint64_t g_next_snapshot = 0;
@@ -9700,7 +9798,7 @@
  std::unordered_map<uint64_t, std::vector<uint64_t>> g_snapshots_of;  // guest texture -> its snapshots
  std::deque<std::pair<uint64_t, uint64_t>> g_snapshot_images;         // (snapshot, since ns) that own an image
  
-@@ -452,9 +535,16 @@
+@@ -452,9 +537,16 @@
      auto o = objects().find(guest);
      auto* t = o == objects().end() ? nullptr : dynamic_cast<Texture*>(o->second.get());
      if (!t) return 0;
@@ -9717,7 +9815,7 @@
      copy->width = t->width, copy->height = t->height, copy->depth = t->depth, copy->stride = t->stride;
      copy->pool = t->pool, copy->offset = t->offset, copy->storage_size = t->storage_size;
      copy->memory = t->memory, copy->gpu = t->gpu, copy->block_height_gobs = t->block_height_gobs;
-@@ -462,6 +552,8 @@
+@@ -462,6 +554,8 @@
      copy->pool_swizzle = t->pool_swizzle.load();
      uint64_t key = kSnapshot | ++g_next_snapshot;
      objects()[key] = std::move(copy);
@@ -9726,7 +9824,7 @@
      auto& keys = g_snapshots_of[guest];
      if (keys.size() >= 16)  // re-registered every frame: forget the copies already dropped
          keys.erase(std::remove_if(keys.begin(), keys.end(), [](uint64_t k) { return !objects().count(k); }), keys.end());
-@@ -470,7 +562,26 @@
+@@ -470,7 +564,26 @@
  }
  
  void drop_snapshot(uint64_t key) {  // under objects_lock
@@ -9753,7 +9851,7 @@
      if (o == objects().end()) return;
      note_replaced(key);  // a replay in flight may resolve the slot to this copy (pool_entry_at, DEBUG.md #63)
      defer_object(std::move(o->second));
-@@ -505,7 +616,9 @@
+@@ -505,7 +618,9 @@
  
  // A kept texture no slot names any more is destroyed (under objects_lock).
  void release_kept(uint64_t key) {
@@ -9764,7 +9862,7 @@
      auto reg = g_registered.find(key);
      if (reg != g_registered.end())
          for (auto [pool, id] : reg->second) {
-@@ -548,6 +661,7 @@
+@@ -548,6 +663,7 @@
      if (n == 1 || n == 100 || n == 1000)
          log("nvn: WriteTexels #%llu into %llx (%ux%u fmt %#x): %ux%ux%u at %u,%u,%u level %u", (unsigned long long)n,
              (unsigned long long)c.x[0], t->width, t->height, t->format, w.w, w.h, w.d, w.x, w.y, w.z, w.level);
@@ -9772,7 +9870,7 @@
      t->writes.push_back(std::move(w));
      t->has_writes.store(true, std::memory_order_release);
  }
-@@ -556,10 +670,74 @@
+@@ -556,10 +672,74 @@
  void TextureWriteTexelsStrided(CPU& c) { write_texels(c, c.x[4], c.x[5]); }
  void TextureFlushTexels(CPU&) {}  // coherent: the writes above are what matters
  
@@ -9849,7 +9947,7 @@
      }
  NX_TEXTURE_GETTER(TextureGetWidth, width)
  NX_TEXTURE_GETTER(TextureGetHeight, height)
-@@ -573,6 +751,13 @@
+@@ -573,6 +753,13 @@
  NX_TEXTURE_GETTER(TextureGetMemoryPool, pool)
  NX_TEXTURE_GETTER(TextureGetMemoryOffset, offset)
  NX_TEXTURE_GETTER(TextureGetStorageSize, storage_size)
@@ -9863,7 +9961,7 @@
  NX_TEXTURE_GETTER(TextureGetDepthStencilMode, depth_stencil_mode)
  #undef NX_TEXTURE_GETTER
  
-@@ -587,44 +772,35 @@
+@@ -587,44 +774,35 @@
      c.x[0] = 1;
  }
  
@@ -9933,7 +10031,7 @@
  }
  
  void DescriptorPoolGetMemoryPool(CPU& c) {
-@@ -650,8 +826,65 @@
+@@ -650,8 +828,65 @@
  
  }  // namespace
  
@@ -9999,7 +10097,7 @@
  NX_HLE("nvnMemoryPoolMap", MemoryPoolMap);
  NX_HLE("nvnMemoryPoolMapVirtual", MemoryPoolMapVirtual);
  NX_HLE("nvnTextureWriteTexels", TextureWriteTexels);
-@@ -663,6 +896,7 @@
+@@ -663,6 +898,7 @@
  NX_HLE("nvnMemoryPoolFlushMappedRange", MemoryPoolFlushMappedRange);
  NX_HLE("nvnMemoryPoolInvalidateMappedRange", MemoryPoolInvalidateMappedRange);
  NX_HLE("nvnBufferInitialize", BufferInitialize);
@@ -10007,7 +10105,7 @@
  NX_HLE("nvnBufferFinalize", BufferFinalize);
  NX_HLE("nvnBufferMap", BufferMap);
  NX_HLE("nvnBufferGetAddress", BufferGetAddress);
-@@ -685,6 +919,7 @@
+@@ -685,6 +921,7 @@
  NX_HLE("nvnTextureGetMemoryPool", TextureGetMemoryPool);
  NX_HLE("nvnTextureGetMemoryOffset", TextureGetMemoryOffset);
  NX_HLE("nvnTextureGetStorageSize", TextureGetStorageSize);
@@ -10015,7 +10113,7 @@
  NX_HLE("nvnTextureGetDepthStencilMode", TextureGetDepthStencilMode);
  NX_HLE("nvnSamplerPoolInitialize", DescriptorPoolInitialize);
  NX_HLE("nvnTexturePoolInitialize", DescriptorPoolInitialize);
-@@ -702,4 +937,17 @@
+@@ -702,4 +939,17 @@
  NX_HLE("nvnDeviceGetTexelFetchHandle", DeviceGetTexelFetchHandle);
  NX_HLE("nvnDeviceGetImageHandle", DeviceGetImageHandle);
  
@@ -10558,7 +10656,9 @@
  }  // namespace nx::nvn
 --- a/runtime/src/nvn/nvn_pipeline_cache.cpp
 +++ b/runtime/src/nvn/nvn_pipeline_cache.cpp
-@@ -2,13 +2,18 @@
+@@ -1,14 +1,20 @@
++#include "native_measurement.h"
+ // A VkPipelineCache kept on disk (<data root>/pipelines_<vendor>_<device>.bin), and the cost of what the replay
  // creates on the fly. Pipelines are compiled the first time a draw needs them, inside the replay: the course's
  // stutters when new objects come in (16-42 ms replays on the RTX 3050). The driver checks the cache header itself
  // (vendor, device, driver build): a stale file is ignored. Saved every 600 presents when it grew.
@@ -10577,7 +10677,7 @@
  
  namespace nx::nvn {
  
-@@ -24,15 +29,25 @@
+@@ -24,15 +30,25 @@
  
  }  // namespace
  
@@ -10604,7 +10704,7 @@
      std::vector<uint8_t> data;
      if (FILE* f = plat::fopen_utf8(g_path, "rb")) {
          plat::fseek64(f, 0, SEEK_END);
-@@ -41,16 +56,17 @@
+@@ -41,16 +57,17 @@
          if (n > 0) data.resize(size_t(n)), data.resize(std::fread(data.data(), 1, data.size(), f));
          std::fclose(f);
      }
@@ -10625,24 +10725,26 @@
  }
  
  void pipeline_cache_save() {
-@@ -68,8 +84,14 @@
+@@ -68,8 +85,16 @@
      }
  }
  
 -void note_pipeline_created(uint64_t ns) { g_pipelines++, g_pipeline_ns += ns; }
 -void note_astc_decoded(uint64_t ns) { g_astc++, g_astc_ns += ns; }
 +void note_pipeline_created(uint64_t ns) {
++    if(measurement::events_on()){const auto now=plat::monotonic_ns();measurement::event("pipeline-create",0,now>=ns?now-ns:0,now);}
 +    g_pipelines++, g_pipeline_ns += ns;
 +    if (frame_attribution_on()) attribution_add(worker_totals().pipelines, 1), attribution_add(worker_totals().pipeline_ns, ns);
 +}
 +void note_astc_decoded(uint64_t ns) {
++    if(measurement::events_on()){const auto now=plat::monotonic_ns();measurement::event("astc-convert",0,now>=ns?now-ns:0,now);}
 +    g_astc++, g_astc_ns += ns;
 +    if (frame_attribution_on()) attribution_add(worker_totals().astc, 1), attribution_add(worker_totals().astc_ns, ns);
 +}
  
  // One line per timing window (nvn_vk.cpp log_timing): what the replay created, and the time it took.
  void creation_log(uint64_t frames) {
-@@ -78,8 +100,9 @@
+@@ -78,8 +103,9 @@
              (unsigned long long)frames, (unsigned long long)g_pipelines, double(g_pipeline_ns) / 1e6,
              (unsigned long long)g_astc, double(g_astc_ns) / 1e6);
      g_pipelines = g_pipeline_ns = g_astc = g_astc_ns = 0;
@@ -11829,7 +11931,12 @@
      auto* p = get<Program>(program);
 --- a/runtime/src/nvn/nvn_queue.cpp
 +++ b/runtime/src/nvn/nvn_queue.cpp
-@@ -17,14 +17,24 @@
+@@ -1,3 +1,4 @@
++#include "native_measurement.h"
+ // NVN queues, command buffers, windows and syncs (docs/NVN.md, N3). Synchronously every command completes at
+ // submit: fences are signaled right away, the window hands out its textures in turn, and presents are counted. With
+ // NX_ASYNC_GPU a fence is the submit it follows, and waiting for it waits for that submit (nvn_frames.cpp). With
+@@ -17,14 +18,24 @@
  #include <atomic>
  #include <vector>
  #include <map>
@@ -11854,7 +11961,7 @@
  
  namespace nx {
  void svc_profile_mark(int role);
-@@ -33,6 +43,7 @@
+@@ -33,6 +44,7 @@
  extern std::atomic<uint64_t> g_tick_calls, g_yield_calls, g_sleep_calls;
  }
  namespace nx::nvn {
@@ -11862,7 +11969,7 @@
  
  // Submits the game made and submits whose replay (and GPU work, write-backs) finished. The game records the next frame
  // on one thread while another submits the last one, and our replay runs inside nvnQueueSubmitCommands: a fence the
-@@ -76,6 +87,7 @@
+@@ -76,6 +88,7 @@
  
  // Where the game waits for the replay (docs/nvn/android-perf/PHASE3.md I1): calls, the ones that blocked and for how
  // long, per 600 presents; frame_ns is this main-thread frame's blocked time, for the hitch lines (frame_time_probe).
@@ -11870,7 +11977,7 @@
  struct WaitSite {
      const char* name;
      std::atomic<uint64_t> calls{0}, blocked{0}, ns{0}, frame_ns{0};
-@@ -97,6 +109,7 @@
+@@ -97,6 +110,7 @@
              (unsigned long long)g_sub_done);
      uint64_t dt = plat::monotonic_ns() - t0;
      w.blocked++, w.ns += dt, w.frame_ns += dt;
@@ -11878,7 +11985,7 @@
  }
  
  void log_wait_sites() {
-@@ -123,7 +136,14 @@
+@@ -123,7 +137,14 @@
  
  // ---- syncs ------------------------------------------------------------------------------------------------------
  
@@ -11893,7 +12000,7 @@
      std::atomic<bool> signaled{false};
      std::atomic<uint64_t> serial{0};  // NX_ASYNC_GPU: the submit it waits for (0: none; always 0 otherwise)
      std::atomic<uint64_t> job{0};     // the replay-thread job that fences it (0: none)
-@@ -138,27 +158,57 @@
+@@ -138,27 +159,57 @@
  void SyncFinalize(CPU& c) { destroy(c.x[0]); }
  
  void signal_sync(uint64_t guest) {
@@ -11961,14 +12068,23 @@
      plat::perf_hint_thread();  // this thread replays: part of every frame (perf_hint.cpp)
      std::vector<std::shared_ptr<CmdList>> lists;
      static uint64_t submitted = 0, missing = 0;
-@@ -184,45 +234,35 @@
+@@ -180,49 +231,42 @@
+     // NX_DEFERRED_SNAPSHOT=1: read the Deferred arrays here; by default they are read when the submit is replayed.
+     static const bool snap = std::getenv("NX_DEFERRED_SNAPSHOT") != nullptr;
+     auto deferred = snap ? std::make_shared<const DeferredValues>(deferred_snapshot(lists)) : nullptr;
++    uint64_t measurement_submit=0;
+     {
          std::lock_guard lk(g_sub_lock);
-         g_sub_called++;
-     }
+-        g_sub_called++;
+-    }
++        measurement_submit=++g_sub_called;
++    }
 +    std::set<uint64_t> sync_keys;std::set<const CmdList*> visited;for(const auto& list:lists)collect_recorded_syncs(*list,sync_keys,visited,0);std::vector<std::shared_ptr<NativeFenceCompletion>> completions;for(auto key:sync_keys)completions.push_back(arm_native_sync(key));
      tl("submit-call");
 -    worker_run([lists = std::move(lists), deferred] {
-+    worker_run([lists = std::move(lists), deferred, completions=std::move(completions)] {
++    worker_run([lists = std::move(lists), deferred, completions=std::move(completions), measurement_submit] {
++        measurement::Context context(measurement_submit,0);
++        measurement::Scope measured("replay-job",measurement_submit);
          tl("replay>");
          gpu_submit(lists, deferred);
 +        for(const auto& completion:completions)submit_native_fence(completion);
@@ -12021,7 +12137,7 @@
  }
  
  void WindowFinalize(CPU& c) { destroy(c.x[0]); }
-@@ -238,6 +278,14 @@
+@@ -238,6 +282,14 @@
      if (c.x[2]) st<int32_t>(c.x[2], index);
      signal_sync(c.x[1]);
      c.x[0] = 0;
@@ -12036,7 +12152,7 @@
  }
  
  void WindowGetNumTextures(CPU& c) {
-@@ -489,12 +537,182 @@
+@@ -489,12 +541,182 @@
  // one. On the Switch the texture-available sync of the next acquire does this; ours is signaled at once, so without
  // it the game runs as fast as it can once it is faster than 60 fps. A late frame is not snapped to the next vsync
  // (an 18 ms frame stays 18 ms, not 33). NX_NO_FRAME_LIMIT=1: unpaced.
@@ -12220,10 +12336,24 @@
      static uint64_t presents = 0, at2 = 0;  // how often the game asks for 30 fps (interval 2), per 600 presents
      at2 += interval >= 2;
      if (++presents % 600 == 0)
-@@ -504,6 +722,11 @@
+@@ -504,6 +726,25 @@
  }
  
  void QueuePresentTexture(CPU& c) {
++    if(measurement::frames_on()) {
++        static thread_local uint64_t previous=0,previous_cpu=0;
++        uint64_t cpu=0;long faults[2]{},switches[2]{};
++        plat::thread_counters(cpu,faults,switches);
++        const auto now=plat::monotonic_ns();
++        const auto id=g_presents.load()+1;
++        measurement::present_epoch.store(id,std::memory_order_relaxed);
++        if(previous&&measurement::admit())
++            log("measure frame: present %llu submit-through %llu start %llu end %llu cpu %llu tid %lld",
++                (unsigned long long)id,(unsigned long long)submits_called(),(unsigned long long)previous,
++                (unsigned long long)now,(unsigned long long)(cpu>=previous_cpu?cpu-previous_cpu:0),
++                (long long)plat::current_thread_id());
++        previous=now;previous_cpu=cpu;
++    }
 +    delivery.begin();
 +    slow_frames.begin(g_presents);
 +    if (overlay_on()) overlay_note_game_present(plat::monotonic_ns());
@@ -12232,7 +12362,7 @@
      // The frame's work, from the end of the last present's pacing to now (perf_hint.cpp: ADPF on Android).
      static uint64_t work_from = 0;
      uint64_t t_in = plat::monotonic_ns();
-@@ -520,7 +743,10 @@
+@@ -520,11 +761,19 @@
          // At most two presents queued: the game runs at most two frames ahead of the replay.
          static uint64_t queued[2] = {};
          static int next_slot = 0;
@@ -12243,7 +12373,17 @@
          if (int(c.x[2]) >= 0 && size_t(c.x[2]) < w->textures.size()) {
              uint64_t texture = w->textures[size_t(c.x[2])];
              std::array<int32_t, 4> crop{w->crop[0], w->crop[1], w->crop[2], w->crop[3]};
-@@ -561,6 +787,7 @@
+-            queued[next_slot] = worker_run([texture, crop] { gpu_present(texture, crop.data()); });
++            const auto measurement_present=g_presents.load()+1;
++            queued[next_slot] = worker_run([texture, crop, measurement_present] {
++                measurement::Context context(0,measurement_present);
++                measurement::Scope measured("present-job",measurement_present);
++                gpu_present(texture, crop.data());
++            });
+             next_slot ^= 1;
+         }
+         pace_present(w->interval);
+@@ -561,6 +810,7 @@
  }  // namespace
  
  NX_HLE("nvnWindowSetCrop", WindowSetCrop);
@@ -12251,7 +12391,7 @@
  NX_HLE("nvnSyncInitialize", SyncInitialize);
  NX_HLE("nvnSyncFinalize", SyncFinalize);
  NX_HLE("nvnSyncWait", SyncWait);
-@@ -572,6 +799,7 @@
+@@ -572,6 +822,7 @@
  NX_HLE("nvnQueueFenceSync", QueueFenceSync);
  NX_HLE("nvnQueueWaitSync", QueueWaitSync);
  NX_HLE("nvnQueuePresentTexture", QueuePresentTexture);
@@ -13073,7 +13213,8 @@
      c.x[0] = proc_address(c, name);
 --- a/runtime/src/nvn/nvn_upload.cpp
 +++ b/runtime/src/nvn/nvn_upload.cpp
-@@ -1,7 +1,9 @@
+@@ -1,7 +1,10 @@
++#include "native_measurement.h"
 +#include "native_perf.h"
  // Texture uploads (nvn_pipeline.h): guest pool memory into the host image, untiled, widened where the host stores a
  // format wider than NVN does, and checked against what the copies read (docs/nvn/DEBUG.md #50).
@@ -13083,7 +13224,7 @@
  #include <cstring>
  #include <set>
  #include <vector>
-@@ -9,6 +11,8 @@
+@@ -9,6 +12,8 @@
  #include "nvn_astc.h"
  #include "nvn_pipeline.h"
  #include "nvn_tiling.h"
@@ -13092,7 +13233,7 @@
  #include "platform.h"
  
  namespace nx::nvn {
-@@ -129,7 +133,18 @@
+@@ -129,7 +134,19 @@
      }
  }
  
@@ -13107,11 +13248,12 @@
 +}
 +
  void upload_texture(VkCommandBuffer cb, const Texture& t, GpuImage& img, uint64_t lo, uint64_t hi) {
++    measurement::Scope measured("texture-upload");
 +    perf::Scope perf_scope(perf::Region::Upload);
      const bool was_uploaded = img.uploaded;
      img.uploaded = true;
      if (gpu_profile_on()) gpu_profile_mark(cb, "texture uploads");
-@@ -186,7 +201,37 @@
+@@ -186,7 +203,37 @@
          log("nvn/vk: pitch-linear ASTC texture %ux%u format %#x: cleared", img.width, img.height, t.format);
          return clear_image(cb, img);
      }
@@ -13150,7 +13292,7 @@
          uint64_t rows = (img.height + bh - 1) / bh;
          VkBufferImageCopy r{};
          r.imageSubresource = {img.aspect, 0, 0, img.layers};
-@@ -195,23 +240,24 @@
+@@ -195,23 +242,24 @@
          uint64_t staged = 0;
          if (widen) {  // tightly packed RGBA16F rows; rows past the storage stay zero
              const uint8_t* src = reinterpret_cast<const uint8_t*>(t.memory);
@@ -13184,12 +13326,13 @@
          if (!copies_fit(t, &r, 1, u.offset, staged, bw, bh, host_bytes)) return clear_image(cb, img);
 --- a/runtime/src/nvn/nvn_vk.cpp
 +++ b/runtime/src/nvn/nvn_vk.cpp
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,5 @@
++#include "native_measurement.h"
 +#include "native_perf.h"
  // NVN's GPU side on Vulkan (docs/NVN.md, N3): the host device, a VkImage per NVN texture the GPU touches, the
  // replay of recorded command lists, and presenting a window texture on the host swapchain.
  //
-@@ -20,7 +21,15 @@
+@@ -20,7 +22,15 @@
  #include <vector>
  
  #include "nvn_vk.h"
@@ -13205,7 +13348,7 @@
  
  #include <nx/game.h>
  
-@@ -52,6 +61,9 @@
+@@ -52,6 +62,9 @@
  VkFormat g_sc_format = VK_FORMAT_B8G8R8A8_UNORM;
  VkSemaphore g_acquired = VK_NULL_HANDLE, g_rendered = VK_NULL_HANDLE;
  VkBool32 g_depth_clip_control = VK_FALSE;
@@ -13215,7 +13358,7 @@
  bool g_integrated = false;
  bool g_require_sg32 = false;  // compute pipelines are made with a required subgroup size of 32 (Maxwell's warp)  // the chosen GPU is an integrated one (unified memory, the GPU is the long side)
  VkPhysicalDeviceFeatures g_features{};  // the core features enabled (vk_features())
-@@ -176,6 +188,24 @@
+@@ -176,6 +189,24 @@
      std::vector<VkExtensionProperties> dext(n);
      p_vkEnumerateDeviceExtensionProperties(g_physical, nullptr, &n, dext.data());
      std::vector<const char*> dexts = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
@@ -13240,7 +13383,7 @@
      // Features: everything core the GPU has, dynamic rendering (1.3), 8-bit indices (NVN has them), clip-space
      // depth -1..1 (NVN's default depth mode, what Wonder uses), and on MoltenVK the portability subset's own
      // features, which must be enabled to be used.
-@@ -183,6 +213,8 @@
+@@ -183,6 +214,8 @@
      VkPhysicalDeviceVulkan13Features f13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
      VkPhysicalDeviceIndexTypeUint8FeaturesEXT fu8{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT};
      VkPhysicalDeviceDepthClipControlFeaturesEXT fclip{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT};
@@ -13249,7 +13392,7 @@
      struct {  // VkPhysicalDevicePortabilitySubsetFeaturesKHR, without its header (beta extensions)
          VkStructureType sType = VkStructureType(1000163000);
          void* pNext = nullptr;
-@@ -198,11 +230,23 @@
+@@ -198,11 +231,23 @@
          dexts.push_back("VK_EXT_depth_clip_control");
          *tail = &fclip, tail = &fclip.pNext;
      }
@@ -13273,7 +13416,7 @@
      {   // The translated shaders assume Maxwell's warp of 32 (TRANSLATOR.md). Intel runs subgroups of 8, 16 or 32 as its
          // compiler chooses; where the size can be pinned (core 1.3 subgroup size control), compute pipelines pin 32.
          VkPhysicalDeviceSubgroupSizeControlProperties sgc{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES};
-@@ -217,6 +261,8 @@
+@@ -217,6 +262,8 @@
              g_require_sg32 ? "pinned to 32" : "left to the driver");
      }
      g_depth_clip_control = fclip.depthClipControl;
@@ -13282,7 +13425,7 @@
      g_features = features.features;
      // NX_ASTC_DECODE=1|linear|srgb: the CPU decoder even where the GPU has ASTC (to compare the two on one GPU).
      set_astc_native(g_features.textureCompressionASTC_LDR);
-@@ -396,11 +442,23 @@
+@@ -396,11 +443,23 @@
  }  // namespace
  
  std::recursive_mutex& gpu_lock() { return g_gpu; }
@@ -13306,7 +13449,7 @@
  const VkPhysicalDeviceFeatures& vk_features() { return g_features; }
  bool gpu_is_integrated() { return g_integrated; }
  bool gpu_require_subgroup32() { return g_require_sg32; }
-@@ -479,7 +537,9 @@
+@@ -479,7 +538,9 @@
      p_vkResetCommandBuffer(g_cb, 0);
      VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
      bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -13317,7 +13460,7 @@
  }
  
  // Where the submitting thread's time goes, logged with the draw stats, per presented frame: the replay (recording
-@@ -491,6 +551,7 @@
+@@ -491,6 +552,7 @@
  
  void end_and_wait(VkSemaphore wait, VkSemaphore signal) {
      uint64_t t0 = plat::monotonic_ns();
@@ -13325,7 +13468,7 @@
      p_vkEndCommandBuffer(g_cb);
      VkPipelineStageFlags stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
      VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-@@ -533,12 +594,24 @@
+@@ -533,12 +595,24 @@
      frame_log(frames);
      creation_log(frames);  // pipelines and ASTC decodes of the window; saves the pipeline cache now and then
      g_timing = {};
@@ -13351,7 +13494,7 @@
  };
  
  }  // namespace
-@@ -555,6 +628,7 @@
+@@ -555,6 +629,7 @@
      std::lock_guard lk(g_gpu);
      uint64_t t_in = plat::monotonic_ns();
      const FrameTimes f_in = frame_times();
@@ -13359,10 +13502,17 @@
      uint64_t lists_epoch = 0;
      for (auto& l : lists) lists_epoch = std::max(lists_epoch, l->epoch);
      ReplayScope replay(lists_epoch);  // the texture mark (#55, #57), then drain_objects (under the GPU lock, #50)
-@@ -599,6 +673,15 @@
+@@ -599,6 +674,22 @@
      const FrameTimes f2 = frame_times();
      g_timing.encode_ns += f2.encode_ns - f_in.encode_ns, g_timing.fence_ns += f2.fence_ns - f_in.fence_ns;
      g_timing.submit_ns += plat::monotonic_ns() - t_in;
++    if(measurement::events_on()&&measurement::admit())
++        log("measure render: submit %llu replay %llu encode %llu fence %llu upload %llu",
++            (unsigned long long)measurement::submit_id,
++            (unsigned long long)(g_timing.replay_ns-timing_in.replay_ns),
++            (unsigned long long)(g_timing.encode_ns-timing_in.encode_ns),
++            (unsigned long long)(g_timing.fence_ns-timing_in.fence_ns),
++            (unsigned long long)(g_timing.upload_bytes-timing_in.upload_bytes));
 +    if (frame_attribution_on()) {
 +        WorkerTotals& w = worker_totals();
 +        attribution_add(w.submits, g_timing.submits - timing_in.submits);
@@ -13375,7 +13525,7 @@
  }
  
  // Headless: the presented texture is only counted, logged and dumped (no swapchain). Nothing is submitted unless a
-@@ -638,6 +721,8 @@
+@@ -638,6 +729,8 @@
  }
  
  void gpu_present(uint64_t texture, const int32_t* crop) {
@@ -13384,7 +13534,7 @@
      plat::perf_hint_thread();  // the thread that presents takes part in the frame (perf_hint.cpp)
      std::lock_guard lk(g_gpu);
      PresentTimer timer;
-@@ -690,6 +775,27 @@
+@@ -690,6 +783,27 @@
          blit.dstOffsets[1] = {int32_t(g_sc_extent.width), int32_t(g_sc_extent.height), 1};
          p_vkCmdBlitImage(g_cb, src->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst.image,
                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
@@ -13412,7 +13562,7 @@
      }
      if (!drawn) transition(g_cb, dst, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
      static uint64_t presents = 0;
-@@ -729,4 +835,80 @@
+@@ -729,4 +843,80 @@
      if (remake) make_swapchain();
  }
  

@@ -64,6 +64,11 @@ presentation-thread preparation falls from 22.16 ms to 3.36 ms. See
 [recipe-save preparation measurements](docs/native-recipe-save-performance.md)
 for correctness checks and limits; this is a periodic-pause reduction.
 
+R308 removes stable-policy read-lock contention while retaining live display
+ownership, generation and visibility queries on every enabled gate call.
+Unprofiled gate benchmarks improve; the two gameplay runs have mixed
+per-course results. See [focus revision measurements](docs/native-focus-revision-performance.md).
+
 R282 moves optional diagnostics out of ordinary CPU dispatch. Authored alternating
 benchmarks show lower dispatch overhead, with all 44 suites and 3,212 GPU checks
 passing. See [dispatch measurements and sweep limits](docs/native-dispatch-optimization.md);

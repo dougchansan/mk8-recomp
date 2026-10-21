@@ -1974,7 +1974,7 @@
      auto it = g_vm.lower_bound(addr);
 --- /dev/null
 +++ b/runtime/src/mk8_focus_policy.cpp
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,103 @@
 +#include "native_perf.h"
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "mk8_focus_policy.h"
@@ -1990,9 +1990,20 @@
 +namespace {
 +std::shared_mutex lock;HWND display{};uint64_t generation{};bool configured=false,out_of_focus=false,notify=false,background=false,suspend=true;uint8_t logical_focus=1;std::function<void()> notification;
 +std::atomic<bool> enabled=false;
-+bool live(){DWORD process=0;return display&&GetWindowThreadProcessId(display,&process)&&process==GetCurrentProcessId()&&generation==plat::window_generation();}
++// Writers hold lock. Odd revisions force readers onto the locked path.
++std::atomic<uint64_t> policy_revision{0};
++struct PolicyWrite {
++ PolicyWrite(){policy_revision.fetch_add(1,std::memory_order_acq_rel);}
++ ~PolicyWrite(){policy_revision.fetch_add(1,std::memory_order_release);}
++};
++struct GateView {
++ HWND display{};uint64_t generation{};
++ bool background{},suspend{},out_of_focus{};uint8_t focus{};
++};
++bool live(HWND window,uint64_t value){DWORD process=0;return window&&GetWindowThreadProcessId(window,&process)&&process==GetCurrentProcessId()&&value==plat::window_generation();}
++bool live(){return live(display,generation);}
 +}
-+void mk8_bind_display(void* window,uint64_t value){std::lock_guard guard(lock);display=static_cast<HWND>(window);generation=value;if(!live())fatal("focus policy requires an owned live display");}
++void mk8_bind_display(void* window,uint64_t value){std::lock_guard guard(lock);PolicyWrite update;display=static_cast<HWND>(window);generation=value;if(!live())fatal("focus policy requires an owned live display");}
 +uint32_t mk8_prepare_focus(IpcCtx& c){
 + if(!c.a.empty()||!c.b.empty()||!c.x.empty()||!c.c.empty()||!c.in_copy.empty()||!c.in_move.empty()||!c.in_objects.empty()||c.pid)return 0xe401;
 + if(c.cmd==13){
@@ -2005,7 +2016,7 @@
 + const auto command=c.cmd;const bool value=command==16&&c.in[0];const bool next_notify=command==13&&c.in[0],next_background=command==13&&c.in[1],next_suspend=command==13&&c.in[2];
 + c.validate_reply=[]{std::lock_guard guard(lock);return live();};
 + c.commit_reply=[command,value,next_notify,next_background,next_suspend]{std::function<void()> signal;{
-+  std::lock_guard guard(lock);if(!live())fatal("display lost after focus response write");if(command==13){configured=true;notify=next_notify;background=next_background;suspend=next_suspend;enabled.store(true,std::memory_order_release);if(notify)signal=notification;}else out_of_focus=value;
++  std::lock_guard guard(lock);if(!live())fatal("display lost after focus response write");PolicyWrite update;if(command==13){configured=true;notify=next_notify;background=next_background;suspend=next_suspend;enabled.store(true,std::memory_order_release);if(notify)signal=notification;}else out_of_focus=value;
 +  log("am: native focus policy committed command=%u notify=%u background=%u suspend=%u out_of_focus=%u",command,unsigned(notify),unsigned(background),unsigned(suspend),unsigned(out_of_focus));
 + }if(signal)signal();};
 + return 0;
@@ -2014,7 +2025,7 @@
 +void mk8_focus_notification(std::function<void()> callback){std::lock_guard guard(lock);notification=std::move(callback);}
 +void mk8_observe_display(){std::function<void()> signal;{
 + std::lock_guard guard(lock);if(!display||!live())return;const uint8_t next=IsWindowVisible(display)&&!IsIconic(display)?1:2;
-+ if(next!=logical_focus){logical_focus=next;if(notify)signal=notification;}
++ if(next!=logical_focus){PolicyWrite update;logical_focus=next;if(notify)signal=notification;}
 + }if(signal)signal();
 +}
 +uint8_t mk8_logical_focus(){mk8_observe_display();std::lock_guard guard(lock);return logical_focus;}
@@ -2023,7 +2034,7 @@
 + for(;;){std::function<void()> signal;bool park;{
 +  std::lock_guard guard(lock);if(!live())fatal("owned native display closed");
 +  const uint8_t next=IsWindowVisible(display)&&!IsIconic(display)?1:2;
-+  if(next!=logical_focus){logical_focus=next;if(notify)signal=notification;}
++  if(next!=logical_focus){PolicyWrite update;logical_focus=next;if(notify)signal=notification;}
 +  // A visible owned display runs without activating it. Check ownership once
 +  // under the same lock that observes visibility and evaluates the policy.
 +  park=!background&&logical_focus!=1&&(suspend||out_of_focus);
@@ -2032,16 +2043,23 @@
 +
 +void focus_gate_impl() {
 + if(!enabled.load(std::memory_order_acquire))return;
-+ // Stable visible/background policy needs no mutation. Check the live owner and
-+ // visibility on every call while allowing concurrent readers. Transitions,
-+ // notifications and parking retain the exclusive recheck below.
-+ {
-+  std::shared_lock guard(lock);
-+  if(!live())fatal("owned native display closed");
-+  const uint8_t next=IsWindowVisible(display)&&!IsIconic(display)?1:2;
-+  if(next==logical_focus&&(background||logical_focus==1||(!suspend&&!out_of_focus)))return;
++ // Cache policy values only. Never cache ownership or visibility results.
++ static thread_local GateView view;
++ static thread_local uint64_t captured=~uint64_t(0);
++ const auto revision=policy_revision.load(std::memory_order_acquire);
++ if(!(revision&1)){
++  if(revision!=captured){
++   std::shared_lock guard(lock);
++   view={display,generation,background,suspend,out_of_focus,logical_focus};
++   captured=policy_revision.load(std::memory_order_relaxed);
++  }
++  const bool owned=live(view.display,view.generation);
++  const uint8_t next=owned&&IsWindowVisible(view.display)&&!IsIconic(view.display)?1:2;
++  // Every rejected or stale view is revalidated against current policy under
++  // the exclusive lock. A stable closed owner still fails on that path.
++  if(owned&&policy_revision.load(std::memory_order_acquire)==captured&&
++     next==view.focus&&(view.background||view.focus==1||(!view.suspend&&!view.out_of_focus)))return;
 + }
-+
 + park_focus_gate();
 +}
 +
@@ -15948,7 +15966,7 @@
 +}
 --- /dev/null
 +++ b/tests/focus_policy_test.cpp
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,117 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "mk8_focus_policy.h"
 +#include "platform.h"
@@ -16007,6 +16025,28 @@
 +  check(calls.load()>=100);check(notifications.load()>notifications_before);check(nx::mk8_logical_focus()==1);check(GetForegroundWindow()!=window);
 +  check(nx::mk8_prepare_focus(notify_request)==0);notify_request.commit_reply();
 + }
++ // A persistent reader must observe policy changes without a visibility transition.
++ {
++  uint8_t relaxed_flags[4]={0,0,0,0};nx::IpcCtx relaxed;relaxed.cmd=13;relaxed.in=relaxed_flags;relaxed.in_size=4;
++  check(nx::mk8_prepare_focus(relaxed)==0);relaxed.commit_reply();
++  nx::IpcCtx clear_policy;clear_policy.cmd=16;clear_policy.in=no;clear_policy.in_size=4;
++  check(nx::mk8_prepare_focus(clear_policy)==0);clear_policy.commit_reply();
++  ShowWindow(window,SW_HIDE);nx::mk8_observe_display();
++  std::atomic<bool> reading=true;std::atomic<unsigned> passes=0;
++  std::thread persistent([&]{while(reading.load(std::memory_order_acquire)){nx::mk8_focus_gate();++passes;}});
++  while(passes.load()<100)std::this_thread::yield();
++  nx::IpcCtx block_policy;block_policy.cmd=16;block_policy.in=yes;block_policy.in_size=4;
++  const bool valid=nx::mk8_prepare_focus(block_policy)==0;
++  if(valid)block_policy.commit_reply();
++  Sleep(20);const auto parked_at=passes.load();Sleep(20);const bool stayed_parked=passes.load()==parked_at;
++  clear_policy.commit_reply();const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(2);
++  while(passes.load()==parked_at&&std::chrono::steady_clock::now()<deadline)Sleep(1);
++  const bool ran_again=passes.load()>parked_at;
++  reading.store(false,std::memory_order_release);persistent.join();
++  check(valid&&stayed_parked);check(ran_again);check(GetForegroundWindow()!=window);
++  ShowWindow(window,SW_SHOWNOACTIVATE);nx::mk8_observe_display();
++  check(nx::mk8_prepare_focus(notify_request)==0);notify_request.commit_reply();
++ }
 + // A visibility notification may reenter the policy and enable background work.
 + // The gate must invoke it outside its lock and use the updated policy.
 + bool reentered=false;
@@ -16017,6 +16057,29 @@
 + });
 + ShowWindow(window,SW_HIDE);nx::mk8_focus_gate();
 + check(reentered&&nx::mk8_focus_snapshot().background);ShowWindow(window,SW_SHOWNOACTIVATE);
++ // Concurrent readers must survive valid owner rebinding while old HWNDs disappear.
++ {
++  std::atomic<bool> rebinding=true;std::atomic<unsigned> rebound_calls=0,rebound_failures=0;
++  std::vector<std::thread> readers;
++  for(unsigned i=0;i<8;++i)readers.emplace_back([&]{while(rebinding.load(std::memory_order_acquire)){
++   try{nx::mk8_focus_gate();++rebound_calls;}catch(...){++rebound_failures;}
++  }});
++  while(rebound_calls.load()<100)std::this_thread::yield();
++  bool all_bound=true;
++  for(unsigned i=0;i<32;++i){
++   auto next=CreateWindowExW(WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,cls.lpszClassName,L"concurrent rebound fixture",WS_POPUP,16,16,16,16,nullptr,nullptr,cls.hInstance,nullptr);
++   if(!next){all_bound=false;break;}
++   try{nx::mk8_bind_display(next,1);}catch(...){DestroyWindow(next);all_bound=false;break;}
++   DestroyWindow(window);window=next;
++  }
++  rebinding.store(false,std::memory_order_release);for(auto& reader:readers)reader.join();
++  check(all_bound);check(rebound_calls.load()>=100&&rebound_failures.load()==0);
++  check(c.validate_reply());check(GetForegroundWindow()!=window);
++ }
++ // Rebinding must invalidate readers' old HWND, even when the old owner is destroyed.
++ auto rebound=CreateWindowExW(WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,cls.lpszClassName,L"rebound focus fixture",WS_POPUP,16,16,16,16,nullptr,nullptr,cls.hInstance,nullptr);
++ check(rebound!=nullptr);nx::mk8_bind_display(rebound,1);DestroyWindow(window);window=rebound;
++ nx::mk8_focus_gate();check(c.validate_reply());check(GetForegroundWindow()!=window);
 + DestroyWindow(window);check(!c.validate_reply());bool rejected=false;try{nx::mk8_focus_gate();}catch(const std::exception&){rejected=true;}check(rejected);
 + rejected=false;try{c.commit_reply();}catch(const std::exception&){rejected=true;}check(rejected);
 + std::cout<<"focus_policy checks="<<n<<" PASS\n";return 0;

@@ -87,3 +87,10 @@ zero unavailable GPU queries, no truncation, zero shader misses and no fatal
 lines. It joined all 7,490 groups bounded by two submission watermarks. This
 includes startup/menu/loading; it is a tooling check, not a racing benchmark or
 an observer-overhead estimate. A capture was reviewed showing actual racing.
+
+
+R302 adds `pipeline-cache-size/copy/write`, recipe snapshot/serialization/write,
+queue-submit, sync-arm and GPU-lock scopes. R304 adds `recipe-save-merge` on the
+existing saver thread. These scopes nest; report leaf costs without double
+counting enclosing jobs. The R304 save change and its verified measurements are
+in [recipe-save preparation](native-recipe-save-performance.md).

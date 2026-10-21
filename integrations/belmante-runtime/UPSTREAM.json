@@ -4,7 +4,7 @@
   "license": "MIT",
   "license_sha256": "7f728cfaa94ff27c2a40c906dac12564a216077ceb017fb2d01cc29ba6697720",
   "local_changes_license": "GPL-3.0-or-later",
-  "patch_sha256": "f5fb45c2bde5cc1058287675f33853bb37b543c0f78f31517ca0d3ea6204e1e5",
+  "patch_sha256": "7813ee2def64fd7fe1d56cb7343b29eaa1cf14aa3855d9ad7e9ae535bc23d187",
   "changed_files": [
     "CMakeLists.txt",
     "games/mk8d/game.cpp",
@@ -78,6 +78,7 @@
     "runtime/src/nvn/native_point_size_patch.h",
     "runtime/src/nvn/native_raster_policy.h",
     "runtime/src/nvn/native_readback_memory.h",
+    "runtime/src/nvn/native_recipe_save_snapshot.h",
     "runtime/src/nvn/native_recorded_shape.h",
     "runtime/src/nvn/native_sample_query_scope.h",
     "runtime/src/nvn/native_sampled_profile.h",

@@ -7178,6 +7178,30 @@
 +}
 +}
 --- /dev/null
++++ b/runtime/src/nvn/native_recipe_save_snapshot.h
+@@ -0,0 +1,21 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++// Owned save inputs: captured under the engine lock, processed by the saver.
++#pragma once
++#include <unordered_set>
++#include "nvn_pipeline_recipes.h"
++
++namespace nx::nvn::recipes {
++struct SaveSnapshot {
++    std::vector<Recipe> used, older;
++    std::unordered_set<std::string> rejected;
++
++    std::vector<Recipe> finish(size_t cap = kMaxRecipes) const {
++        std::vector<Recipe> accepted;
++        accepted.reserve(older.size());
++        for (const Recipe& r : older)
++            if (!rejected.count(value_key(r.vs.digest, r.fs.hash.empty() ? nullptr : &r.fs.digest, r.state)))
++                accepted.push_back(r);
++        return merge_for_save(used, accepted, cap);
++    }
++};
++}  // namespace nx::nvn::recipes
+--- /dev/null
 +++ b/runtime/src/nvn/native_recorded_shape.h
 @@ -0,0 +1,48 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -10704,7 +10728,7 @@
      std::vector<uint8_t> data;
      if (FILE* f = plat::fopen_utf8(g_path, "rb")) {
          plat::fseek64(f, 0, SEEK_END);
-@@ -41,16 +57,17 @@
+@@ -41,24 +57,36 @@
          if (n > 0) data.resize(size_t(n)), data.resize(std::fread(data.data(), 1, data.size(), f));
          std::fclose(f);
      }
@@ -10725,7 +10749,28 @@
  }
  
  void pipeline_cache_save() {
-@@ -68,8 +85,16 @@
+     if (!g_cache) return;
++    measurement::Scope measured_save("pipeline-cache-save");
+     size_t n = 0;
+-    if (p_vkGetPipelineCacheData(vk_device(), g_cache, &n, nullptr) != VK_SUCCESS || n <= g_saved_size) return;
++    VkResult status;
++    {
++        measurement::Scope measured("pipeline-cache-size");
++        status = p_vkGetPipelineCacheData(vk_device(), g_cache, &n, nullptr);
++    }
++    if (status != VK_SUCCESS || n <= g_saved_size) return;
+     std::vector<uint8_t> data(n);
+-    if (p_vkGetPipelineCacheData(vk_device(), g_cache, &n, data.data()) != VK_SUCCESS) return;
++    {
++        measurement::Scope measured("pipeline-cache-copy",0,n);
++        status = p_vkGetPipelineCacheData(vk_device(), g_cache, &n, data.data());
++    }
++    if (status != VK_SUCCESS) return;
++    measurement::Scope measured_write("pipeline-cache-write",0,n);
+     std::string tmp = g_path + ".tmp";
+     if (FILE* f = plat::fopen_utf8(tmp, "wb")) {
+         bool ok = std::fwrite(data.data(), 1, n, f) == n;
+@@ -68,8 +96,16 @@
      }
  }
  
@@ -10744,7 +10789,7 @@
  
  // One line per timing window (nvn_vk.cpp log_timing): what the replay created, and the time it took.
  void creation_log(uint64_t frames) {
-@@ -78,8 +103,9 @@
+@@ -78,8 +114,9 @@
              (unsigned long long)frames, (unsigned long long)g_pipelines, double(g_pipeline_ns) / 1e6,
              (unsigned long long)g_astc, double(g_astc_ns) / 1e6);
      g_pipelines = g_pipeline_ns = g_astc = g_astc_ns = 0;
@@ -10757,7 +10802,9 @@
  }  // namespace nx::nvn
 --- /dev/null
 +++ b/runtime/src/nvn/nvn_pipeline_prewarm.cpp
-@@ -0,0 +1,601 @@
+@@ -0,0 +1,627 @@
++#include "native_measurement.h"
++#include "native_recipe_save_snapshot.h"
 +// The recipe engine (nvn_pipeline_recipes.h): records the graphics pipelines a run makes, loads the last run's
 +// recipes and builds them on bounded background workers, and hands them to the draws that need them.
 +//
@@ -11247,6 +11294,15 @@
 +
 +namespace {
 +
++SaveSnapshot capture_for_save(Engine& e) {  // under e.lock: copy only, no filtering/hashing/merging
++    SaveSnapshot out;
++    out.used.reserve(e.used_order.size());
++    for (const std::string& v : e.used_order) out.used.push_back(e.used.at(v));
++    out.older = e.older;
++    out.rejected = e.rejected;
++    return out;
++}
++
 +std::vector<Recipe> snapshot_for_save(Engine& e) {  // under e.lock
 +    std::vector<Recipe> used, older;
 +    used.reserve(e.used_order.size());
@@ -11262,20 +11318,35 @@
 +void save_async() {
 +    if (mode() == Mode::Off) return;
 +    Engine& e = engine();
-+    std::vector<Recipe> snapshot;
++    SaveSnapshot inputs;
 +    std::string path;
 +    FileInfo info;
 +    {
 +        std::lock_guard guard(e.lock);
 +        if (!e.started || e.dirty == 0 || e.saving.exchange(true)) return;
 +        e.dirty = 0;
-+        snapshot = snapshot_for_save(e);
++        measurement::Scope measured("recipe-save-snapshot");
++        inputs = capture_for_save(e);
 +        path = e.path, info = e.info;
 +    }
-+    std::thread([snapshot = std::move(snapshot), path, info] {  // off the replay thread; the rename is atomic
++    std::thread([inputs = std::move(inputs), path, info] {  // off the replay thread; the rename is atomic
++        std::vector<Recipe> snapshot;
++        {
++            measurement::Scope measured("recipe-save-merge");
++            snapshot = inputs.finish();
++        }
 +        std::string why;
-+        const std::string bytes = serialize(snapshot, info);
-+        if (write_atomic(path, bytes, &why))
++        std::string bytes;
++        {
++            measurement::Scope measured("recipe-save-serialize");
++            bytes = serialize(snapshot, info);
++        }
++        bool written;
++        {
++            measurement::Scope measured("recipe-save-write",0,bytes.size());
++            written = write_atomic(path, bytes, &why);
++        }
++        if (written)
 +            log("nvn/vk: pipeline recipes saved: %zu (%zu bytes)", snapshot.size(), bytes.size());
 +        else
 +            log("nvn/vk: pipeline recipes not saved: %s", why.c_str());
@@ -12000,7 +12071,7 @@
      std::atomic<bool> signaled{false};
      std::atomic<uint64_t> serial{0};  // NX_ASYNC_GPU: the submit it waits for (0: none; always 0 otherwise)
      std::atomic<uint64_t> job{0};     // the replay-thread job that fences it (0: none)
-@@ -138,27 +159,57 @@
+@@ -138,27 +159,58 @@
  void SyncFinalize(CPU& c) { destroy(c.x[0]); }
  
  void signal_sync(uint64_t guest) {
@@ -12064,11 +12135,12 @@
 +void QueueFinalize(CPU& c){finish_queue(c.x[0]);destroy(c.x[0]);}
 +
  void QueueSubmitCommands(CPU& c) {  // (NVNqueue*, int count, const NVNcommandHandle*)
++    measurement::Scope measured_call("queue-submit-call");
 +    require_queue(c.x[0]);
      plat::perf_hint_thread();  // this thread replays: part of every frame (perf_hint.cpp)
      std::vector<std::shared_ptr<CmdList>> lists;
      static uint64_t submitted = 0, missing = 0;
-@@ -180,49 +231,42 @@
+@@ -180,49 +232,48 @@
      // NX_DEFERRED_SNAPSHOT=1: read the Deferred arrays here; by default they are read when the submit is replayed.
      static const bool snap = std::getenv("NX_DEFERRED_SNAPSHOT") != nullptr;
      auto deferred = snap ? std::make_shared<const DeferredValues>(deferred_snapshot(lists)) : nullptr;
@@ -12076,10 +12148,15 @@
      {
          std::lock_guard lk(g_sub_lock);
 -        g_sub_called++;
--    }
 +        measurement_submit=++g_sub_called;
 +    }
-+    std::set<uint64_t> sync_keys;std::set<const CmdList*> visited;for(const auto& list:lists)collect_recorded_syncs(*list,sync_keys,visited,0);std::vector<std::shared_ptr<NativeFenceCompletion>> completions;for(auto key:sync_keys)completions.push_back(arm_native_sync(key));
++    std::vector<std::shared_ptr<NativeFenceCompletion>> completions;
++    {
++        measurement::Scope measured("queue-sync-arm",measurement_submit);
++        std::set<uint64_t> sync_keys;std::set<const CmdList*> visited;
++        for(const auto& list:lists)collect_recorded_syncs(*list,sync_keys,visited,0);
++        for(auto key:sync_keys)completions.push_back(arm_native_sync(key));
+     }
      tl("submit-call");
 -    worker_run([lists = std::move(lists), deferred] {
 +    worker_run([lists = std::move(lists), deferred, completions=std::move(completions), measurement_submit] {
@@ -12137,7 +12214,7 @@
  }
  
  void WindowFinalize(CPU& c) { destroy(c.x[0]); }
-@@ -238,6 +282,14 @@
+@@ -238,6 +289,14 @@
      if (c.x[2]) st<int32_t>(c.x[2], index);
      signal_sync(c.x[1]);
      c.x[0] = 0;
@@ -12152,7 +12229,7 @@
  }
  
  void WindowGetNumTextures(CPU& c) {
-@@ -489,12 +541,182 @@
+@@ -489,12 +548,182 @@
  // one. On the Switch the texture-available sync of the next acquire does this; ours is signaled at once, so without
  // it the game runs as fast as it can once it is faster than 60 fps. A late frame is not snapped to the next vsync
  // (an 18 ms frame stays 18 ms, not 33). NX_NO_FRAME_LIMIT=1: unpaced.
@@ -12336,7 +12413,7 @@
      static uint64_t presents = 0, at2 = 0;  // how often the game asks for 30 fps (interval 2), per 600 presents
      at2 += interval >= 2;
      if (++presents % 600 == 0)
-@@ -504,6 +726,25 @@
+@@ -504,6 +733,25 @@
  }
  
  void QueuePresentTexture(CPU& c) {
@@ -12362,7 +12439,7 @@
      // The frame's work, from the end of the last present's pacing to now (perf_hint.cpp: ADPF on Android).
      static uint64_t work_from = 0;
      uint64_t t_in = plat::monotonic_ns();
-@@ -520,11 +761,19 @@
+@@ -520,11 +768,19 @@
          // At most two presents queued: the game runs at most two frames ahead of the replay.
          static uint64_t queued[2] = {};
          static int next_slot = 0;
@@ -12383,7 +12460,7 @@
              next_slot ^= 1;
          }
          pace_present(w->interval);
-@@ -561,6 +810,7 @@
+@@ -561,6 +817,7 @@
  }  // namespace
  
  NX_HLE("nvnWindowSetCrop", WindowSetCrop);
@@ -12391,7 +12468,7 @@
  NX_HLE("nvnSyncInitialize", SyncInitialize);
  NX_HLE("nvnSyncFinalize", SyncFinalize);
  NX_HLE("nvnSyncWait", SyncWait);
-@@ -572,6 +822,7 @@
+@@ -572,6 +829,7 @@
  NX_HLE("nvnQueueFenceSync", QueueFenceSync);
  NX_HLE("nvnQueueWaitSync", QueueWaitSync);
  NX_HLE("nvnQueuePresentTexture", QueuePresentTexture);
@@ -13494,15 +13571,21 @@
  };
  
  }  // namespace
-@@ -555,6 +629,7 @@
+@@ -552,9 +626,13 @@
+ 
+ void gpu_submit(const std::vector<std::shared_ptr<CmdList>>& lists, std::shared_ptr<const DeferredValues> deferred) {
+     g_deferred = std::move(deferred);
++    const auto measured_lock_from=measurement::events_on()?plat::monotonic_ns():0;
      std::lock_guard lk(g_gpu);
++    if(measured_lock_from)measurement::event("gpu-submit-lock",measurement::submit_id,measured_lock_from,plat::monotonic_ns());
++    measurement::Scope measured_body("gpu-submit-body",measurement::submit_id);
      uint64_t t_in = plat::monotonic_ns();
      const FrameTimes f_in = frame_times();
 +    const Timing timing_in = g_timing;  // NX_SLOW_FRAME_LOG: this submit's share, below
      uint64_t lists_epoch = 0;
      for (auto& l : lists) lists_epoch = std::max(lists_epoch, l->epoch);
      ReplayScope replay(lists_epoch);  // the texture mark (#55, #57), then drain_objects (under the GPU lock, #50)
-@@ -599,6 +674,22 @@
+@@ -599,6 +677,22 @@
      const FrameTimes f2 = frame_times();
      g_timing.encode_ns += f2.encode_ns - f_in.encode_ns, g_timing.fence_ns += f2.fence_ns - f_in.fence_ns;
      g_timing.submit_ns += plat::monotonic_ns() - t_in;
@@ -13525,7 +13608,7 @@
  }
  
  // Headless: the presented texture is only counted, logged and dumped (no swapchain). Nothing is submitted unless a
-@@ -638,6 +729,8 @@
+@@ -638,6 +732,8 @@
  }
  
  void gpu_present(uint64_t texture, const int32_t* crop) {
@@ -13534,7 +13617,7 @@
      plat::perf_hint_thread();  // the thread that presents takes part in the frame (perf_hint.cpp)
      std::lock_guard lk(g_gpu);
      PresentTimer timer;
-@@ -690,6 +783,27 @@
+@@ -690,6 +786,27 @@
          blit.dstOffsets[1] = {int32_t(g_sc_extent.width), int32_t(g_sc_extent.height), 1};
          p_vkCmdBlitImage(g_cb, src->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst.image,
                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
@@ -13562,7 +13645,7 @@
      }
      if (!drawn) transition(g_cb, dst, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
      static uint64_t presents = 0;
-@@ -729,4 +843,80 @@
+@@ -729,4 +846,80 @@
      if (remake) make_swapchain();
  }
  
@@ -18115,7 +18198,7 @@
 +}
 --- /dev/null
 +++ b/tests/native_pipeline_recipe_probe.h
-@@ -0,0 +1,344 @@
+@@ -0,0 +1,363 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +// Pipeline recipes (runtime/src/nvn/nvn_pipeline_recipes.h): the encoding and file on the CPU, then prewarm,
 +// adoption, rejection of changed stages, claiming, persistence and identical rendering on the GPU. Authored shaders
@@ -18123,6 +18206,7 @@
 +#pragma once
 +#include "nvn/nvn_draw_state.h"
 +#include "nvn/nvn_pipeline_recipes.h"
++#include "nvn/native_recipe_save_snapshot.h"
 +#include "native_point_test_shaders.h"
 +#include <cstdio>
 +#include <cstring>
@@ -18276,6 +18360,24 @@
 +    check(R::merge_for_save(used, older, 3).size() == 3 && R::merge_for_save(used, older, 1)[0].state == list[3].state);
 +    std::vector<R::Recipe> twice{list[3], list[3]};
 +    check(R::merge_for_save(twice, {}, 16).size() == 1);
++    // Saver owns the exact captured history, even when the engine changes later.
++    std::unordered_set<std::string> rejected{
++        R::value_key(list[0].vs.digest, list[0].fs.hash.empty() ? nullptr : &list[0].fs.digest, list[0].state)};
++    R::SaveSnapshot snapshot{used, older, rejected};
++    auto expected = merged;
++    expected.erase(expected.begin() + 2);
++    expected[2].order = 2;
++    const auto expected_bytes = R::serialize(expected, info);
++    check(R::serialize(snapshot.finish(16), info) == expected_bytes);
++    used.clear(), older.clear(), rejected.clear();
++    check(R::serialize(snapshot.finish(16), info) == expected_bytes);
++    auto moved = std::move(snapshot);
++    check(R::serialize(moved.finish(16), info) == expected_bytes);
++    check(moved.finish(1).size() == 1 && moved.finish(1)[0].state == list[3].state);
++    check(moved.finish(0).empty());
++    moved.rejected.clear();
++    check(R::serialize(moved.finish(16), info) == R::serialize(merged, info));
++
 +}
 +
 +// One point through `pipeline` into an 8x8 RGBA8 target cleared black; the 64 pixels.

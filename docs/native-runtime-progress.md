@@ -4,6 +4,17 @@ Updated 2026-10-21. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## MK8 native runtime
 
+R344 reuses the existing texture type query at four registered-owner lookup sites,
+preserving descriptor, generation, owner-order and resource-lifetime checks.
+Authored alternating controls reduce median shared-cache lookup cost by 12.29%
+and miss-heavy pool-scan cost by 33.34%. Four reviewed normal-60 Stadium windows
+retain 7,626 complete intervals and average approximately 16.667 ms/60 FPS. CPU
+results vary too much to establish a whole-game gain. All 52 suites, 3,253 GPU
+checks and existing counter/phase/sync/readback controls pass; the changed C++
+unit has zero analysis diagnostics. The recipe reconstructs 224 generic files.
+See [lookup results and gameplay limits](native-texture-registry-performance.md#r344-reuse-the-texture-type-query-in-registered-owner-paths).
+Correct 125/250 FPS and sustained 8/4 ms presentation remain open.
+
 R342 adds bounded before/after callback-state observations for tracing the actual
 simulation-to-rendering boundary. A moving normal 60 Hz Stadium Time Trials run
 captures 121 consecutive object-state spans; all 120 adjacent final/entry byte

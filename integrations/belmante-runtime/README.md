@@ -6,12 +6,17 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-The current recipe reconstructs R342 (224 generic files). It adds optional bounded
-before/after callback-state observations to the R339 worker-context observer,
-preserving original calls, CPU outputs and exception propagation. All 52 component
-suites, 3,253 native GPU fixture checks and the existing counter/phase/sync/readback
-controls pass; both changed C++ consumers have zero analysis diagnostics. A closed
-moving normal 60 Hz Stadium capture covers 121 consecutive state observations,
+The current recipe reconstructs R344 (224 generic files). It reuses the existing
+texture type query in four registered-owner lookup paths, preserving complete
+descriptor, generation, owner-order and lifetime checks. Authored shared-cache
+and miss-heavy pool-scan benchmarks improve 12.29% and 33.34%; four reviewed
+normal-60 Stadium windows remain near 16.67 ms/60 FPS, with CPU variation too large
+for a whole-game gain claim. All 52 component suites, 3,253 native GPU fixture
+checks and the existing counter/phase/sync/readback controls pass; the changed
+C++ unit has zero analysis diagnostics. See [lookup measurements](../../docs/native-texture-registry-performance.md).
+
+The R342 bounded callback-state observer remains available. A closed moving
+normal 60 Hz Stadium capture covers 121 consecutive state observations,
 with all 120 adjacent byte boundaries matching and no dropped records. This is
 state-continuity evidence; simulation/render ownership and interpolation remain
 unproven. No scheduling or frame-rate improvement is claimed. The earlier R330 recording-only benchmark

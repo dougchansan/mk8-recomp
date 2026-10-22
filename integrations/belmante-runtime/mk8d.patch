@@ -11093,7 +11093,7 @@
 +uint64_t texture_identity_locked(uint64_t key) {
 +    perf::Scope perf_scope(perf::Region::TextureIdentity);
 +    if(auto found=objects().find(key);found!=objects().end()) {
-+        if(!dynamic_cast<Texture*>(found->second.get()))throw std::invalid_argument("native texture query object type");
++        if(!(found->second ? found->second->as_texture() : nullptr))throw std::invalid_argument("native texture query object type");
 +        return key;
 +    }
 +    if(native_guest_span(key,0xb0,1)&&native_device_alive_locked(ld<uint64_t>(key+8))) {
@@ -11112,7 +11112,7 @@
 +        const auto gpu=ld<uint64_t>(key+0x80),pool=ld<uint64_t>(key+0x10);
 +        const auto slot=shared?((gpu>>8)^(gpu>>16)^(gpu>>24)^(pool>>4))&63:((key>>4)^(key>>12))&7;
 +        auto& hit=cache[slot];const auto generation=objects_lock().generation.load(std::memory_order_acquire);
-+        if((shared||hit.descriptor==key)&&hit.generation==generation){auto found=objects().find(hit.owner);const auto* texture=found==objects().end()?nullptr:dynamic_cast<Texture*>(found->second.get());if(texture&&matches(*texture))return hit.owner;}
++        if((shared||hit.descriptor==key)&&hit.generation==generation){auto found=objects().find(hit.owner);const auto* texture=found==objects().end()?nullptr:(found->second ? found->second->as_texture() : nullptr);if(texture&&matches(*texture))return hit.owner;}
 +        // Most copied render targets still have a live owner in this pool.
 +        // Reuse its existing key index before searching retained snapshots.
 +        // The index is only a hint: resolve and validate every candidate now.
@@ -11124,7 +11124,7 @@
 +            const auto pool = pool_textures().find(ld<uint64_t>(key + 0x10));
 +            if (pool != pool_textures().end()) for (const auto owner : pool->second) {
 +                const auto found = objects().find(owner);
-+                const auto* texture = found == objects().end() ? nullptr : dynamic_cast<Texture*>(found->second.get());
++                const auto* texture = found == objects().end() ? nullptr : (found->second ? found->second->as_texture() : nullptr);
 +                if (!texture || !matches(*texture)) continue;
 +                hit = {key, owner, generation};
 +                return owner;
@@ -11135,7 +11135,7 @@
 +                const auto retained=g_snapshot_owners.find(owner);
 +                if(retained==g_snapshot_owners.end()||!retained->second)continue;
 +                const auto found=objects().find(owner);
-+                const auto* texture=found==objects().end()?nullptr:dynamic_cast<Texture*>(found->second.get());
++                const auto* texture=found==objects().end()?nullptr:(found->second ? found->second->as_texture() : nullptr);
 +                if(!texture||!matches(*texture))continue;
 +                if(candidate){ambiguous=true;break;}candidate=owner;
 +            }

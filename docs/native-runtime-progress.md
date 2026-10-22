@@ -33,6 +33,16 @@ true 125 FPS, then 250 FPS, with rendering separated from simulation. Neither
 milestone is verified. Upstream credits remain in license and provenance
 records; new authored revisions and branches use MK8 naming.
 
+Further private cadence probes located timer-related callbacks on worker threads.
+A nested-cohort governor still accelerated the clock; a broader update governor
+kept the stationary clock near real time but lost course/kart geometry in some
+presented images. Both were rejected. Their implementations remain private and
+disabled, and the published R330 recipe is unchanged. The
+[clock measurements](native-frame-clock-audit.md#further-private-cadence-experiments)
+and [worker ownership limits](native-main-loop-profiler.md#worker-ownership-and-render-preparation)
+explain why an update task without owner-thread draw calls still cannot be gated
+as pure simulation. True 125/250 FPS and interpolation remain unverified.
+
 Following main-thread focus-gate phase profiling, R284 moves optional profiling
 and parking/notification frames out of its common path while retaining every
 check. Longer alternating single-thread controls observe a 5.5% lower median

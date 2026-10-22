@@ -38,3 +38,34 @@ storage. The Time Trials path then reached racing without a native fatal error.
 Future performance reports must state the pacing and simulation qualification.
 An isolated minimum, GPU-only time or accelerated race does not prove a sustained
 8 ms or 4 ms presentation target at normal speed.
+
+## Further private cadence experiments
+
+Subsequent closed, stationary Time Trials Solo captures on Stadium used the
+R330 renderer and private opt-in scheduling prototypes. The prototypes remain
+unpublished and disabled; the public recipe and normal 60 Hz play setting are
+unchanged.
+
+| Condition | HUD delta | Host delta | Approximate timer rate | Presentations/s | Qualification |
+| --- | ---: | ---: | ---: | ---: | --- |
+| R330, 60 Hz, passive worker profiling | 46.324 s | 46.305 s | 1.0004x | 60.00 | Stationary clock baseline |
+| Private nested-cohort governor, requested 125 Hz | 75.370 s | 42.574 s | 1.7703x | 106.22 | Rejected: accelerated clock |
+| Private broader update governor, requested 125 Hz | 31.907 s | 31.893 s | 1.0004x | 124.77 | Rejected: missing rendered geometry |
+
+The baseline's 2,777 contiguous intervals averaged 16.6669 ms, with p99
+18.7728 ms and minimum 12.9982 ms. These measurements include diagnostic
+overhead and do not cover moving physics or other courses.
+
+The broader governor's 3,978 contiguous intervals averaged 8.0149 ms, with p99
+15.8882 ms; about 49.7% exceeded 8 ms. Reviewed images alternated between a
+visible course/kart and black geometry with HUD/effects retained. Those intervals
+include incomplete rendered states and cannot establish a performance gain or
+normal-speed 125 FPS. Timer agreement alone did not make the experiment correct.
+
+Host intervals use capture midpoints, with displayed HUD rounding, capture
+duration and image age limiting precision. Neither prototype provides verified
+interpolation, moving physics/input/audio equivalence or the 8 ms/4 ms milestones.
+The next scheduling change must separate simulation from the preparation that
+rendering needs on every presentation. A zero owner-thread draw count is
+insufficient evidence for that boundary; see the
+[worker profiling limits](native-main-loop-profiler.md#worker-ownership-and-render-preparation).

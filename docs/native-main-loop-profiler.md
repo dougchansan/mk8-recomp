@@ -73,3 +73,35 @@ exceptions, nested wall/cycle exclusives, full-table duplicates and explicit
 overflow while all 569 original leaf callbacks execute. The
 [recording comparison](native-command-recording-performance.md) applies these
 tools to reviewed normal-speed racing; it makes no true high-refresh claim.
+
+## Worker ownership and render preparation
+
+A subsequent closed Stadium Grand Prix capture found no selected job-execution callbacks
+inside 29 sampled main-thread roots. Selecting the actual worker entry instead
+observed 32 jobs on two threads, with 96 child-callback records, six address/vptr
+keys and no dropped callbacks. Two wrapper objects shared the compiled target
+and vptr: the 32-root cap covered 16 sampled presentation IDs, rather than the
+entire configured window. Preserve that distinction when reporting coverage.
+The worker capture used Time Trials Solo. These are separate coverage
+observations, not a matched performance comparison.
+
+Those child callbacks had no observed HLE or draw calls. Static inspection of
+the matching private modules identified a timer consumer that converts an
+integer frame count to milliseconds. This identifies an execution path; it does
+not establish a CPU bottleneck or ownership of the complete simulation.
+
+Two private scheduling experiments demonstrate why stronger state evidence is
+required. Throttling one nested cohort left the race clock accelerated. Gating
+the broader update task brought the stationary clock near real time, but some
+reviewed racing images lost the course and kart while retaining HUD and effects.
+Other images in the same run retained the geometry. Both experiments were
+rejected; their implementations are not part of the published recipe.
+
+The selected update boundary therefore cannot be treated as simulation-only,
+even when its owner-thread draw count is zero. The exact split between simulation
+state, per-presentation preparation and rendering consumers remains unresolved.
+Trace those consumers and worker effects before changing scheduling. Retain
+every original wait, resource identity check and complete draw path; neither
+reusing presents nor advancing bookkeeping counters substitutes for that work.
+See the [clock qualification](native-frame-clock-audit.md) for the measured
+timing limits of these rejected experiments.

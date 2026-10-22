@@ -56,3 +56,12 @@ The observed CPU receiver differs from earlier runs, and no exact contiguous
 transforms, unrelated shader coverage and receiver identity remain unresolved.
 Neither readable memory nor a matching address establishes object incarnation.
 These results verify the diagnostic, not a safe independent rendering boundary.
+
+A narrower moving capture observes all three selected inventory vertex programs
+and 24 actual uniform buffers across two observed frames, alongside another
+41 dense CPU states. Exact original/transposed affine matches are absent; an
+affine motion association still does not prove the producer. A subsequent R351
+stationary capture joins all 24 GPU ranges to recorded physical pools and finds
+map call sites for 22. Its 33- and eight-bone buffers also show why program identity
+cannot identify an entity. The mapping and separate movement-smoke limits are
+documented in [buffer lineage](native-buffer-lineage.md).

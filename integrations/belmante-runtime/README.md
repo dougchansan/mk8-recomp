@@ -6,7 +6,13 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-The current recipe reconstructs R350 (226 generic files). It retains R347's optional
+The current recipe reconstructs R351 (228 generic files). It adds a bounded,
+opt-in pool/Map/Flush observer to connect captured GPU ranges to mapped CPU
+backing and call sites. All 54 native suites, 3,253 GPU checks and 19 controls
+pass; both changed-source analyses are clean. See [buffer-lineage configuration
+and limits](../../docs/native-buffer-lineage.md). No scheduling/FPS gain is claimed.
+
+R350's counter-test repair remains included, alongside R347's optional
 bounded observed-frame window and submission IDs in the existing GPU uniform
 snapshot diagnostic and repairs nested rendering in the authored counter fixture.
 All 53 native Windows suites, 3,253 GPU checks and 17 hardware/control cases pass;

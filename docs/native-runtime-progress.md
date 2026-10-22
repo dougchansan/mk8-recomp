@@ -4,6 +4,15 @@ Updated 2026-10-22. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## MK8 native runtime
 
+R351 adds opt-in, bounded pool and Map/Flush call-site observations. All 54 native
+Windows suites, 3,253 GPU checks and 19 control cases pass; both changed-source
+analyses are clean. Its 228-file generic recipe links a closed investigation's
+24 captured GPU ranges to recorded physical pools, with map call sites for 22.
+The lineage window is stationary; a later movement smoke remains near16.67ms.
+Counts and addresses do not prove producer ownership or a CPU bottleneck. See
+[buffer lineage](native-buffer-lineage.md). This is measurement progress, with
+no scheduling/FPS improvement or 8/4ms milestone claimed.
+
 R350 retains the verified R347 production runtime and bounded uniform capture,
 and repairs nested rendering in the authored counter fixture. All 53 native
 Windows suites, 3,253 GPU checks and 17 hardware/control cases pass; three

@@ -1,6 +1,6 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -36,6 +36,113 @@
+@@ -36,6 +36,118 @@
  option(NX_TESTS "Build the standalone unit tests" OFF)
  if(NX_TESTS AND NOT ANDROID)
      enable_testing()
@@ -43,6 +43,11 @@
 +    add_executable(native_capture_window_test tests/native_capture_window_test.cpp)
 +    target_include_directories(native_capture_window_test PRIVATE runtime/src)
 +    add_test(NAME native_capture_window COMMAND native_capture_window_test)
++    add_executable(native_pool_lineage_test tests/native_pool_lineage_test.cpp)
++    target_include_directories(native_pool_lineage_test PRIVATE runtime/src)
++    find_package(Threads REQUIRED)
++    target_link_libraries(native_pool_lineage_test PRIVATE Threads::Threads)
++    add_test(NAME native_pool_lineage COMMAND native_pool_lineage_test)
 +    add_executable(native_point_size_patch_test tests/native_point_size_patch_test.cpp)
 +    target_include_directories(native_point_size_patch_test PRIVATE runtime/src)
 +    add_test(NAME native_point_size_patch COMMAND native_point_size_patch_test)
@@ -114,7 +119,7 @@
      add_executable(gpu_pick_test tests/gpu_pick_test.cpp runtime/src/nvn/nvn_gpu_pick.cpp)
      target_compile_definitions(gpu_pick_test PRIVATE NX_GPU_PICK_STANDALONE)
      target_include_directories(gpu_pick_test PRIVATE runtime/src/nvn)
-@@ -67,7 +174,14 @@
+@@ -67,7 +179,14 @@
      return()
  endif()
  
@@ -130,7 +135,7 @@
      file(GLOB src CONFIGURE_DEPENDS "${NX_GEN_DIR}/${mod}/*.cpp")
      add_library(game_${mod} STATIC ${src})
      target_include_directories(game_${mod} PRIVATE runtime/include "${NX_GEN_DIR}/${mod}")
-@@ -84,8 +198,10 @@
+@@ -84,8 +203,10 @@
          target_compile_options(game_${mod} PRIVATE -O2 -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
      endif()
  endforeach()
@@ -141,7 +146,7 @@
      runtime/src/main.cpp
      runtime/src/sampler.cpp
      runtime/src/loader.cpp
-@@ -93,6 +209,12 @@
+@@ -93,6 +214,12 @@
      runtime/src/kernel.cpp
      runtime/src/kernel_watch.cpp
      runtime/src/ipc.cpp
@@ -154,7 +159,7 @@
      runtime/src/svc_am.cpp
      runtime/src/svc_set.cpp
      runtime/src/svc_misc.cpp
-@@ -101,6 +223,7 @@
+@@ -101,6 +228,7 @@
      runtime/src/hle_fs.cpp
      runtime/src/svc_account.cpp
      runtime/src/hle_ro.cpp
@@ -162,7 +167,7 @@
      runtime/src/hle_vi.cpp
      runtime/src/hle_hid.cpp
      runtime/src/hle_net.cpp
-@@ -114,6 +237,7 @@
+@@ -114,6 +242,7 @@
      runtime/src/nvn/nvn_caps.cpp
      runtime/src/nvn/nvn_renderpass.cpp
      runtime/src/nvn/nvn_gpu_busy.cpp
@@ -170,7 +175,7 @@
      runtime/src/nvn/nvn_janitor.cpp
      runtime/src/nvn/nvn_trace.cpp
      runtime/src/nvn/nvn_device.cpp
-@@ -147,6 +271,9 @@
+@@ -147,6 +276,9 @@
      runtime/src/nvn/nvn_pipeline.cpp
      runtime/src/nvn/nvn_dummy.cpp
      runtime/src/nvn/nvn_pipeline_cache.cpp
@@ -180,7 +185,7 @@
      runtime/src/nvn/nvn_upload.cpp
      runtime/src/nvn/nvn_astc.cpp
      runtime/src/nvn/nvn_spirv_patch.cpp
-@@ -185,7 +312,7 @@
+@@ -185,7 +317,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -189,7 +194,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +323,7 @@
+@@ -196,7 +328,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -198,7 +203,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,19 +335,85 @@
+@@ -208,19 +340,85 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -7138,6 +7143,45 @@
 +}
 +}
 --- /dev/null
++++ b/runtime/src/native_pool_lineage.h
+@@ -0,0 +1,36 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "native_capture_window.h"
++#include <atomic>
++#include <cstring>
++
++namespace nx::diagnostic {
++struct PoolLineageOptions {
++    bool on = false;
++    std::optional<CaptureWindow> io_window;
++    bool includes_io(uint64_t frame) const {
++        return on && io_window && io_window->contains(frame);
++    }
++};
++inline PoolLineageOptions pool_lineage_options(const char* flag, const char* first, const char* last) {
++    PoolLineageOptions result;
++    if (!flag || std::strcmp(flag, "1")) return result;
++    if (first || last) {
++        const auto window = capture_window(first, last);
++        if (!window) return result;
++        result.io_window = window;
++    }
++    result.on = true;
++    return result;
++}
++// 1..limit are records; limit+1 is the single truncation notice, then0.
++// Saturation prevents wrap from admitting new records after truncation.
++inline uint64_t pool_lineage_reserve(std::atomic<uint64_t>& used, uint64_t limit) {
++    if (limit == UINT64_MAX) return 0;
++    auto previous = used.load(std::memory_order_relaxed);
++    while (previous <= limit) {
++        if (used.compare_exchange_weak(previous, previous + 1, std::memory_order_relaxed)) return previous + 1;
++    }
++    return 0;
++}
++}
+--- /dev/null
 +++ b/runtime/src/native_program_stages.h
 @@ -0,0 +1,10 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -10827,7 +10871,7 @@
  }
 --- a/runtime/src/nvn/nvn_objects.cpp
 +++ b/runtime/src/nvn/nvn_objects.cpp
-@@ -1,18 +1,33 @@
+@@ -1,18 +1,34 @@
 +#include "native_measurement.h"
 +#include "native_perf.h"
  // NVN objects, CPU side (docs/NVN.md, N3): memory pools and GPU addresses, buffers, textures, samplers, texture and
@@ -10850,6 +10894,7 @@
 +#include "sdk53_texture_descriptor.h"
 +#include "sdk53_texture_wire.h"
 +#include "native_guest_span.h"
++#include "native_pool_lineage.h"
 +#include "native_volume_profile.h"
  #include "nvn_ultrawide.h"
  #include "platform.h"
@@ -10861,10 +10906,30 @@
  
  std::recursive_mutex& gpu_lock();  // nvn_vk.cpp
  
-@@ -23,9 +38,21 @@
+@@ -23,9 +39,41 @@
  std::mutex g_gpu_lock;
  std::map<uint64_t, MemoryPool*> g_pools_by_gpu;  // gpu start -> pool
  std::atomic<uint64_t> g_pools_generation{1};     // bumped with every change of the map, under g_gpu_lock
++constexpr uint64_t kPoolLineageLimit = 8192;
++std::atomic<uint64_t> g_pool_lineage_events{0};
++const diagnostic::PoolLineageOptions& pool_lineage_options() {
++    static const auto value = [] {
++        const auto* flag = std::getenv("NX_POOL_LINEAGE");
++        if (!flag || std::strcmp(flag, "1")) return diagnostic::PoolLineageOptions{};
++        return diagnostic::pool_lineage_options(flag, std::getenv("NX_POOL_LINEAGE_FIRST_FRAME"),
++                                                std::getenv("NX_POOL_LINEAGE_LAST_FRAME"));
++    }();
++    return value;
++}
++uint64_t pool_lineage_event(bool io, uint64_t& frame) {
++    const auto& options = pool_lineage_options();
++    if (!options.on || (io && !options.io_window)) return 0;
++    frame = g_frame.load(std::memory_order_relaxed);
++    if (io && !options.includes_io(frame)) return 0;
++    const auto sequence = diagnostic::pool_lineage_reserve(g_pool_lineage_events, kPoolLineageLimit);
++    if (sequence == kPoolLineageLimit + 1) log("pool-lineage: v=1 truncated limit=%llu", (unsigned long long)kPoolLineageLimit);
++    return sequence <= kPoolLineageLimit ? sequence : 0;
++}
 +struct RegisteredViewDebug {
 +    uint64_t source=0,snapshot=0,view=0,memory=0,storage=0;
 +    uint32_t target=0,width=0,height=0,depth=0,format=0,view_target=0;
@@ -10883,7 +10948,7 @@
  
  uint64_t gpu_alloc(uint64_t size) {
      std::lock_guard lk(g_gpu_lock);
-@@ -67,6 +94,7 @@
+@@ -67,6 +115,7 @@
  }
  
  ViewInfo read_view(CPU& c, uint64_t view) {
@@ -10891,7 +10956,7 @@
      ViewInfo v;
      if (!view) return v;
      uint64_t tmp = scratch(c, 16);
-@@ -99,6 +127,7 @@
+@@ -99,6 +148,7 @@
  
  // NVNboolean nvnMemoryPoolInitialize(NVNmemoryPool*, const NVNmemoryPoolBuilder*)
  void MemoryPoolInitialize(CPU& c) {
@@ -10899,8 +10964,16 @@
      uint64_t guest = c.x[0], builder = c.x[1];
      auto& p = make<MemoryPool>(guest);
      p.memory = driver(c, "nvnMemoryPoolBuilderGetMemory", {builder});
-@@ -111,6 +140,28 @@
+@@ -109,20 +159,63 @@
+     if (g_trace)
+         log("nvn: pool %llx: memory %llx size %llx flags %x gpu %llx", (unsigned long long)guest,
              (unsigned long long)p.memory, (unsigned long long)p.size, p.flags, (unsigned long long)p.gpu);
++    uint64_t frame = 0;
++    if (const auto sequence = pool_lineage_event(false, frame))
++        log("pool-lineage: v=1 seq=%llu action=init pool=%llx gpu=%llx cpu=%llx bytes=%llx flags=%x frame=%llu host=%llu tid=%lld lr=%llx",
++            (unsigned long long)sequence, (unsigned long long)guest, (unsigned long long)p.gpu,
++            (unsigned long long)p.memory, (unsigned long long)p.size, p.flags, (unsigned long long)frame,
++            (unsigned long long)plat::monotonic_ns(), (long long)plat::current_thread_id(), (unsigned long long)c.x[30]);
      c.x[0] = 1;
  }
 +
@@ -10928,20 +11001,70 @@
  
  void MemoryPoolFinalize(CPU& c) {
      wait_submits_so_far(kWaitInvalidate);  // a submit replayed on another thread may still read it
-@@ -167,12 +218,6 @@
-     c.x[0] = 1;
+     worker_finish();                    // the replay thread may still read it
+     gpu_wait(gpu_write_back_serial());  // NX_ASYNC_GPU: no compute result lands in freed memory
+-    if (auto* p = get<MemoryPool>(c.x[0])) pool_unregister(p), command_memory_released(p->gpu, p->size);
++    if (auto* p = get<MemoryPool>(c.x[0])) {
++        uint64_t frame = 0;
++        if (const auto sequence = pool_lineage_event(false, frame))
++            log("pool-lineage: v=1 seq=%llu action=retire pool=%llx gpu=%llx bytes=%llx frame=%llu host=%llu tid=%lld lr=%llx",
++                (unsigned long long)sequence, (unsigned long long)c.x[0], (unsigned long long)p->gpu,
++                (unsigned long long)p->size, (unsigned long long)frame,
++                (unsigned long long)plat::monotonic_ns(), (long long)plat::current_thread_id(), (unsigned long long)c.x[30]);
++        pool_unregister(p), command_memory_released(p->gpu, p->size);
++    }
+     destroy(c.x[0]);
  }
  
+ void MemoryPoolMap(CPU& c) {  // void* (const NVNmemoryPool*)
+-    auto* p = get<MemoryPool>(c.x[0]);
++    const uint64_t guest = c.x[0];
++    auto* p = get<MemoryPool>(guest);
+     c.x[0] = p ? p->memory : 0;
++    uint64_t frame = 0;
++    if (const auto sequence = pool_lineage_event(true, frame))
++        log("pool-lineage: v=1 seq=%llu action=map-cpu pool=%llx cpu=%llx found=%u frame=%llu host=%llu tid=%lld lr=%llx",
++            (unsigned long long)sequence, (unsigned long long)guest,
++            (unsigned long long)c.x[0], unsigned(p != nullptr), (unsigned long long)frame,
++            (unsigned long long)plat::monotonic_ns(), (long long)plat::current_thread_id(), (unsigned long long)c.x[30]);
+ }
+ 
+ void MemoryPoolGetBufferAddress(CPU& c) {  // NVNbufferAddress (const NVNmemoryPool*)
+@@ -163,14 +256,15 @@
+             v->mappings[voff] = {phys, poff, size};
+         else
+             v->mappings.erase(voff);  // unmap
++        uint64_t frame = 0;
++        if (const auto sequence = pool_lineage_event(false, frame))
++            log("pool-lineage: v=1 seq=%llu action=map-virtual pool=%llx gpu=%llx physical=%llx physical-offset=%llx virtual-offset=%llx bytes=%llx frame=%llu host=%llu tid=%lld lr=%llx",
++                (unsigned long long)sequence, (unsigned long long)c.x[0], (unsigned long long)v->gpu,
++                (unsigned long long)phys, (unsigned long long)poff, (unsigned long long)voff, (unsigned long long)size,
++                (unsigned long long)frame, (unsigned long long)plat::monotonic_ns(),
++                (long long)plat::current_thread_id(), (unsigned long long)c.x[30]);
+     }
+     c.x[0] = 1;
+-}
+-
 -// Textures by memory pool, to find the ones a flushed range covers.
 -std::map<uint64_t, std::set<uint64_t>>& pool_textures() {
 -    static std::map<uint64_t, std::set<uint64_t>> m;
 -    return m;
--}
--
+ }
+ 
  // Guest memory is host memory, so buffers need nothing. Textures are copies on the GPU (untiled at first use): a
- // flush over one means the CPU wrote it (a glyph cache rasterises text this way), so it is uploaded again.
+@@ -178,6 +272,11 @@
  // (NVNmemoryPool*, ptrdiff_t offset, size_t size)
-@@ -206,6 +251,8 @@
+ void MemoryPoolFlushMappedRange(CPU& c) {
+     uint64_t pool = c.x[0], off = c.x[1], size = c.x[2];
++    uint64_t frame = 0;
++    if (const auto sequence = pool_lineage_event(true, frame))
++        log("pool-lineage: v=1 seq=%llu action=flush pool=%llx offset=%llx bytes=%llx frame=%llu host=%llu tid=%lld lr=%llx",
++            (unsigned long long)sequence, (unsigned long long)pool, (unsigned long long)off, (unsigned long long)size,
++            (unsigned long long)frame, (unsigned long long)plat::monotonic_ns(), (long long)plat::current_thread_id(), (unsigned long long)c.x[30]);
+     std::lock_guard lk(objects_lock());
+     auto it = pool_textures().find(pool);
+     if (it == pool_textures().end()) return;
+@@ -206,6 +305,8 @@
      uint64_t memory = 0, gpu = 0;
  };
  
@@ -10950,7 +11073,7 @@
  void BufferInitialize(CPU& c) {  // NVNboolean (NVNbuffer*, const NVNbufferBuilder*)
      uint64_t guest = c.x[0], builder = c.x[1];
      auto& b = make<Buffer>(guest);
-@@ -272,6 +319,7 @@
+@@ -272,6 +373,7 @@
  void TextureInitialize(CPU& c) {  // NVNboolean (NVNtexture*, const NVNtextureBuilder*)
      auto guard = reinit_guard();
      uint64_t guest = c.x[0], builder = c.x[1];
@@ -10958,7 +11081,7 @@
      // Re-initializing a texture a pool slot still names (without finalizing it: Wonder reuses the structs of its
      // dynamic-resolution targets every frame) keeps the old one for those slots, as the pool's descriptor copy
      // would: replayed later, a frame's draws sampled another frame's AO and ambient-light buffers (dark course
-@@ -305,18 +353,40 @@
+@@ -305,18 +407,40 @@
          std::lock_guard lk(objects_lock());
          pool_textures()[t.pool].insert(guest);
      }
@@ -11011,7 +11134,7 @@
      }
  
      // Swizzle: single-channel textures are often read through it (a font atlas in R8 read as alpha = R); without
-@@ -336,6 +406,11 @@
+@@ -336,6 +460,11 @@
              "swizzle %u%u%u%u", (unsigned long long)guest, (unsigned long long)t.memory, t.target, t.format, t.width, t.height, t.depth, t.levels,
              t.samples, t.flags, (unsigned long long)t.storage_size, t.block_height_gobs, t.swizzle[0], t.swizzle[1],
              t.swizzle[2], t.swizzle[3]);
@@ -11023,7 +11146,7 @@
      if (!old) {
          std::lock_guard lk(objects_lock());
          note_replaced(guest);
-@@ -415,6 +490,11 @@
+@@ -415,6 +544,11 @@
      }
  }
  
@@ -11035,7 +11158,7 @@
  void TextureFinalize(CPU& c) {
      auto guard = reinit_guard();
      uint64_t guest = c.x[0];
-@@ -445,6 +525,11 @@
+@@ -445,6 +579,11 @@
  // copy when the slot's texture is gone or no longer has the registered target and format.
  constexpr uint64_t kSnapshot = 0xE000000000000000ull;
  uint64_t g_next_snapshot = 0;
@@ -11047,7 +11170,7 @@
  std::unordered_map<uint64_t, std::vector<uint64_t>> g_snapshots_of;  // guest texture -> its snapshots
  std::deque<std::pair<uint64_t, uint64_t>> g_snapshot_images;         // (snapshot, since ns) that own an image
  
-@@ -452,9 +537,16 @@
+@@ -452,9 +591,16 @@
      auto o = objects().find(guest);
      auto* t = o == objects().end() ? nullptr : dynamic_cast<Texture*>(o->second.get());
      if (!t) return 0;
@@ -11064,7 +11187,7 @@
      copy->width = t->width, copy->height = t->height, copy->depth = t->depth, copy->stride = t->stride;
      copy->pool = t->pool, copy->offset = t->offset, copy->storage_size = t->storage_size;
      copy->memory = t->memory, copy->gpu = t->gpu, copy->block_height_gobs = t->block_height_gobs;
-@@ -462,6 +554,8 @@
+@@ -462,6 +608,8 @@
      copy->pool_swizzle = t->pool_swizzle.load();
      uint64_t key = kSnapshot | ++g_next_snapshot;
      objects()[key] = std::move(copy);
@@ -11073,7 +11196,7 @@
      auto& keys = g_snapshots_of[guest];
      if (keys.size() >= 16)  // re-registered every frame: forget the copies already dropped
          keys.erase(std::remove_if(keys.begin(), keys.end(), [](uint64_t k) { return !objects().count(k); }), keys.end());
-@@ -470,7 +564,26 @@
+@@ -470,7 +618,26 @@
  }
  
  void drop_snapshot(uint64_t key) {  // under objects_lock
@@ -11100,7 +11223,7 @@
      if (o == objects().end()) return;
      note_replaced(key);  // a replay in flight may resolve the slot to this copy (pool_entry_at, DEBUG.md #63)
      defer_object(std::move(o->second));
-@@ -505,7 +618,9 @@
+@@ -505,7 +672,9 @@
  
  // A kept texture no slot names any more is destroyed (under objects_lock).
  void release_kept(uint64_t key) {
@@ -11111,7 +11234,7 @@
      auto reg = g_registered.find(key);
      if (reg != g_registered.end())
          for (auto [pool, id] : reg->second) {
-@@ -548,6 +663,7 @@
+@@ -548,6 +717,7 @@
      if (n == 1 || n == 100 || n == 1000)
          log("nvn: WriteTexels #%llu into %llx (%ux%u fmt %#x): %ux%ux%u at %u,%u,%u level %u", (unsigned long long)n,
              (unsigned long long)c.x[0], t->width, t->height, t->format, w.w, w.h, w.d, w.x, w.y, w.z, w.level);
@@ -11119,7 +11242,7 @@
      t->writes.push_back(std::move(w));
      t->has_writes.store(true, std::memory_order_release);
  }
-@@ -556,10 +672,74 @@
+@@ -556,10 +726,74 @@
  void TextureWriteTexelsStrided(CPU& c) { write_texels(c, c.x[4], c.x[5]); }
  void TextureFlushTexels(CPU&) {}  // coherent: the writes above are what matters
  
@@ -11196,7 +11319,7 @@
      }
  NX_TEXTURE_GETTER(TextureGetWidth, width)
  NX_TEXTURE_GETTER(TextureGetHeight, height)
-@@ -573,6 +753,13 @@
+@@ -573,6 +807,13 @@
  NX_TEXTURE_GETTER(TextureGetMemoryPool, pool)
  NX_TEXTURE_GETTER(TextureGetMemoryOffset, offset)
  NX_TEXTURE_GETTER(TextureGetStorageSize, storage_size)
@@ -11210,7 +11333,7 @@
  NX_TEXTURE_GETTER(TextureGetDepthStencilMode, depth_stencil_mode)
  #undef NX_TEXTURE_GETTER
  
-@@ -587,44 +774,35 @@
+@@ -587,44 +828,35 @@
      c.x[0] = 1;
  }
  
@@ -11280,7 +11403,7 @@
  }
  
  void DescriptorPoolGetMemoryPool(CPU& c) {
-@@ -650,8 +828,65 @@
+@@ -650,8 +882,65 @@
  
  }  // namespace
  
@@ -11346,7 +11469,7 @@
  NX_HLE("nvnMemoryPoolMap", MemoryPoolMap);
  NX_HLE("nvnMemoryPoolMapVirtual", MemoryPoolMapVirtual);
  NX_HLE("nvnTextureWriteTexels", TextureWriteTexels);
-@@ -663,6 +898,7 @@
+@@ -663,6 +952,7 @@
  NX_HLE("nvnMemoryPoolFlushMappedRange", MemoryPoolFlushMappedRange);
  NX_HLE("nvnMemoryPoolInvalidateMappedRange", MemoryPoolInvalidateMappedRange);
  NX_HLE("nvnBufferInitialize", BufferInitialize);
@@ -11354,7 +11477,7 @@
  NX_HLE("nvnBufferFinalize", BufferFinalize);
  NX_HLE("nvnBufferMap", BufferMap);
  NX_HLE("nvnBufferGetAddress", BufferGetAddress);
-@@ -685,6 +921,7 @@
+@@ -685,6 +975,7 @@
  NX_HLE("nvnTextureGetMemoryPool", TextureGetMemoryPool);
  NX_HLE("nvnTextureGetMemoryOffset", TextureGetMemoryOffset);
  NX_HLE("nvnTextureGetStorageSize", TextureGetStorageSize);
@@ -11362,7 +11485,7 @@
  NX_HLE("nvnTextureGetDepthStencilMode", TextureGetDepthStencilMode);
  NX_HLE("nvnSamplerPoolInitialize", DescriptorPoolInitialize);
  NX_HLE("nvnTexturePoolInitialize", DescriptorPoolInitialize);
-@@ -702,4 +939,17 @@
+@@ -702,4 +993,17 @@
  NX_HLE("nvnDeviceGetTexelFetchHandle", DeviceGetTexelFetchHandle);
  NX_HLE("nvnDeviceGetImageHandle", DeviceGetImageHandle);
  
@@ -20932,6 +21055,57 @@
 +    0x0003003eu,0x00000015u,0x00000012u,0x00050041u,0x00000013u,0x00000016u,0x00000001u,0x0000000cu,
 +    0x0003003eu,0x00000016u,0x00000011u,0x000100fdu,0x00010038u,
 +};
+--- /dev/null
++++ b/tests/native_pool_lineage_test.cpp
+@@ -0,0 +1,48 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "native_pool_lineage.h"
++#include <array>
++#include <cstdio>
++#include <cstdlib>
++#include <thread>
++
++unsigned checks = 0;
++void check(bool value) {
++    ++checks;
++    if (!value) { std::fprintf(stderr, "pool lineage check %u failed\n", checks); std::exit(1); }
++}
++int main() {
++    using namespace nx::diagnostic;
++    for (const char* flag : std::array<const char*, 6>{nullptr, "", "0", "true", "1x", " 1"})
++        check(!pool_lineage_options(flag, nullptr, nullptr).on);
++    const auto state_only = pool_lineage_options("1", nullptr, nullptr);
++    check(state_only.on && !state_only.includes_io(0) && !state_only.includes_io(UINT64_MAX));
++    const auto bounded = pool_lineage_options("1", "100", "102");
++    check(bounded.on && !bounded.includes_io(99) && bounded.includes_io(100) &&
++          bounded.includes_io(102) && !bounded.includes_io(103));
++    check(!pool_lineage_options("1", "100", nullptr).on);
++    check(!pool_lineage_options("1", nullptr, "100").on);
++    for (const char* bad : {"", "-1", "+1", " 1", "1x", "18446744073709551616"})
++        check(!pool_lineage_options("1", bad, "102").on);
++    check(!pool_lineage_options("1", "103", "102").on);
++    check(!pool_lineage_options("1", "0", "100001").on);
++    std::atomic<uint64_t> counter{0};
++    check(pool_lineage_reserve(counter, 2) == 1);
++    check(pool_lineage_reserve(counter, 2) == 2);
++    check(pool_lineage_reserve(counter, 2) == 3);
++    check(pool_lineage_reserve(counter, 2) == 0 && counter == 3);
++    counter = 0;
++    check(pool_lineage_reserve(counter, 0) == 1 && pool_lineage_reserve(counter, 0) == 0 && counter == 1);
++    counter = UINT64_MAX;
++    check(pool_lineage_reserve(counter, UINT64_MAX) == 0 && counter == UINT64_MAX);
++    check(pool_lineage_reserve(counter, 32) == 0 && counter == UINT64_MAX);
++    counter = 0;
++    std::array<std::atomic<unsigned>, 34> counts{};
++    std::array<std::thread, 4> workers;
++    for (auto& worker : workers) worker = std::thread([&] {
++        for (unsigned i = 0; i < 250; ++i) ++counts[pool_lineage_reserve(counter, 32)];
++    });
++    for (auto& worker : workers) worker.join();
++    check(counter == 33 && counts[0] == 967);
++    for (unsigned i = 1; i <= 33; ++i) check(counts[i] == 1);
++    std::printf("pool_lineage checks=%u enable/range/concurrent-cap/one-truncation/no-wrap PASS\n", checks);
++}
 --- /dev/null
 +++ b/tests/native_readonly_storage_test.cpp
 @@ -0,0 +1,4 @@

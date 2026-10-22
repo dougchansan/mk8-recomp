@@ -1,6 +1,6 @@
 # Bounded main-loop and callback profiling
 
-The R330 recipe adds opt-in caller, stack and callback observations to identify
+The recipe adds opt-in caller, stack and callback observations to identify
 CPU work before changing frame scheduling. The ordinary indirect-dispatch path
 keeps its cached disabled-mode branch. Profilers preserve each original call,
 CPU outputs, exception propagation, waits, draws and presentation behavior.
@@ -35,6 +35,15 @@ For example, the schema is `ROOT_LR:ROOT_TARGET,PHASE_LR:PHASE_TARGET`, with all
 labels replaced by addresses from one's matching local compiled modules.
 No title-specific selector or version map is embedded in the recipe.
 
+R339 also accepts `ROOT_LR:*` as the first pair for a worker-dispatch inventory.
+Only the root may use a wildcard; zero targets, inner wildcards and malformed
+lists disable the observer. Recorded targets are the actual dispatched functions.
+Exact roots retain once-per-thread/presentation selection. Wildcard roots use
+per-thread/presentation target, object, vptr, readability and selected-context
+keys, with the same global cap of at most 128 roots. Keys describe observations,
+not resource incarnations. A rejected, deduplicated or capped outer dispatch
+still owns its nested tail calls, so those calls cannot become false roots.
+
 `NX_CPU_PHASE_START`, `STOP`, `EVERY` and `LIMIT` bound sampled roots. Inner phases
 remain attached to the owning root if presentation advances during a wait.
 Repeated/nested tail calls do not replace the root or double-count an open
@@ -46,6 +55,35 @@ Match the actual virtual target, including any derived wrapper or thunk. A base
 implementation or nearest symbol may not be the function dispatched at that LR.
 Zero records can indicate an incorrect selector. Confirm the observed object,
 readable vptr and callback activity before assigning update/render roles.
+
+## Selecting queued contexts
+
+Optional root metadata selection uses all three settings together:
+
+| Setting | Meaning |
+| --- | --- |
+| `NX_CPU_PHASE_ROOT_REGISTER` | Decimal CPU register-array index, 0 through 31 |
+| `NX_CPU_PHASE_ROOT_OFFSET` | Hexadecimal byte offset, aligned to eight bytes and at most `fff8` |
+| `NX_CPU_PHASE_ROOT_VALUES` | One through eight distinct hexadecimal 64-bit values, separated by commas |
+
+During a sampled candidate root, the register must contain an aligned, nonzero
+base address. The observer adds the configured offset with overflow checks and
+reads one complete eight-byte value only
+inside a readable registered VM range, then compares it with the whitelist.
+The range check does not acquire a lifetime lease. Select metadata whose lifetime
+is owned by the active callback.
+Unreadable or unmatched metadata produces no root observation; the original dispatch
+and nested calls continue. Partial, malformed, duplicate, oversized or overflowing
+configuration disables the entire observer. Zero is a valid metadata value.
+
+Separate `call phase context` records bind the selected value to its owning
+root, thread and presentation ID. The existing v1 phase-row schema remains intact.
+Context changes at the same target/object/frame remain distinct wildcard roots.
+Keep local selector maps and logs containing guest addresses/data private.
+
+This selects measured producer/consumer groups; it is not an automatic simulation
+classifier. A matching job label or a draw-free HLE inventory does not prove that
+the job can be skipped or run at a different cadence.
 
 ## Callback breakdown
 
@@ -73,6 +111,14 @@ exceptions, nested wall/cycle exclusives, full-table duplicates and explicit
 overflow while all 569 original leaf callbacks execute. The
 [recording comparison](native-command-recording-performance.md) applies these
 tools to reviewed normal-speed racing; it makes no true high-refresh claim.
+
+R339 adds actual-loader stream checks for distinct worker targets/objects,
+same-frame dedup, nested tails, two threads, full CPU outputs, a sampled exception
+and the global cap. The filtered variant preserves all 13 original calls and
+12 leaves while emitting six roots and five callback records. It tests metadata
+mismatch, unaligned/unmapped/overflowing addresses, changed context at the same
+object/frame and separate context ownership. A partial-configuration process
+rejects profiling while preserving every original call.
 
 ## Worker ownership and render preparation
 
@@ -105,3 +151,20 @@ every original wait, resource identity check and complete draw path; neither
 reusing presents nor advancing bookkeeping counters substitutes for that work.
 See the [clock qualification](native-frame-clock-audit.md) for the measured
 timing limits of these rejected experiments.
+
+A later R339 metadata-selected capture covers all 29 configured sample frames
+for each of three queued contexts: 87 roots, with no root-cap truncation, dropped
+callbacks or HLE inventory overflow. Observed mean root times, including
+instrumentation, are:
+
+| Selected queued context | Samples | Mean observed root time |
+| --- | ---: | ---: |
+| Position | 29 | 0.0263 ms |
+| Movement | 29 | 0.1490 ms |
+| Apply | 29 | 0.2540 ms |
+
+All three have zero observed HLE/draw calls. They resolve to different compiled
+callees, and the apply stage has different state consumers. These measurements
+guide that investigation; they do not prove which work is safe to reschedule or
+how much presentation time would be saved. Raw thread cycles remain raw cycles,
+and address grouping remains distinct from incarnation proof.

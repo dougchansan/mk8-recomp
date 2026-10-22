@@ -4,6 +4,19 @@ Updated 2026-10-21. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## MK8 native runtime
 
+R339 improves bounded worker measurement without changing simulation or
+scheduling. Root-only wildcard inventory reports actual targets, and optional
+VM-checked register-relative metadata selection isolates queued contexts while
+preserving nested ownership and every original call. A reviewed normal 60 Hz
+Stadium capture provides 29 observations each for position, movement and apply,
+without cap truncation or dropped callbacks. Their observed means are 0.0263,
+0.1490 and 0.2540 ms with diagnostics. These are investigation targets, not
+rescheduling or frame-rate gains. All 51 suites, 3,253 GPU checks and existing
+counter/phase/sync/readback controls pass; both changed C++ consumers have zero
+analysis diagnostics. The recipe reconstructs 222 generic files. See
+[context selection](native-main-loop-profiler.md#selecting-queued-contexts) and
+[clock limits](native-frame-clock-audit.md). Correct 125/250 FPS remains open.
+
 R330 reduces capacity-check locking before appending a recorded command, keeping
 both arena limits and the original replenishment/identity checks. The authored
 24-process recording benchmark improves 13.96%; four normal 60 Hz Stadium flights

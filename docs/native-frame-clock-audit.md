@@ -69,3 +69,13 @@ The next scheduling change must separate simulation from the preparation that
 rendering needs on every presentation. A zero owner-thread draw count is
 insufficient evidence for that boundary; see the
 [worker profiling limits](native-main-loop-profiler.md#worker-ownership-and-render-preparation).
+
+R339's subsequent metadata-selected, normal 60 Hz stationary Stadium capture
+retains visible course/kart geometry in the reviewed boundary images. The HUD
+advances 33.966 seconds over 33.9441 host seconds (approximately 1.0006x, subject
+to the capture/display-age limits above). Its 2,027 contiguous presentation
+intervals average 16.7386 ms, or 59.74 FPS; p99 is 18.7857 ms, minimum 7.2312 ms
+and maximum 136.4834 ms. The outlier is retained. These values include diagnostic
+overhead and provide no frame-time improvement or high-refresh claim. The
+[selected worker samples](native-main-loop-profiler.md#worker-ownership-and-render-preparation)
+cover 29 configured frames per context without cap truncation.

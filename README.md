@@ -4,6 +4,11 @@ The current goal is a standalone native Mario Kart 8 Deluxe application: statica
 
 See [native runtime progress](docs/native-runtime-progress.md) for verified results and remaining work. This repository is `dougchansan/mk8-recomp`.
 
+The current source recipe adds [bounded worker-context profiling](docs/native-main-loop-profiler.md)
+to distinguish simulation work from rendering preparation. Its 51 regression
+suites and native GPU controls pass; the new measurements make no 8 ms/4 ms or
+high-refresh claim.
+
 **Release policy:** Public game-linked binaries are prohibited. Full native compatibility does not authorize downloadable game-linked executables. Audited authored source and game-free tooling only may be published after provenance review. Existing foundations prereleases, download assets and tags were removed; private development builds stay local. See [LEGAL.md](LEGAL.md), [distribution audit](docs/distribution-audit.md) and [build notes](docs/native-builds.md).
 
 The [MK8 native runtime integration](integrations/belmante-runtime/README.md) uses static CPU modules and native Vulkan. R201 completes all three laps, the FINISH sequence and the results table without a fatal error. The native game commits its post-race save; a fresh process reloads an exact copy and reaches mode selection. A measured 11,280-frame racing window averages about 25 FPS (26.5 ms median interval), with profiling disabled and sparse readbacks enabled. Forty component suites, 2,327 native GPU checks and separate 300-check sync/cutoff regressions pass. The offline cache held 7,365 stages at the time (see R276 below for current coverage). No native release, tag or download is available. See [native runtime progress](docs/native-runtime-progress.md) for the remaining verification gates.

@@ -94,3 +94,46 @@ queue-submit, sync-arm and GPU-lock scopes. R304 adds `recipe-save-merge` on the
 existing saver thread. These scopes nest; report leaf costs without double
 counting enclosing jobs. The R304 save change and its verified measurements are
 in [recipe-save preparation](native-recipe-save-performance.md).
+
+## Bounded GPU uniform capture
+
+R347 extends the existing `NX_DUMP_FS_UNIFORMS` shader selector and optional
+`@draw` threshold with two optional decimal environment variables:
+
+| Variable | Meaning |
+| --- | --- |
+| `NX_DUMP_UNIFORM_FIRST_FRAME` | First included observed presentation counter |
+| `NX_DUMP_UNIFORM_LAST_FRAME` | Last included observed presentation counter |
+
+Both omitted preserves the earlier unfiltered behavior. Supply both to filter;
+partial, empty, malformed, overflowing or reversed ranges disable diagnostic
+capture. The difference between the two bounds must be at most 100,000.
+Boundary values are inclusive. Configuration and the new atomic counter read
+occur only for selected uniform capture candidates, leaving the ordinary
+diagnostic-disabled path unchanged.
+
+Excluded observations do not enroll draws or consume capture tags. Existing
+limits remain two draw IDs per selected shader and 64 attempted buffer captures
+per process. A failed capture still has an explicit `captured=0` record; it is
+not a zero-valued GPU input. Descriptor construction, dynamic offsets, resource
+validation and the original draw continue when the diagnostic is excluded.
+
+Each `uniform-capture` line now includes `observed-frame`, `submit` and `present`.
+The last two identify the existing replay/present queue context; zero is
+unassigned. The observed global counter is a sampling filter and does not prove
+which simulation tick produced the buffer. Queue order, CPU state and exact GPU
+bytes must be joined with any boundary ambiguity retained. This is not a
+calibrated CPU/GPU timeline or display scanout measurement.
+
+Snapshots copy the actual bound GPU allocation before dynamic-offset splitting
+and become readable after existing fence retirement. They add no synchronization
+waits or CPU-shadow fallback. The existing GPU-written buffer/readback controls
+remain exact. Diagnostic overhead must be accounted for separately from plain
+gameplay comparisons; captures alone establish no FPS improvement.
+
+Native verification passes 53 CTest suites, 3,253 GPU checks with stock, valid and
+corrupt catalog settings, 1,549 counter checks, existing phase controls, 300 sync,
+300 cutoff and 259 readback checks. Both changed C++ units have zero analysis
+diagnostics. A nullable cache-insertion guard makes an existing descriptor-cache
+invariant explicit; freshly allocated descriptors and writes remain valid even
+when no cache slot can be retained. No analysis warning is suppressed.

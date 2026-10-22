@@ -204,3 +204,10 @@ The reviewed moving capture contains 121 consecutive spans and 120 exact
 final-to-next-entry matches, with no missing reads or dropped records. This is
 evidence of observed state continuity, not proof that the callback is pure
 rendering or that the span alone can provide correct high-refresh gameplay.
+
+Subsequent wider observations identify two additional affine-shaped blocks and
+an actual later model-preparation receiver. Some reached callees advance
+animation or adjust existing pose data, so a stable matrix prefix is insufficient
+to authorize repeating their whole bodies. See the [render-state findings](native-render-state-lineage.md)
+and [bounded GPU uniform capture](native-timing-measurements.md#bounded-gpu-uniform-capture)
+for the remaining ownership and timing limits.

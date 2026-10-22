@@ -6,7 +6,18 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-The current recipe reconstructs R344 (224 generic files). It reuses the existing
+The current recipe reconstructs R350 (226 generic files). It retains R347's optional
+bounded observed-frame window and submission IDs in the existing GPU uniform
+snapshot diagnostic and repairs nested rendering in the authored counter fixture.
+All 53 native Windows suites, 3,253 GPU checks and 17 hardware/control cases pass;
+three changed-source analyses have zero diagnostics. The experimental recording
+allocation change is excluded after complete-lifecycle controls failed to show a
+reliable benefit. See [the evaluation](../../docs/native-recording-renewal-evaluation.md),
+[capture configuration](../../docs/native-timing-measurements.md#bounded-gpu-uniform-capture)
+and [render-state ownership limits](../../docs/native-render-state-lineage.md).
+No scheduling or high-refresh improvement is claimed.
+
+The R344 optimization remains included. It reuses the existing
 texture type query in four registered-owner lookup paths, preserving complete
 descriptor, generation, owner-order and lifetime checks. Authored shared-cache
 and miss-heavy pool-scan benchmarks improve 12.29% and 33.34%; four reviewed

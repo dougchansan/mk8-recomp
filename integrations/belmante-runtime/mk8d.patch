@@ -1,6 +1,6 @@
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -36,6 +36,110 @@
+@@ -36,6 +36,113 @@
  option(NX_TESTS "Build the standalone unit tests" OFF)
  if(NX_TESTS AND NOT ANDROID)
      enable_testing()
@@ -40,6 +40,9 @@
 +    add_executable(native_perf_test tests/native_perf_test.cpp)
 +    target_include_directories(native_perf_test PRIVATE runtime/src)
 +    add_test(NAME native_perf COMMAND native_perf_test)
++    add_executable(native_capture_window_test tests/native_capture_window_test.cpp)
++    target_include_directories(native_capture_window_test PRIVATE runtime/src)
++    add_test(NAME native_capture_window COMMAND native_capture_window_test)
 +    add_executable(native_point_size_patch_test tests/native_point_size_patch_test.cpp)
 +    target_include_directories(native_point_size_patch_test PRIVATE runtime/src)
 +    add_test(NAME native_point_size_patch COMMAND native_point_size_patch_test)
@@ -111,7 +114,7 @@
      add_executable(gpu_pick_test tests/gpu_pick_test.cpp runtime/src/nvn/nvn_gpu_pick.cpp)
      target_compile_definitions(gpu_pick_test PRIVATE NX_GPU_PICK_STANDALONE)
      target_include_directories(gpu_pick_test PRIVATE runtime/src/nvn)
-@@ -67,7 +171,14 @@
+@@ -67,7 +174,14 @@
      return()
  endif()
  
@@ -127,7 +130,7 @@
      file(GLOB src CONFIGURE_DEPENDS "${NX_GEN_DIR}/${mod}/*.cpp")
      add_library(game_${mod} STATIC ${src})
      target_include_directories(game_${mod} PRIVATE runtime/include "${NX_GEN_DIR}/${mod}")
-@@ -84,8 +195,10 @@
+@@ -84,8 +198,10 @@
          target_compile_options(game_${mod} PRIVATE -O2 -fvisibility=hidden -march=x86-64-v3 -ffp-contract=off)
      endif()
  endforeach()
@@ -138,7 +141,7 @@
      runtime/src/main.cpp
      runtime/src/sampler.cpp
      runtime/src/loader.cpp
-@@ -93,6 +206,12 @@
+@@ -93,6 +209,12 @@
      runtime/src/kernel.cpp
      runtime/src/kernel_watch.cpp
      runtime/src/ipc.cpp
@@ -151,7 +154,7 @@
      runtime/src/svc_am.cpp
      runtime/src/svc_set.cpp
      runtime/src/svc_misc.cpp
-@@ -101,6 +220,7 @@
+@@ -101,6 +223,7 @@
      runtime/src/hle_fs.cpp
      runtime/src/svc_account.cpp
      runtime/src/hle_ro.cpp
@@ -159,7 +162,7 @@
      runtime/src/hle_vi.cpp
      runtime/src/hle_hid.cpp
      runtime/src/hle_net.cpp
-@@ -114,6 +234,7 @@
+@@ -114,6 +237,7 @@
      runtime/src/nvn/nvn_caps.cpp
      runtime/src/nvn/nvn_renderpass.cpp
      runtime/src/nvn/nvn_gpu_busy.cpp
@@ -167,7 +170,7 @@
      runtime/src/nvn/nvn_janitor.cpp
      runtime/src/nvn/nvn_trace.cpp
      runtime/src/nvn/nvn_device.cpp
-@@ -147,6 +268,9 @@
+@@ -147,6 +271,9 @@
      runtime/src/nvn/nvn_pipeline.cpp
      runtime/src/nvn/nvn_dummy.cpp
      runtime/src/nvn/nvn_pipeline_cache.cpp
@@ -177,7 +180,7 @@
      runtime/src/nvn/nvn_upload.cpp
      runtime/src/nvn/nvn_astc.cpp
      runtime/src/nvn/nvn_spirv_patch.cpp
-@@ -185,7 +309,7 @@
+@@ -185,7 +312,7 @@
      # Our ANativeActivity_onCreate (platform_android.cpp) runs first, on the UI thread, then calls the glue's.
      set_source_files_properties("${GLUE}/android_native_app_glue.c" PROPERTIES
          COMPILE_DEFINITIONS "ANativeActivity_onCreate=glue_ANativeActivity_onCreate")
@@ -186,7 +189,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden -fno-semantic-interposition -march=armv8.2-a+crypto)
      # The glue's ANativeActivity_onCreate must be exported. 16 KB page alignment: Android 15+ devices with 16 KB pages.
      target_link_options(${NX_GAME} PRIVATE -u ANativeActivity_onCreate -Wl,-z,max-page-size=16384)
-@@ -196,7 +320,7 @@
+@@ -196,7 +323,7 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_mac.cpp runtime/src/memguard_mac.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -195,7 +198,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,19 +332,85 @@
+@@ -208,19 +335,85 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -3097,6 +3100,38 @@
 +};
 +}  // namespace
 +}  // namespace call_phase
+--- /dev/null
++++ b/runtime/src/native_capture_window.h
+@@ -0,0 +1,29 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <charconv>
++#include <cstdint>
++#include <limits>
++#include <optional>
++#include <string_view>
++
++namespace nx::diagnostic {
++// An observation filter only; it does not establish frame ownership.
++struct CaptureWindow {
++    uint64_t first = 0, last = std::numeric_limits<uint64_t>::max();
++    constexpr bool contains(uint64_t observed) const { return first <= observed && observed <= last; }
++};
++inline std::optional<CaptureWindow> capture_window(const char* first, const char* last) {
++    if (!first && !last) return CaptureWindow{};
++    if (!first || !last) return std::nullopt;
++    auto number = [](const char* text, uint64_t& value) {
++        const std::string_view input(text);
++        if (input.empty()) return false;
++        const auto result = std::from_chars(input.data(), input.data() + input.size(), value);
++        return result.ec == std::errc{} && result.ptr == input.data() + input.size();
++    };
++    CaptureWindow window;
++    if (!number(first, window.first) || !number(last, window.last) ||
++        window.last < window.first || window.last - window.first > 100000) return std::nullopt;
++    return window;
++}
++}
 --- /dev/null
 +++ b/runtime/src/native_control_metadata.h
 @@ -0,0 +1,16 @@
@@ -13934,7 +13969,7 @@
  // The descriptor sets of a draw or dispatch (split from nvn_draw.cpp): the textures its bindings name, resolved once
  // per draw (gather_textures), the sets built from the bound state (build_sets) and bound (bind_sets), and the draw's
  // shared inputs. The replay's CPU shortcuts of docs/nvn/PERF-PLAN.md live here and in nvn_draw.cpp; NX_DRAW_SLOW
-@@ -7,10 +9,18 @@
+@@ -7,10 +9,20 @@
  #include <cstring>
  #include <memory>
  #include <string>
@@ -13942,6 +13977,8 @@
  
  #include "nvn_draw_state.h"
 +#include "native_debug_buffer_snapshot.h"
++#include "native_capture_window.h"
++#include "native_measurement.h"
 +#include "native_sampled_profile.h"
 +#include "native_compute_profile.h"
 +#include "native_graphics_buffer_profile.h"
@@ -13953,7 +13990,7 @@
  namespace nx::nvn::replay {
  
  using namespace nx::vk;
-@@ -104,6 +114,11 @@
+@@ -104,6 +116,11 @@
              if (then && (!now || moved || now->target != then->target || now->format != then->format)) texture = e.snapshot;
          }
          if (view && e.has_view) *view = e.view;
@@ -13965,7 +14002,7 @@
      }
  }
  
-@@ -114,6 +129,17 @@
+@@ -114,6 +131,17 @@
      uint32_t sid = 0, tid = handle_texture(handle, &sid);
      auto* tp = get<DescriptorPool>(g_state.texture_pool);
      if (!tp) return "no pool";
@@ -13983,7 +14020,7 @@
      std::shared_lock lk(objects_lock());
      PoolEntry e;
      bool at_mark = pool_entry_at(g_state.texture_pool, tid, t_replay_mark, e);
-@@ -123,7 +149,7 @@
+@@ -123,7 +151,7 @@
          auto o = objects().find(key);
          auto* t = o == objects().end() ? nullptr : dynamic_cast<Texture*>(o->second.get());
          char b[96];
@@ -13992,7 +14029,7 @@
                        t ? t->height : 0, t ? t->format : 0, (unsigned long long)(t ? t->memory : 0));
          return std::string(b);
      };
-@@ -157,7 +183,7 @@
+@@ -157,7 +185,7 @@
  };
  constexpr uint32_t kHandleSlots = 2048;  // a course frame names a few hundred handles
  HandleSlot g_handle_slots[kHandleSlots];
@@ -14001,7 +14038,7 @@
  uint32_t g_handle_used = 0;
  uint64_t g_handle_hits = 0, g_handle_misses = 0, g_sets_skipped = 0;
  
-@@ -168,7 +194,10 @@
+@@ -168,7 +196,10 @@
  HandleSlot* handle_slot(uint64_t handle) {
      uint64_t mark = t_replay_mark;
      if (!mark || draw_slow(kSlowHandles)) return nullptr;
@@ -14013,7 +14050,7 @@
      handle &= 0xFFFFFFFFull;  // 20 bits of texture id, 12 of sampler id
      uint64_t tp = g_state.texture_pool, sp = g_state.sampler_pool;
      uint64_t h = (handle + 1) * 0x9E3779B97F4A7C15ull ^ tp * 0xC2B2AE3D27D4EB4Full ^ sp * 0x165667B19E3779F9ull;
-@@ -183,6 +212,9 @@
+@@ -183,6 +214,9 @@
          s.generation = g_handle_generation, s.handle = handle, s.texture_pool = tp, s.sampler_pool = sp;
          lookup_handle(handle, s.texture, s.sampler, &s.view, &s.has_sampler);
          s.object = s.texture ? get<Texture>(s.texture) : nullptr;
@@ -14023,7 +14060,17 @@
          g_handle_used++, g_handle_misses++;
          return &s;
      }
-@@ -402,7 +434,18 @@
+@@ -375,7 +409,8 @@
+         d.sets[k] = descriptor_set(layout.sets[k]), g_set_misses++;
+         for (size_t i = 0; i < d.writes.size(); i++)
+             if (d.set_index[i] == k) d.writes[i].dstSet = d.sets[k];
+-        if (!d.sets[k] || g_set_used >= kSetSlots / 2) continue;
++        // Fresh descriptor writes are still valid when no cache slot can be retained.
++        if (!d.sets[k] || !slot || g_set_used >= kSetSlots / 2) continue;
+         *slot = {g_set_generation, h, layout.sets[k], uint32_t(g_set_arena.size()), uint32_t(d.key.size()), d.sets[k]};
+         g_set_arena.insert(g_set_arena.end(), d.key.begin(), d.key.end());
+         g_set_used++;
+@@ -402,7 +437,18 @@
  // gather_textures left them), storage images (set 3). Records uploads and layout changes, so it runs outside render
  // passes when textures or images need them. A set is allocated when its first binding is written: the sets no stage
  // declares anything in (usually two of the four) are neither allocated nor bound.
@@ -14042,7 +14089,7 @@
      Descriptors& d = g_sets;
      if (draw_slow(kSlowScratch))
          d = Descriptors{};
-@@ -451,6 +494,42 @@
+@@ -451,6 +497,42 @@
          return s->stage == ShaderStage::Compute &&
                 (all_write_backs() || (b.binding < 64 && written_storage_bindings(s) >> b.binding & 1));
      };
@@ -14085,7 +14132,7 @@
      // The written ranges first (nvn_written.cpp): two bindings of one dispatch that meet get one copy, and bindings
      // that read what the dispatch writes see it, as on the GPU.
      for (const ShaderInfo* s : shaders)
-@@ -522,6 +601,38 @@
+@@ -522,6 +604,49 @@
                  }
                  default: info = buffer_of(cb, nullptr, 0x1000, 16, false, false); break;
              }
@@ -14101,30 +14148,41 @@
 +                })));
 +            if (selected &&
 +                b.nvn.source == NvnSource::UniformBlock && b.nvn.index >= 0 && b.nvn.index < 18) {
-+                static std::map<std::string, std::vector<uint64_t>> captured_draws;
-+                static uint64_t sequence = 0;
-+                auto& draws = captured_draws[s->hash];
-+                static const uint64_t from = [] {  // NX_DUMP_FS_UNIFORMS=...@<draw>: not before that draw
-+                    const auto at = selection.find('@');
-+                    return at == std::string::npos ? 0ull : std::strtoull(selection.c_str() + at + 1, nullptr, 10);
++                static const auto window = [] {
++                    const auto range = diagnostic::capture_window(std::getenv("NX_DUMP_UNIFORM_FIRST_FRAME"),
++                                                                   std::getenv("NX_DUMP_UNIFORM_LAST_FRAME"));
++                    if (!range) log("uniform-capture: disabled invalid observed-frame window");
++                    return range;
 +                }();
-+                if (g_stats.done >= from && draws.size() < 2 &&
-+                    std::find(draws.begin(), draws.end(), g_stats.done) == draws.end())
-+                    draws.push_back(g_stats.done);
-+                if (sequence < 64 && std::find(draws.begin(), draws.end(), g_stats.done) != draws.end()) {
-+                    const auto tag = 0xd000000000000000ull | ++sequence;
-+                    const auto& bound = g_state.uniforms[st][b.nvn.index];
-+                    const bool captured = debug_buffer_snapshot(cb, info, tag);
-+                    log("uniform-capture shader=%s draw=%llu stage=%u bank=%u source-gpu=%llx source-bytes=%llu descriptor-bytes=%llu tag=%llx captured=%u",
-+                        s->hash.c_str(), (unsigned long long)g_stats.done, unsigned(st), unsigned(b.nvn.index + 3),
-+                        (unsigned long long)bound.address, (unsigned long long)bound.size,
-+                        (unsigned long long)info.range, (unsigned long long)tag, unsigned(captured));
++                const auto observed_frame = g_frame.load(std::memory_order_relaxed);
++                if (window && window->contains(observed_frame)) {
++                    static std::map<std::string, std::vector<uint64_t>> captured_draws;
++                    static uint64_t sequence = 0;
++                    auto& draws = captured_draws[s->hash];
++                    static const uint64_t from = [] {  // NX_DUMP_FS_UNIFORMS=...@<draw>: not before that draw
++                        const auto at = selection.find('@');
++                        return at == std::string::npos ? 0ull : std::strtoull(selection.c_str() + at + 1, nullptr, 10);
++                    }();
++                    if (g_stats.done >= from && draws.size() < 2 &&
++                        std::find(draws.begin(), draws.end(), g_stats.done) == draws.end())
++                        draws.push_back(g_stats.done);
++                    if (sequence < 64 && std::find(draws.begin(), draws.end(), g_stats.done) != draws.end()) {
++                        const auto tag = 0xd000000000000000ull | ++sequence;
++                        const auto& bound = g_state.uniforms[st][b.nvn.index];
++                        const bool captured = debug_buffer_snapshot(cb, info, tag);
++                        log("uniform-capture shader=%s draw=%llu stage=%u bank=%u source-gpu=%llx source-bytes=%llu descriptor-bytes=%llu tag=%llx captured=%u observed-frame=%llu submit=%llu present=%llu",
++                            s->hash.c_str(), (unsigned long long)g_stats.done, unsigned(st), unsigned(b.nvn.index + 3),
++                            (unsigned long long)bound.address, (unsigned long long)bound.size,
++                            (unsigned long long)info.range, (unsigned long long)tag, unsigned(captured),
++                            (unsigned long long)observed_frame, (unsigned long long)measurement::submit_id,
++                            (unsigned long long)measurement::present_id);
++                    }
 +                }
 +            }
              VkDescriptorType type = VkDescriptorType(b.type);
              if (b.set == 0 && b.binding < 64 && layout.dynamic >> b.binding & 1) {  // the offset goes with the bind
                  d.dynamic |= 1ull << b.binding, d.dynamic_offset[b.binding] = uint32_t(info.offset);
-@@ -543,8 +654,23 @@
+@@ -543,8 +668,23 @@
          const ResolvedTexture r = k < t.resolved.size() ? t.resolved[k] : ResolvedTexture{};
          VkDescriptorImageInfo ii{};
          ii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -14150,7 +14208,7 @@
          ii.sampler = r.vk_sampler ? r.vk_sampler : sampler_for(r.sampler, b->image.depth);
          images.push_back(ii);
          VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-@@ -614,6 +740,7 @@
+@@ -614,6 +754,7 @@
  // Texture bindings of a program's stages and their handles, into g_textures. kNeedBreak: one needs a transfer or a
  // layout change (so no render pass may be open while the sets are built); kSampledPending: one has a pending clear.
  uint32_t gather_textures(const std::vector<const ShaderInfo*>& shaders) {
@@ -14158,7 +14216,7 @@
      DrawTextures& t = g_textures;
      if (draw_slow(kSlowScratch))
          t = DrawTextures{};
-@@ -642,6 +769,8 @@
+@@ -642,6 +783,8 @@
          t.handles[k] = handle;
          ResolvedTexture& r = t.resolved[k];
          uint64_t texture = 0;
@@ -14167,7 +14225,7 @@
          // A pool entry naming a texture that no longer exists samples the dummy, like no texture: it ended the
          // render pass at every draw (~1.4M times in a run, docs/nvn/DEBUG.md #34).
          if (HandleSlot* slot = handle_slot(handle)) {
-@@ -657,7 +786,52 @@
+@@ -657,7 +800,52 @@
              else
                  texture = 0;
          }
@@ -18098,6 +18156,50 @@
 +        print(result.stdout.strip())
 +print("native state stream exact bytes/nesting/exception/range/revocation/cap/thread/config controls passed")
 --- /dev/null
++++ b/tests/native_capture_window_test.cpp
+@@ -0,0 +1,41 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "native_capture_window.h"
++#include <cstdio>
++#include <cstdlib>
++#include <initializer_list>
++#include <limits>
++
++static unsigned checks = 0;
++static void check(bool value) {
++    ++checks;
++    if (!value) { std::fprintf(stderr, "capture window check %u failed\n", checks); std::exit(1); }
++}
++int main() {
++    using nx::diagnostic::capture_window;
++    const auto full = capture_window(nullptr, nullptr);
++    check(full.has_value());
++    check(full->contains(0));
++    check(full->contains(std::numeric_limits<uint64_t>::max()));
++    const auto range = capture_window("100", "102");
++    check(range.has_value());
++    check(!range->contains(99));
++    check(range->contains(100));
++    check(range->contains(101));
++    check(range->contains(102));
++    check(!range->contains(103));
++    const auto zero = capture_window("0", "0");
++    check(zero && zero->contains(0) && !zero->contains(1));
++    const auto maximum = capture_window("18446744073709551615", "18446744073709551615");
++    check(maximum && maximum->contains(std::numeric_limits<uint64_t>::max()) && !maximum->contains(0));
++    const auto bound = capture_window("5", "100005");
++    check(bound && bound->contains(5) && bound->contains(100005));
++    check(!capture_window("5", "100006"));
++    check(!capture_window("2", "1"));
++    check(!capture_window("0", nullptr));
++    check(!capture_window(nullptr, "0"));
++    for (const char* bad : {"", "-1", "+1", " 1", "1 ", "1x", "0x1", "18446744073709551616"}) {
++        check(!capture_window(bad, "100"));
++        check(!capture_window("0", bad));
++    }
++    std::printf("capture_window checks=%u inclusive/default/partial/malformed/overflow/span PASS\n", checks);
++}
+--- /dev/null
 +++ b/tests/native_command_tail_probe.h
 @@ -0,0 +1,29 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -18456,7 +18558,7 @@
 +std::cout<<"native counter clock checks="<<count<<" PASS\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
 --- /dev/null
 +++ b/tests/native_counter_probe.h
-@@ -0,0 +1,264 @@
+@@ -0,0 +1,268 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include "nvn/native_counters.h"
@@ -18587,7 +18689,11 @@
 +    auto timestamp=[&](uint32_t offset){api.x[0]=device;api.x[1]=memory+offset;call("nvnDeviceGetTimestampInNanoseconds");return api.x[0];};
 +    auto execute=[&](VkCommandBuffer command,const std::shared_ptr<CmdList>& list){Targets ignored{};replay_list(command,ignored,*list,0);};
 +    auto geometry=[&](VkCommandBuffer command,bool end_pass=true){
-+        pass_begin(command,targets);
++        // Consecutive counted draws intentionally share this rendering scope.
++        if (!pass_open_on(targets)) {
++            if (pass_open()) draw_end_rendering(command);
++            pass_begin(command,targets);
++        }
 +        const auto query=native_counter_draw_begin(command);
 +        const float red[]={1,0,0,1};VkRect2D rectangle{{0,0},{4,4}};
 +        check(mask_clear(command,targets,0,15,red,rectangle));

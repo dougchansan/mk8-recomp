@@ -1,8 +1,28 @@
 # Native runtime progress
 
-Updated 2026-10-21. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
+Updated 2026-10-22. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
 
 ## MK8 native runtime
+
+R350 retains the verified R347 production runtime and bounded uniform capture,
+and repairs nested rendering in the authored counter fixture. All 53 native
+Windows suites, 3,253 GPU checks and 17 hardware/control cases pass; three
+changed-source analyses have zero diagnostics. Its 226-file generic recipe
+excludes the experimental empty-recording allocation change. Four normal-60
+Stadium controls retain 13,778 guarded presentation intervals near 16.67 ms;
+complete recording-lifecycle controls do not establish a reliable allocation
+improvement. See the [rejected optimization and timing results](native-recording-renewal-evaluation.md).
+This checkpoint improves measurement and test correctness. It does not achieve
+true 125/250 FPS or sustained 8/4 ms presentation.
+
+R347 adds an optional observed-frame window and submission context to bound GPU
+uniform snapshots without changing rendering, counters or synchronization.
+All 53 suites, 3,253 GPU checks and existing counter/phase/sync/readback controls
+pass; both changed C++ units have zero analysis diagnostics. The source recipe
+reconstructs 226 generic files. The [render-state investigation](native-render-state-lineage.md)
+has identified a wider five-transform payload and a later model-preparation
+receiver, while full animation/render ownership remains unresolved. Neither
+true125/250 FPS nor sustained8/4 ms presentation is verified.
 
 R344 reuses the existing texture type query at four registered-owner lookup sites,
 preserving descriptor, generation, owner-order and resource-lifetime checks.

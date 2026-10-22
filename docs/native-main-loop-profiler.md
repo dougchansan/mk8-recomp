@@ -168,3 +168,39 @@ callees, and the apply stage has different state consumers. These measurements
 guide that investigation; they do not prove which work is safe to reschedule or
 how much presentation time would be saved. Raw thread cycles remain raw cycles,
 and address grouping remains distinct from incarnation proof.
+
+## Observing callback state
+
+R342 can copy a small object span at entry and exit of a selected callback, only
+inside an already sampled root. Configure all three options together:
+
+| Option | Meaning |
+| --- | --- |
+| `NX_CPU_PHASE_STATE_TARGET` | Actual callback target, hexadecimal, nonzero and aligned to four bytes |
+| `NX_CPU_PHASE_STATE_OFFSET` | Hexadecimal offset from the callback's entry `x0` object, aligned to four bytes |
+| `NX_CPU_PHASE_STATE_BYTES` | Decimal byte count, 4 through 256 in multiples of four |
+
+The selected span must fit within the first 64 KiB of the object. Callback
+profiling through `NX_CPU_PHASE_CALLBACK_CALLER` is required. Partial or invalid
+configuration disables the observer while preserving the original calls.
+
+Each read validates the full span against the current readable VM region and
+checks alignment and address overflow. The exit read uses the captured entry
+object address even when the callback changes CPU registers. The caller must
+ensure the configured object is owned for these reads: a readable region does
+not lease object lifetime or prove incarnation. This observer never writes guest
+state or substitutes for a synchronization or lifetime check.
+
+`call phase state: v=1` records contain raw entry/exit bytes as hexadecimal in
+memory order. A missing read is `-` with its readability flag cleared. Records
+represent individual invocations, including nesting and exception unwinding;
+they are not the callback table's aggregate rows. Each root retains at most 32
+records and emits an explicit `dropped_calls` summary. Root sampling and its
+global cap still apply. Timing includes snapshot overhead; presentation also
+includes diagnostic logging and capture overhead. Keep title selectors and
+captured bytes private.
+
+The reviewed moving capture contains 121 consecutive spans and 120 exact
+final-to-next-entry matches, with no missing reads or dropped records. This is
+evidence of observed state continuity, not proof that the callback is pure
+rendering or that the span alone can provide correct high-refresh gameplay.

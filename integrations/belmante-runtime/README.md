@@ -6,14 +6,15 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-The current recipe reconstructs R339 (222 generic files). It adds bounded worker
-inventory and optional register-relative metadata selection to the R330 observer,
-preserving actual targets, nested ownership, original calls and CPU outputs.
-All 51 component suites, 3,253 native GPU fixture checks and the existing
-counter/phase/sync/readback controls pass; both changed C++ consumers have zero
-analysis diagnostics. A closed normal 60 Hz Stadium capture observes 29 samples
-for each of three selected worker contexts without hitting the cap. No scheduling
-or frame-rate improvement is claimed. The earlier R330 recording-only benchmark
+The current recipe reconstructs R342 (224 generic files). It adds optional bounded
+before/after callback-state observations to the R339 worker-context observer,
+preserving original calls, CPU outputs and exception propagation. All 52 component
+suites, 3,253 native GPU fixture checks and the existing counter/phase/sync/readback
+controls pass; both changed C++ consumers have zero analysis diagnostics. A closed
+moving normal 60 Hz Stadium capture covers 121 consecutive state observations,
+with all 120 adjacent byte boundaries matching and no dropped records. This is
+state-continuity evidence; simulation/render ownership and interpolation remain
+unproven. No scheduling or frame-rate improvement is claimed. The earlier R330 recording-only benchmark
 improves 13.96%; its normal 60 Hz comparison has lower sampled recording-callback
 time while presentation remains 16.67 ms. See [recording measurements](../../docs/native-command-recording-performance.md),
 [main-loop profiling](../../docs/native-main-loop-profiler.md),

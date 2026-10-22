@@ -79,3 +79,14 @@ and maximum 136.4834 ms. The outlier is retained. These values include diagnosti
 overhead and provide no frame-time improvement or high-refresh claim. The
 [selected worker samples](native-main-loop-profiler.md#worker-ownership-and-render-preparation)
 cover 29 configured frames per context without cap truncation.
+
+A separate R342 moving-state capture reviews acceleration, wall contact and
+reverse/left steering in Stadium Time Trials. Across a 49.3914-second host
+bracket, the HUD advances 49.146 seconds (0.9950x). Its 2,948 contiguous
+presentation intervals average 16.7452 ms (59.72 FPS), with p50 16.6632 ms,
+p95 17.8751 ms, p99 18.5613 ms, minimum 7.7271 ms and maximum 144.5516 ms.
+All outliers remain included. This is one instrumented run with capture and
+logging overhead, not a matched performance comparison or proof of complete
+physics equivalence. It captures 121 consecutive state spans with 120 exact
+final-to-next-entry byte matches; the selected work still has state-changing
+consumers. Interpolation and correct normal-speed 125/250 FPS remain unverified.

@@ -4,6 +4,19 @@ Updated 2026-10-21. Repository: `dougchansan/mk8-recomp`. Goal: a standalone tit
 
 ## MK8 native runtime
 
+R342 adds bounded before/after callback-state observations for tracing the actual
+simulation-to-rendering boundary. A moving normal 60 Hz Stadium Time Trials run
+captures 121 consecutive object-state spans; all 120 adjacent final/entry byte
+boundaries match, with no cap truncation or dropped records. The observed racing
+window averages 16.7452 ms per presentation (59.72 FPS), with p99 18.5613 ms and
+maximum 144.5516 ms retained. HUD time advances 49.146 seconds across 49.3914 host
+seconds. This single instrumented run establishes neither a performance gain nor
+complete physics/timing equivalence. The apply stage also mutates persistent
+state, so repeating its full body for extra rendering remains unsafe. All 52
+suites, 3,253 GPU checks and existing counter/phase/sync/readback controls pass;
+both changed C++ consumers have zero analysis diagnostics. The recipe reconstructs
+224 generic files. Correct 125/250 FPS and the 8/4 ms milestones remain open.
+
 R339 improves bounded worker measurement without changing simulation or
 scheduling. Root-only wildcard inventory reports actual targets, and optional
 VM-checked register-relative metadata selection isolates queued contexts while

@@ -195,7 +195,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,19 +332,83 @@
+@@ -208,19 +332,85 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -239,6 +239,8 @@
 +            "${CMAKE_SOURCE_DIR}/tests/native_worker_inventory_stream.py" $<TARGET_FILE:native_device_fixture> filtered)
 +        add_test(NAME native_worker_context_invalid_cpu COMMAND "${Python3_EXECUTABLE}"
 +            "${CMAKE_SOURCE_DIR}/tests/native_worker_inventory_stream.py" $<TARGET_FILE:native_device_fixture> invalid)
++        add_test(NAME native_callback_state_cpu COMMAND "${Python3_EXECUTABLE}"
++            "${CMAKE_SOURCE_DIR}/tests/native_callback_state_stream.py" $<TARGET_FILE:native_device_fixture>)
 +        add_test(NAME native_frame_context_cpu COMMAND native_device_fixture --frame-context)
 +        set_tests_properties(native_frame_context_cpu PROPERTIES ENVIRONMENT
 +            "NX_LOG=${CMAKE_BINARY_DIR}/frame-context-test.log;NX_FRAME_CONTEXT=1;NX_FRAME_CONTEXT_START=0;NX_FRAME_CONTEXT_STOP=2;NX_FRAME_CONTEXT_EVERY=1;NX_FRAME_CONTEXT_LIMIT=6")
@@ -2596,7 +2598,7 @@
 +}
 --- /dev/null
 +++ b/runtime/src/native_call_phase.h
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,90 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include <array>
@@ -2615,6 +2617,17 @@
 +    if (text.empty()) return false;
 +    const auto result = std::from_chars(text.data(), text.data() + text.size(), value, base);
 +    return result.ec == std::errc{} && result.ptr == text.data() + text.size();
++}
++struct StateSelection { uint64_t target{}, offset{}, bytes{}; };
++inline bool parse_state(std::string_view target, std::string_view offset,
++                        std::string_view bytes, StateSelection& out) {
++    StateSelection result;
++    if (!number(target, result.target, 16) || !result.target || (result.target & 3) ||
++        !number(offset, result.offset, 16) || (result.offset & 3) ||
++        !number(bytes, result.bytes) || !result.bytes || result.bytes > 256 ||
++        (result.bytes & 3) || result.offset > 65536 - result.bytes) return false;
++    out = result;
++    return true;
 +}
 +struct ContextFilter {
 +    uint64_t reg{}, offset{};
@@ -2678,7 +2691,7 @@
 +}  // namespace nx::call_phase
 --- /dev/null
 +++ b/runtime/src/native_call_phase_impl.h
-@@ -0,0 +1,331 @@
+@@ -0,0 +1,405 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +// Included only by loader.cpp after its dispatch tables. Passive observer;
 +// never owns CPU state, target lifetime, scheduling, or guest synchronization.
@@ -2687,6 +2700,7 @@
 +struct Config {
 +    Sites sites;
 +    ContextFilter context;
++    StateSelection state;
 +    uint64_t first = 9000, last = 12600, every = 127, limit = 32;
 +    uint64_t callback_caller{};
 +    bool on = false;
@@ -2718,6 +2732,15 @@
 +            log("call phase: disabled invalid root context configuration");
 +            return c;
 +        }
++        const auto* state_target = std::getenv("NX_CPU_PHASE_STATE_TARGET");
++        const auto* state_offset = std::getenv("NX_CPU_PHASE_STATE_OFFSET");
++        const auto* state_bytes = std::getenv("NX_CPU_PHASE_STATE_BYTES");
++        if ((state_target || state_offset || state_bytes) &&
++            (!c.callback_caller || !state_target || !state_offset || !state_bytes ||
++             !parse_state(state_target, state_offset, state_bytes, c.state))) {
++            log("call phase: disabled invalid callback state configuration");
++            return c;
++        }
 +        c.on = true;
 +        log("call phase: enabled sites=%zu first=%llu last=%llu every=%llu limit=%llu; inclusive wall/cycles/HLE, observer overhead, no scheduling changes",
 +            c.sites.count, (unsigned long long)c.first, (unsigned long long)c.last,
@@ -2728,6 +2751,9 @@
 +        if (c.context.count)
 +            log("call phase: root context filter register=%llu offset=%llx values=%zu; bounded VM read, passive metadata only",
 +                (unsigned long long)c.context.reg, (unsigned long long)c.context.offset, c.context.count);
++        if (c.state.target)
++            log("call phase: callback state target=%llx offset=%llx bytes=%llu capacity=32; before/after raw address observations with overhead, no lifetime or incarnation guarantee",
++                (unsigned long long)c.state.target, (unsigned long long)c.state.offset, (unsigned long long)c.state.bytes);
 +        return c;
 +    }();
 +    return value;
@@ -2751,7 +2777,17 @@
 +    std::array<CallbackResult, 128> callbacks{};
 +    size_t callbacks_used{};
 +    uint64_t callbacks_dropped{};
++    size_t states_used{};
++    uint64_t states_dropped{};
 +};
++struct StateResult {
++    uint64_t object{}, vptr{};
++    std::array<uint8_t, 256> before{}, after{};
++    unsigned depth{};
++    bool before_readable{}, after_readable{}, threw{};
++};
++// Separate storage avoids clearing these spans for ordinary phase-only roots.
++thread_local std::array<StateResult, 32> state_results;
 +thread_local Session session;
 +thread_local uint64_t last_frame = UINT64_MAX;
 +struct RootKey {
@@ -2791,10 +2827,21 @@
 +    std::memcpy(&value, reinterpret_cast<const void*>(address), 8);
 +    return filter.contains(value);
 +}
++bool state_snapshot(uint64_t object, const StateSelection& selection, std::array<uint8_t, 256>& bytes) {
++    if (!object || (object & 3) || object > UINT64_MAX - selection.offset) return false;
++    const auto address = object + selection.offset;
++    if (address > UINT64_MAX - selection.bytes) return false;
++    const auto region = vm_query(address);
++    if (!(region.perm & 1) || address < region.addr || region.size < selection.bytes ||
++        address - region.addr > region.size - selection.bytes) return false;
++    std::memcpy(bytes.data(), reinterpret_cast<const void*>(address), static_cast<size_t>(selection.bytes));
++    return true;
++}
 +class CallbackScope {
 +    inline static thread_local CallbackScope* current{};
 +    CallbackScope* parent{};
 +    size_t index = 128;
++    size_t state_index = 32;
 +    uint64_t started{}, cycles{}, children_wall{}, children_cycles{};
 +    unsigned depth{};
 +    int exceptions{};
@@ -2824,11 +2871,26 @@
 +        exceptions = std::uncaught_exceptions();
 +        cpu_valid = read_thread_cycles(cycles);
 +        started = perf::now();
++        if (target == config().state.target) {
++            if (session.states_used == state_results.size()) ++session.states_dropped;
++            else {
++                state_index = session.states_used++;
++                auto& state = state_results[state_index];
++                state = {};
++                state.object = object.object; state.vptr = object.vptr; state.depth = depth;
++                state.before_readable = state_snapshot(state.object, config().state, state.before);
++            }
++        }
 +    }
 +    CallbackScope(const CallbackScope&) = delete;
 +    CallbackScope& operator=(const CallbackScope&) = delete;
 +    ~CallbackScope() {
 +        if (index == 128) return;
++        if (state_index != 32) {
++            auto& state = state_results[state_index];
++            state.after_readable = state_snapshot(state.object, config().state, state.after);
++            state.threw = std::uncaught_exceptions() > exceptions;
++        }
 +        const auto wall = perf::now() - started;
 +        uint64_t after = 0;
 +        const bool valid = read_thread_cycles(after) && cpu_valid && after >= cycles;
@@ -2922,6 +2984,31 @@
 +                (unsigned long long)r.draw_calls, (unsigned long long)r.command_calls, (unsigned long long)r.input_calls,
 +                (unsigned long long)r.tick_calls, (unsigned long long)r.submit_calls, (unsigned long long)r.compute_calls,
 +                r.max_depth, r.threw ? 1u : 0u);
++        }
++    }
++    if (c.state.target) {
++        log("call phase state summary: root=%llu entries=%zu dropped_calls=%llu capacity=32; raw byte observations, not lifetime or incarnation IDs",
++            (unsigned long long)session.id, session.states_used, (unsigned long long)session.states_dropped);
++        for (size_t i = 0; i < session.states_used; ++i) {
++            const auto& state = state_results[i];
++            auto hex = [&](const std::array<uint8_t, 256>& bytes, bool readable) {
++                std::array<char, 513> text{};
++                if (!readable) { text[0] = '-'; return text; }
++                constexpr char digits[] = "0123456789abcdef";
++                for (size_t n = 0; n < c.state.bytes; ++n) {
++                    text[n * 2] = digits[bytes[n] >> 4];
++                    text[n * 2 + 1] = digits[bytes[n] & 15];
++                }
++                return text;
++            };
++            const auto before = hex(state.before, state.before_readable);
++            const auto after = hex(state.after, state.after_readable);
++            log("call phase state: v=1 root=%llu tid=%llu frame=%llu index=%zu target=%llx object=%llx vptr=%llx offset=%llx bytes=%llu before_readable=%u after_readable=%u depth=%u threw=%u before=%s after=%s",
++                (unsigned long long)session.id, (unsigned long long)profile_thread_id(), (unsigned long long)session.frame, i,
++                (unsigned long long)c.state.target, (unsigned long long)state.object, (unsigned long long)state.vptr,
++                (unsigned long long)c.state.offset, (unsigned long long)c.state.bytes,
++                state.before_readable ? 1u : 0u, state.after_readable ? 1u : 0u, state.depth, state.threw ? 1u : 0u,
++                before.data(), after.data());
 +        }
 +    }
 +}
@@ -17818,6 +17905,199 @@
 +}
 +}  // namespace authored_call_phase
 --- /dev/null
++++ b/tests/native_callback_state_probe.h
+@@ -0,0 +1,119 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "kernel.h"
++#include "native_call_phase.h"
++#include <array>
++#include <cstdio>
++#include <cstring>
++#include <iostream>
++#include <stdexcept>
++#include <string>
++#include <thread>
++
++namespace authored_callback_state {
++inline uint64_t object{}, short_object{}, selected{};
++inline unsigned originals{}, dispatches{}, caught{};
++inline void mutation(nx::CPU& cpu) {
++    ++originals;
++    const auto base = cpu.x[0], action = cpu.x[1];
++    if (base == object) {
++        nx::st<uint64_t>(base + 8, nx::ld<uint64_t>(base + 8) + 1);
++        nx::st<uint64_t>(base + 16, nx::ld<uint64_t>(base + 16) ^ 1);
++    }
++    if (action == 1) {
++        cpu.x[1] = 2;
++        nx::call(cpu, selected);
++        cpu.x[0] = base; cpu.x[1] = action;
++    }
++    if (action == 4) nx::vm_set(base + 8, 16, nx::kMemInaccessible, 0);
++    cpu.x[0] = base ^ 0x55; cpu.x[2] = 0xc0ffee;
++    if (action == 3) throw std::runtime_error("authored state throw");
++}
++inline void dispatch(nx::CPU& cpu) {
++    ++dispatches;
++    const auto scenario = cpu.x[1];
++    auto invoke = [&](uint64_t base, uint64_t action = 0) {
++        cpu.x[0] = base; cpu.x[1] = action;
++        nx::call(cpu, selected);
++    };
++    if (scenario == 0) {
++        invoke(object); invoke(object); invoke(object, 1);
++        try { invoke(object, 3); }
++        catch (const std::runtime_error& error) {
++            if (std::string(error.what()) != "authored state throw") throw;
++            ++caught;
++            if (cpu.x[0] != (object ^ 0x55) || cpu.x[2] != 0xc0ffee)
++                throw std::runtime_error("state observer changed exception output");
++        }
++        invoke(1); invoke(0x10); invoke(UINT64_MAX - 7); invoke(object + 1); invoke(short_object);
++        invoke(object, 4);
++        nx::vm_set(object + 8, 16, nx::kMemHeap, 3);
++        cpu.x[1] = 0;
++    } else for (unsigned i = 0; i != (scenario == 1 ? 40u : 1u); ++i) invoke(object);
++}
++inline int run(const std::string& mode) {
++    using namespace nx::call_phase;
++    unsigned checks = 0;
++    auto check = [&](bool ok) {
++        ++checks;
++        if (!ok) throw std::runtime_error("callback state assertion " + std::to_string(checks));
++    };
++    StateSelection selection;
++    check(parse_state("200", "8", "16", selection) && selection.target == 0x200 && selection.offset == 8 && selection.bytes == 16);
++    for (const auto target : {"", "0", "201", "xyz", "10000000000000000"}) {
++        check(!parse_state(target, "8", "16", selection));
++        check(selection.target == 0x200 && selection.bytes == 16);
++    }
++    for (const auto offset : {"", "1", "fff4", "10000", "ffffffffffffffff"}) {
++        check(!parse_state("200", offset, "16", selection));
++        check(selection.offset == 8);
++    }
++    for (const auto bytes : {"", "0", "3", "257", "260", "-4", "16x"}) {
++        check(!parse_state("200", "8", bytes, selection));
++        check(selection.bytes == 16);
++    }
++    check(parse_state("200", "ff00", "256", selection) && selection.bytes == 256);
++    nx::memory_init(); nx::create_main_thread(0x4000);
++    object = nx::kernel_alloc(24, 16); nx::vm_set(object, 24, nx::kMemHeap, 3);
++    short_object = nx::kernel_alloc(24, 16); nx::vm_set(short_object, 24, nx::kMemHeap, 3);
++    nx::vm_set(short_object + 8, 8, nx::kMemHeap, 1);
++    nx::vm_set(short_object + 16, 8, nx::kMemInaccessible, 0);
++    nx::st<uint64_t>(object, 0x123400); nx::st<uint64_t>(object + 8, 0x1111000000000000ull);
++    nx::st<uint64_t>(object + 16, 0x2222000000000000ull); nx::st<uint64_t>(short_object, 0x567800);
++    selected = nx::hle_address_or("authoredStateMutation", mutation);
++    const auto root = nx::hle_address_or("authoredStateDispatch", dispatch);
++    char sites[64], target[32];
++    std::snprintf(sites, sizeof sites, "100:%llx", static_cast<unsigned long long>(root));
++    std::snprintf(target, sizeof target, "%llx", static_cast<unsigned long long>(selected));
++    _putenv_s("NX_CPU_PHASE_PROFILE", "1"); _putenv_s("NX_CPU_PHASE_SITES", sites);
++    _putenv_s("NX_CPU_PHASE_START", "0"); _putenv_s("NX_CPU_PHASE_STOP", "2");
++    _putenv_s("NX_CPU_PHASE_EVERY", "1"); _putenv_s("NX_CPU_PHASE_LIMIT", "3");
++    _putenv_s("NX_CPU_PHASE_CALLBACK_CALLER", mode == "no-callback" ? "" : "100");
++    _putenv_s("NX_CPU_PHASE_STATE_TARGET", target); _putenv_s("NX_CPU_PHASE_STATE_OFFSET", "8");
++    _putenv_s("NX_CPU_PHASE_STATE_BYTES", mode == "partial" ? "" : mode == "oversized" ? "260" : "16");
++    std::array<uint8_t, sizeof(nx::CPU)> input{};
++    std::memcpy(input.data(), &nx::current_cpu(), input.size());
++    auto invoke = [&](nx::CPU& cpu, unsigned frame, unsigned scenario) {
++        std::memcpy(&cpu, input.data(), input.size()); cpu.x[0] = object; cpu.x[1] = scenario; cpu.x[30] = 0x100;
++        nx::g_frame = frame;
++        nx::call(cpu, root);
++        nx::CPU expected; std::memcpy(&expected, input.data(), input.size());
++        expected.x[0] = object ^ 0x55; expected.x[1] = 0; expected.x[2] = 0xc0ffee; expected.x[30] = 0x100;
++        check(!std::memcmp(&cpu, &expected, sizeof cpu));
++    };
++    invoke(nx::current_cpu(), 0, 0); invoke(nx::current_cpu(), 1, 1);
++    std::exception_ptr worker_error;
++    std::thread worker([&] {
++        try { nx::CPU cpu; invoke(cpu, 2, 2); }
++        catch (...) { worker_error = std::current_exception(); }
++    });
++    worker.join(); if (worker_error) std::rethrow_exception(worker_error);
++    invoke(nx::current_cpu(), 3, 2);
++    check(originals == 53 && dispatches == 4 && caught == 1);
++    check(nx::ld<uint64_t>(object + 8) == 0x1111000000000030ull);
++    check(nx::ld<uint64_t>(object + 16) == 0x2222000000000000ull);
++    std::cout << "native callback state checks=" << checks << " original_calls=" << originals
++              << " dispatches=" << dispatches << " caught=" << caught << " mode=" << mode << " PASS" << std::endl;
++    return 0;
++}
++} // namespace authored_callback_state
+--- /dev/null
++++ b/tests/native_callback_state_stream.py
+@@ -0,0 +1,68 @@
++"""Exercise before/after state observations through the actual native loader."""
++import os
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++
++def fields(line, prefix):
++    return dict(word.split("=", 1) for word in line[len(prefix):].split(";", 1)[0].split())
++
++
++def decode(text):
++    assert len(text) == 32
++    raw = bytes.fromhex(text)
++    return int.from_bytes(raw[:8], "little"), int.from_bytes(raw[8:], "little")
++
++
++for mode in ["valid", "partial", "oversized", "no-callback"]:
++    with tempfile.TemporaryDirectory(prefix="native-callback-state-") as temporary:
++        log = Path(temporary) / "native.log"
++        env = {key: value for key, value in os.environ.items() if not key.startswith("NX_")}
++        env["NX_LOG"] = str(log)
++        result = subprocess.run([sys.argv[1], "--callback-state", mode], env=env,
++                                capture_output=True, text=True, timeout=15, check=True)
++        assert "original_calls=53 dispatches=4 caught=1" in result.stdout, (mode, result.stdout, result.stderr)
++        assert f"mode={mode} PASS" in result.stdout
++        body = log.read_text()
++        rows = [fields(line, "call phase state: ") for line in body.splitlines()
++                if line.startswith("call phase state: ")]
++        summaries = [fields(line, "call phase state summary: ") for line in body.splitlines()
++                     if line.startswith("call phase state summary: ")]
++        if mode != "valid":
++            assert "call phase: disabled invalid callback state configuration" in body
++            assert not rows and not summaries
++            print(result.stdout.strip())
++            continue
++        assert len(rows) == 44 and len(summaries) == 3
++        assert [int(row["entries"]) for row in summaries] == [11, 32, 1]
++        assert [int(row["dropped_calls"]) for row in summaries] == [0, 8, 0]
++        assert len({row["tid"] for row in rows}) == 2
++        assert {int(row["frame"]) for row in rows} == {0, 1, 2}
++        first = [row for row in rows if row["frame"] == "0"]
++        initial, second = 0x1111000000000000, 0x2222000000000000
++        for index, (before, after) in enumerate([(0, 1), (1, 2), (2, 4), (3, 4), (4, 5)]):
++            row = first[index]
++            assert int(row["index"]) == index and int(row["bytes"]) == 16
++            assert row["before_readable"] == row["after_readable"] == "1"
++            assert decode(row["before"]) == (initial + before, second ^ (before & 1))
++            assert decode(row["after"]) == (initial + after, second ^ (after & 1))
++        assert first[3]["depth"] == "1" and first[2]["depth"] == "0"
++        assert first[4]["threw"] == "1"
++        for row in first[5:10]:
++            assert row["before_readable"] == row["after_readable"] == "0"
++            assert row["before"] == row["after"] == "-"
++        assert first[10]["before_readable"] == "1" and first[10]["after_readable"] == "0"
++        assert decode(first[10]["before"]) == (initial + 5, second ^ 1)
++        assert first[10]["after"] == "-"
++        capacity = [row for row in rows if row["frame"] == "1"]
++        for index, row in enumerate(capacity):
++            assert int(row["index"]) == index
++            assert decode(row["before"]) == (initial + 6 + index, second ^ (index & 1))
++            assert decode(row["after"]) == (initial + 7 + index, second ^ ((index + 1) & 1))
++        worker = next(row for row in rows if row["frame"] == "2")
++        assert decode(worker["before"]) == (initial + 46, second)
++        assert decode(worker["after"]) == (initial + 47, second ^ 1)
++        print(result.stdout.strip())
++print("native state stream exact bytes/nesting/exception/range/revocation/cap/thread/config controls passed")
+--- /dev/null
 +++ b/tests/native_command_tail_probe.h
 @@ -0,0 +1,29 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -18627,7 +18907,7 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,902 @@
+@@ -0,0 +1,904 @@
 +#include "native_thread_policy_probe.h"
 +#include "native_measurement.h"
 +#include <source_location>
@@ -18707,6 +18987,7 @@
 +#include "native_frame_context_probe.h"
 +#include "native_call_phase_probe.h"
 +#include "native_worker_inventory_probe.h"
++#include "native_callback_state_probe.h"
 +#include "native_record_capacity_probe.h"
 +int main(int argc,char** argv){try{
 + if(argc==2&&std::string_view(argv[1])=="--record-capacity-bench")return native_record_capacity_bench();
@@ -18715,6 +18996,7 @@
 + if(argc==2&&std::string_view(argv[1])=="--worker-inventory")return authored_worker_inventory::run();
 + if(argc==2&&std::string_view(argv[1])=="--worker-context")return authored_worker_inventory::run(true);
 + if(argc==2&&std::string_view(argv[1])=="--worker-context-invalid")return authored_worker_inventory::run(true,true);
++ if(argc==3&&std::string_view(argv[1])=="--callback-state")return authored_callback_state::run(argv[2]);
 + if(argc==2&&std::string_view(argv[1])=="--frame-context")return authored_frame_context::run();
 + if(argc==2&&std::string_view(argv[1])=="--frame-context-mutex")return authored_frame_context::run_mutex();
 + if(argc==2&&std::string_view(argv[1])=="--thread-policy")return authored_thread_probe::run();

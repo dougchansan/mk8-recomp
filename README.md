@@ -4,8 +4,8 @@ The current goal is a standalone native Mario Kart 8 Deluxe application: statica
 
 See [native runtime progress](docs/native-runtime-progress.md) for verified results and remaining work. This repository is `dougchansan/mk8-recomp`.
 
-The current source recipe adds [bounded worker-context profiling](docs/native-main-loop-profiler.md)
-to distinguish simulation work from rendering preparation. Its 51 regression
+The current source recipe adds [bounded callback-state profiling](docs/native-main-loop-profiler.md)
+to trace simulation state into rendering preparation. Its 52 regression
 suites and native GPU controls pass; the new measurements make no 8 ms/4 ms or
 high-refresh claim.
 

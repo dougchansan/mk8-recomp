@@ -4,7 +4,7 @@
   "license": "MIT",
   "license_sha256": "7f728cfaa94ff27c2a40c906dac12564a216077ceb017fb2d01cc29ba6697720",
   "local_changes_license": "GPL-3.0-or-later",
-  "patch_sha256": "0089590214d438035226fc3101dc0c1b0da4d4e8f01c80800954936cdab31168",
+  "patch_sha256": "022ce364cfbc754c6195a833de8bc25f35f4ffb59f55c62586f6f2ee79236651",
   "changed_files": [
     "CMakeLists.txt",
     "games/mk8d/game.cpp",
@@ -170,6 +170,8 @@
     "tests/native_bc3_snapshot_probe.h",
     "tests/native_buffer_texture_probe.h",
     "tests/native_call_phase_probe.h",
+    "tests/native_callback_state_probe.h",
+    "tests/native_callback_state_stream.py",
     "tests/native_command_tail_probe.h",
     "tests/native_compute_profile_test.cpp",
     "tests/native_conditional_probe.h",

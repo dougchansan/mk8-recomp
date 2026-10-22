@@ -4,7 +4,7 @@
   "license": "MIT",
   "license_sha256": "7f728cfaa94ff27c2a40c906dac12564a216077ceb017fb2d01cc29ba6697720",
   "local_changes_license": "GPL-3.0-or-later",
-  "patch_sha256": "e6a0578247f87a723a1aa59cc20d7deeb8bafc0d23c5726302ede09612ad24ce",
+  "patch_sha256": "eb42c57b95fecbef35722db78494ff693d15374ecd7e0e97e62dffe731a013a0",
   "changed_files": [
     "CMakeLists.txt",
     "games/mk8d/game.cpp",
@@ -212,6 +212,7 @@
     "tests/native_texture_clear_test.cpp",
     "tests/native_texture_compare_read_probe.h",
     "tests/native_texture_layers_test.cpp",
+    "tests/native_texture_property_probe.h",
     "tests/native_thread_policy_probe.h",
     "tests/native_touch_policy_test.cpp",
     "tests/native_uniform_snapshot_probe.h",
@@ -235,7 +236,7 @@
     "tests/vi_state_test.cpp",
     "tests/window_controller_test.cpp"
   ],
-  "purpose": "Experimental MK8D adaptation. No gameplay or full-native verification claim.",
+  "purpose": "Experimental MK8D adaptation. R353 revalidates scalar texture hints across registry generations while preserving strict storage/binding selection; native controls and a scoped same-binary gameplay comparison pass. No full-native or high-refresh completion claim.",
   "vulkan_dispatch": "Regenerate with supplied installed-header registry; generated dispatch changes are not embedded in this patch.",
   "additional_source_provenance": "Existing mk8-recomp verified native event/NPDM/parental policy implementation is GPL-3.0-or-later; not donor MIT code."
 }

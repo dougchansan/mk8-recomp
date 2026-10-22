@@ -11242,13 +11242,14 @@
      t->writes.push_back(std::move(w));
      t->has_writes.store(true, std::memory_order_release);
  }
-@@ -556,10 +726,74 @@
+@@ -556,24 +726,110 @@
  void TextureWriteTexelsStrided(CPU& c) { write_texels(c, c.x[4], c.x[5]); }
  void TextureFlushTexels(CPU&) {}  // coherent: the writes above are what matters
  
+-#define NX_TEXTURE_GETTER(fn, field)          \
 +// Caller holds objects_lock shared or exclusive. Cache keys, not object pointers;
-+// every hit rechecks the complete descriptor and the current object generation.
-+uint64_t texture_identity_locked(uint64_t key) {
++// every hit rechecks the complete descriptor against a current registry entry.
++uint64_t texture_identity_locked(uint64_t key, bool matched_property = false) {
 +    perf::Scope perf_scope(perf::Region::TextureIdentity);
 +    if(auto found=objects().find(key);found!=objects().end()) {
 +        if(!(found->second ? found->second->as_texture() : nullptr))throw std::invalid_argument("native texture query object type");
@@ -11263,14 +11264,29 @@
 +            return true;
 +        };
 +        // SDK stack copies of the same descriptor can share a positive owner.
-+        // Every hit still checks the current registry generation, object type
-+        // and complete descriptor fields below. No misses or raw pointers cache.
++        // Every hit still checks the current object type and complete descriptor.
++        // Identity selection also checks generation. No misses or raw pointers cache.
 +        static const bool shared = [] { const char* e=std::getenv("NX_TEXTURE_IDENTITY_SHARED_CACHE");return !e||e[0]!='0'; }();
++        // A scalar getter for a compared field only needs one current matching
++        // owner: every complete match has that same value. Binding selection
++        // and storage_size still require the legacy first-match choice.
++        static const bool property_cache = [] {
++            const auto* e = std::getenv("NX_TEXTURE_PROPERTY_CACHE");
++            return !e || e[0] != '0';
++        }();
 +        struct Hit{uint64_t descriptor=0,owner=0,generation=0;};thread_local Hit cache[64];
 +        const auto gpu=ld<uint64_t>(key+0x80),pool=ld<uint64_t>(key+0x10);
 +        const auto slot=shared?((gpu>>8)^(gpu>>16)^(gpu>>24)^(pool>>4))&63:((key>>4)^(key>>12))&7;
 +        auto& hit=cache[slot];const auto generation=objects_lock().generation.load(std::memory_order_acquire);
-+        if((shared||hit.descriptor==key)&&hit.generation==generation){auto found=objects().find(hit.owner);const auto* texture=found==objects().end()?nullptr:(found->second ? found->second->as_texture() : nullptr);if(texture&&matches(*texture))return hit.owner;}
++        if ((shared || hit.descriptor == key) &&
++            (hit.generation == generation || (matched_property && property_cache))) {
++            const auto found = objects().find(hit.owner);
++            const auto* texture = found == objects().end() ? nullptr :
++                (found->second ? found->second->as_texture() : nullptr);
++            // Do not refresh generation on this hit. A subsequent binding must
++            // resolve the current legacy winner after any registry mutation.
++            if (texture && matches(*texture)) return hit.owner;
++        }
 +        // Most copied render targets still have a live owner in this pool.
 +        // Reuse its existing key index before searching retained snapshots.
 +        // The index is only a hint: resolve and validate every candidate now.
@@ -11309,20 +11325,40 @@
 +    throw std::invalid_argument("native texture descriptor requires a live resource identity");
 +}
 +
- #define NX_TEXTURE_GETTER(fn, field)          \
++#define NX_TEXTURE_GETTER(fn, field, matched_property) \
      void fn(CPU& c) {                         \
 -        auto* t = get<Texture>(c.x[0]);       \
 -        c.x[0] = t ? uint64_t(t->field) : 0;  \
+-    }
+-NX_TEXTURE_GETTER(TextureGetWidth, width)
+-NX_TEXTURE_GETTER(TextureGetHeight, height)
+-NX_TEXTURE_GETTER(TextureGetDepth, depth)
+-NX_TEXTURE_GETTER(TextureGetFormat, format)
+-NX_TEXTURE_GETTER(TextureGetTarget, target)
+-NX_TEXTURE_GETTER(TextureGetLevels, levels)
+-NX_TEXTURE_GETTER(TextureGetSamples, samples)
+-NX_TEXTURE_GETTER(TextureGetFlags, flags)
+-NX_TEXTURE_GETTER(TextureGetStride, stride)
+-NX_TEXTURE_GETTER(TextureGetMemoryPool, pool)
+-NX_TEXTURE_GETTER(TextureGetMemoryOffset, offset)
+-NX_TEXTURE_GETTER(TextureGetStorageSize, storage_size)
+-NX_TEXTURE_GETTER(TextureGetDepthStencilMode, depth_stencil_mode)
 +        std::shared_lock guard(objects_lock()); \
-+        auto* t = static_cast<Texture*>(objects().at(texture_identity_locked(c.x[0])).get()); \
++        auto* t = static_cast<Texture*>(objects().at(texture_identity_locked(c.x[0], matched_property)).get()); \
 +        c.x[0] = uint64_t(t->field);          \
-     }
- NX_TEXTURE_GETTER(TextureGetWidth, width)
- NX_TEXTURE_GETTER(TextureGetHeight, height)
-@@ -573,6 +807,13 @@
- NX_TEXTURE_GETTER(TextureGetMemoryPool, pool)
- NX_TEXTURE_GETTER(TextureGetMemoryOffset, offset)
- NX_TEXTURE_GETTER(TextureGetStorageSize, storage_size)
++    }
++NX_TEXTURE_GETTER(TextureGetWidth, width, true)
++NX_TEXTURE_GETTER(TextureGetHeight, height, true)
++NX_TEXTURE_GETTER(TextureGetDepth, depth, true)
++NX_TEXTURE_GETTER(TextureGetFormat, format, true)
++NX_TEXTURE_GETTER(TextureGetTarget, target, true)
++NX_TEXTURE_GETTER(TextureGetLevels, levels, true)
++NX_TEXTURE_GETTER(TextureGetSamples, samples, true)
++NX_TEXTURE_GETTER(TextureGetFlags, flags, true)
++NX_TEXTURE_GETTER(TextureGetStride, stride, true)
++NX_TEXTURE_GETTER(TextureGetMemoryPool, pool, true)
++NX_TEXTURE_GETTER(TextureGetMemoryOffset, offset, true)
++NX_TEXTURE_GETTER(TextureGetStorageSize, storage_size, false)
 +// Vulkan image requirements account for implementation-owned resource memory.
 +// This backend exposes no additional client-managed NVN ZCull allocation.
 +// https://docs.vulkan.org/refpages/latest/refpages/source/VkMemoryRequirements.html
@@ -11330,10 +11366,11 @@
 +    std::shared_lock guard(objects_lock());(void)texture_identity_locked(c.x[0]);c.x[0]=0;
 +}
 +
- NX_TEXTURE_GETTER(TextureGetDepthStencilMode, depth_stencil_mode)
++NX_TEXTURE_GETTER(TextureGetDepthStencilMode, depth_stencil_mode, true)
  #undef NX_TEXTURE_GETTER
  
-@@ -587,44 +828,35 @@
+ // ---- samplers and descriptor pools ----------------------------------------------------------------------------
+@@ -587,44 +843,35 @@
      c.x[0] = 1;
  }
  
@@ -11403,7 +11440,7 @@
  }
  
  void DescriptorPoolGetMemoryPool(CPU& c) {
-@@ -650,8 +882,65 @@
+@@ -650,8 +897,65 @@
  
  }  // namespace
  
@@ -11469,7 +11506,7 @@
  NX_HLE("nvnMemoryPoolMap", MemoryPoolMap);
  NX_HLE("nvnMemoryPoolMapVirtual", MemoryPoolMapVirtual);
  NX_HLE("nvnTextureWriteTexels", TextureWriteTexels);
-@@ -663,6 +952,7 @@
+@@ -663,6 +967,7 @@
  NX_HLE("nvnMemoryPoolFlushMappedRange", MemoryPoolFlushMappedRange);
  NX_HLE("nvnMemoryPoolInvalidateMappedRange", MemoryPoolInvalidateMappedRange);
  NX_HLE("nvnBufferInitialize", BufferInitialize);
@@ -11477,7 +11514,7 @@
  NX_HLE("nvnBufferFinalize", BufferFinalize);
  NX_HLE("nvnBufferMap", BufferMap);
  NX_HLE("nvnBufferGetAddress", BufferGetAddress);
-@@ -685,6 +975,7 @@
+@@ -685,6 +990,7 @@
  NX_HLE("nvnTextureGetMemoryPool", TextureGetMemoryPool);
  NX_HLE("nvnTextureGetMemoryOffset", TextureGetMemoryOffset);
  NX_HLE("nvnTextureGetStorageSize", TextureGetStorageSize);
@@ -11485,7 +11522,7 @@
  NX_HLE("nvnTextureGetDepthStencilMode", TextureGetDepthStencilMode);
  NX_HLE("nvnSamplerPoolInitialize", DescriptorPoolInitialize);
  NX_HLE("nvnTexturePoolInitialize", DescriptorPoolInitialize);
-@@ -702,4 +993,17 @@
+@@ -702,4 +1008,17 @@
  NX_HLE("nvnDeviceGetTexelFetchHandle", DeviceGetTexelFetchHandle);
  NX_HLE("nvnDeviceGetImageHandle", DeviceGetImageHandle);
  
@@ -19136,7 +19173,7 @@
 +};
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,904 @@
+@@ -0,0 +1,906 @@
 +#include "native_thread_policy_probe.h"
 +#include "native_measurement.h"
 +#include <source_location>
@@ -19218,7 +19255,9 @@
 +#include "native_worker_inventory_probe.h"
 +#include "native_callback_state_probe.h"
 +#include "native_record_capacity_probe.h"
++#include "native_texture_property_probe.h"
 +int main(int argc,char** argv){try{
++ if(argc==2&&std::string_view(argv[1])=="--texture-property-cache")return native_texture_property_probe();
 + if(argc==2&&std::string_view(argv[1])=="--record-capacity-bench")return native_record_capacity_bench();
 + if(argc==2&&std::string_view(argv[1])=="--call-phase")return authored_call_phase::run();
 + if(argc==2&&std::string_view(argv[1])=="--call-phase-callbacks")return authored_call_phase::run(true);
@@ -21410,6 +21449,164 @@
 +#include <iostream>
 +#include <stdexcept>
 +int main(){unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("texture layer assertion");};for(unsigned depth:{0u,1u,2u,6u,0xffffffffu})check(nx::nvn::native_texture_storage_layers(8,depth)==6);check(nx::nvn::native_texture_storage_layers(1,1)==1);check(nx::nvn::native_texture_storage_layers(4,7)==7);check(nx::nvn::native_texture_storage_layers(2,9)==9);std::cout<<"texture layer checks="<<checks<<" PASS\n";}
+--- /dev/null
++++ b/tests/native_texture_property_probe.h
+@@ -0,0 +1,155 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "native_cpu_cycles.h"
++#include "nvn/native_texture_registration.h"
++#include "nvn/sdk53_texture_wire.h"
++#include <iostream>
++
++inline int native_texture_property_probe() {
++    using namespace nx;
++    using namespace nx::nvn;
++    unsigned checks = 0;
++    auto require = [&](bool value) {
++        ++checks;
++        if (!value) throw std::runtime_error("texture property assertion " + std::to_string(checks));
++    };
++    memory_init();
++    const auto device = kernel_alloc(7008,16);
++    vm_set(device,7008,kMemHeap,3);
++    require(initialize_native_device(device,0));
++    constexpr unsigned count = 8192, queries = 4096;
++    constexpr uint64_t gpu = 0x1fd000000, pool = 0xacc000;
++    const auto noise = kernel_alloc(count*256,16);
++    for (unsigned i=0; i<count; ++i) make<Object>(noise+i*256);
++    uint64_t owner = 0;
++    {
++        std::shared_lock guard(objects_lock());
++        for (const auto& [key,object] : objects()) {
++            (void)object;
++            if (key>=noise && key-noise<count*256) owner=key;
++        }
++    }
++    require(owner!=0);
++    auto fill = [&](Texture& t, uint64_t storage) {
++        t.gpu=gpu; t.pool=pool; t.offset=64; t.stride=32;
++        t.target=1; t.format=0x25; t.width=t.height=8;
++        t.depth=t.levels=t.samples=1; t.storage_size=storage;
++    };
++    fill(make<Texture>(owner),0x1111);
++    const auto descriptor=kernel_alloc(0xb0,16);
++    vm_set(descriptor,0xb0,kMemHeap,3);
++    auto copy = [&] {
++        const auto* t=get<Texture>(owner); require(t!=nullptr);
++        Sdk53TextureWire wire;
++        wire.device=device; wire.gpu=t->gpu; wire.pool=t->pool;
++        wire.offset=t->offset; wire.stride=t->stride; wire.aspect=format_aspect(t->format);
++        wire.fields={t->flags,t->target,t->width,t->height,t->depth,t->levels,t->format,t->samples,
++                     t->swizzle[0],t->swizzle[1],t->swizzle[2],t->swizzle[3],t->depth_stencil_mode};
++        const auto bytes=sdk53_texture_wire(wire);
++        std::memcpy(reinterpret_cast<void*>(descriptor),bytes.data(),bytes.size());
++    };
++    copy();
++    auto query = [&](const char* name,uint64_t key) {
++        const auto fn=hle_lookup(name);
++        if (!fn) throw std::runtime_error("texture property getter unavailable");
++        CPU cpu{}; cpu.x[0]=key; fn(cpu); return cpu.x[0];
++    };
++    auto width = [&] { return query("nvnTextureGetWidth",descriptor); };
++    auto rejected = [&] {
++        try { (void)width(); return false; }
++        catch (const std::invalid_argument&) { return true; }
++    };
++    unsigned visited=0;
++    {
++        std::shared_lock guard(objects_lock());
++        for (const auto& [key,object] : objects()) {
++            (void)object; ++visited; if (key==owner) break;
++        }
++    }
++    require(visited>=count/2);
++    require(width()==8);
++    uint64_t cycles_before=0,cycles_after=0;
++    require(read_thread_cycles(cycles_before));
++    const auto start=plat::monotonic_ns();
++    uint64_t checksum=0;
++    for (unsigned i=0; i<queries; ++i) {
++        { std::lock_guard churn(objects_lock()); }
++        checksum+=width();
++    }
++    const auto elapsed=plat::monotonic_ns()-start;
++    require(read_thread_cycles(cycles_after) && cycles_after>=cycles_before);
++    require(checksum==8ull*queries);
++    for (unsigned field=0; field<13; ++field) {
++        const auto address=descriptor+0x20+4*field;
++        const auto original=ld<uint32_t>(address);
++        st<uint32_t>(address,original+17); require(rejected());
++        st<uint32_t>(address,original); require(width()==8);
++    }
++    for (const auto offset : {0x10u,0x18u,0x60u,0x80u}) {
++        const auto original=ld<uint64_t>(descriptor+offset);
++        st<uint64_t>(descriptor+offset,original+1); require(rejected());
++        st<uint64_t>(descriptor+offset,original); require(width()==8);
++    }
++    const auto aspect=ld<uint32_t>(descriptor+0x54);
++    st<uint32_t>(descriptor+0x54,aspect^3); require(rejected());
++    st<uint32_t>(descriptor+0x54,aspect); require(width()==8);
++    destroy(owner); require(rejected());
++    make<Object>(owner); require(rejected());
++    fill(make<Texture>(owner),0x1111); require(width()==8);
++    make<Object>(descriptor); require(rejected());
++    destroy(descriptor); require(width()==8);
++    auto legacy_owner = [&] {
++        std::shared_lock guard(objects_lock());
++        for (const auto& [key,object] : objects()) {
++            const auto* t=object ? object->as_texture() : nullptr;
++            if (t && t->gpu==gpu && t->pool==pool) return key;
++        }
++        return uint64_t(0);
++    };
++    const auto twins=kernel_alloc(32*256,16);
++    // New unordered-map nodes need not precede the warm owner. Use the actual
++    // existing traversal order instead: replace an earlier Object node with a
++    // matching Texture without moving the node, then require a changed winner.
++    for (unsigned i=0; i<32; ++i) make<Object>(twins+i*256);
++    std::vector<uint64_t> order;
++    {
++        std::shared_lock guard(objects_lock());
++        for (const auto& [key,object] : objects()) {
++            (void)object;
++            if (key>=twins && key-twins<32*256) order.push_back(key);
++        }
++    }
++    require(order.size()==32);
++    destroy(owner);
++    owner=order.back();
++    fill(make<Texture>(owner),0x1111);
++    require(width()==8);
++    bool winner_changed=false;
++    for (unsigned i=0; i<31; ++i) {
++        require(width()==8);  // warm before inserting another equal descriptor
++        fill(make<Texture>(order[30-i]),0x2222+i);
++        if (i%4==3) { std::lock_guard guard(objects_lock()); objects().rehash(objects().bucket_count()*2); }
++        const auto expected=legacy_owner(); require(expected!=0);
++        winner_changed|=expected!=owner;
++        require(width()==8);  // relaxed hit must NOT authorize a binding generation
++        const auto* expected_texture=get<Texture>(expected); require(expected_texture!=nullptr);
++        require(query("nvnTextureGetStorageSize",descriptor)==expected_texture->storage_size);
++        const auto current_expected=legacy_owner();
++        { const auto held=NativeTextureRegistration::capture(descriptor);
++          require(held.source_key()==current_expected); }
++    }
++    require(winner_changed);
++    for (unsigned i=0; i<32; ++i) if (twins+i*256!=owner) destroy(twins+i*256);
++    require(width()==8);
++    finalize_native_device(device);
++    require(rejected());
++    // Direct owned objects retain the preexisting getter contract after device finalization.
++    require(query("nvnTextureGetWidth",owner)==8);
++    destroy(owner);
++    for (unsigned i=0; i<count; ++i) if (noise+i*256!=owner) destroy(noise+i*256);
++    std::cout << "native texture property queries=" << queries << " ns_per_query=" << double(elapsed)/queries
++              << " cycles=" << cycles_after-cycles_before << " visited=" << visited
++              << " checksum=" << checksum << " checks=" << checks
++              << " scalar-fields/strict-binding/strict-storage/retirement PASS\n";
++    return 0;
++}
 --- /dev/null
 +++ b/tests/native_thread_policy_probe.h
 @@ -0,0 +1,63 @@

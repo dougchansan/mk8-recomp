@@ -6,7 +6,12 @@ runtime and AArch64-to-C++ recompiler, pinned in `UPSTREAM.json`. Preserve
 `LICENSE.upstream`; local modifications are GPL-3.0-or-later. The recipe contains
 no game code, assets or generated modules. No release or download is available.
 
-The current recipe reconstructs R351 (228 generic files). It adds a bounded,
+The recipe reconstructs R353 (229 generic files). Its revalidated scalar-property
+cache passes native controls and a same-binary enabled/disabled/enabled Stadium
+comparison. Held main-thread CPU is lower in both enabled runs; presentation
+remains about 16.67 ms. See [selection rules, measurements and limits](../../docs/native-texture-property-cache.md).
+
+R351 adds a bounded,
 opt-in pool/Map/Flush observer to connect captured GPU ranges to mapped CPU
 backing and call sites. All 54 native suites, 3,253 GPU checks and 19 controls
 pass; both changed-source analyses are clean. See [buffer-lineage configuration

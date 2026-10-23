@@ -10,6 +10,9 @@ The recipe reconstructs R353 (229 generic files). Its revalidated scalar-propert
 cache passes native controls and a same-binary enabled/disabled/enabled Stadium
 comparison. Held main-thread CPU is lower in both enabled runs; presentation
 remains about 16.67 ms. See [selection rules, measurements and limits](../../docs/native-texture-property-cache.md).
+Subsequent [CPU/GPU cost measurements](../../docs/native-runtime-cost-profile.md)
+record complete GPU timestamps and two rejected optimization candidates. The
+verified runtime source remains R353.
 
 R351 adds a bounded,
 opt-in pool/Map/Flush observer to connect captured GPU ranges to mapped CPU

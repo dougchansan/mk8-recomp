@@ -100,6 +100,9 @@ GPU/gameplay qualification and is not part of the public source recipe.
 
 ## Next measurements
 
+The separate [Linux hardware control qualification](native-linux-hardware-controls.md)
+records the bounded post-reload GPU checks and their limits.
+
 Measure upload-deduplication front-cache hits, map lookups and new copies before
 selecting an allocator or cache change. Retain complete reset/invalidation and
 upload behavior in any control. CPU time for held individual worker-thread

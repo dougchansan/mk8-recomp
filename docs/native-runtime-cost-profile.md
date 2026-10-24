@@ -1,9 +1,12 @@
-# Remaining R353 runtime costs
+# Runtime cost measurements and remaining work
 
-The current verified runtime remains R353. A subsequent diagnostic run measures
-GPU execution and CPU work after the scalar-property cache change. Two proposed
-CPU optimizations fail matched controls and remain unpublished. Sustained 8/4 ms
-presentation and normal-speed 125/250 FPS remain unverified.
+R366 adds a [scoped allocation/replay improvement](native-upload-dedup-arena.md)
+and bounded [BufferMap observations](native-buffer-lineage.md). Main-thread and
+whole-process CPU results remain mixed. Presentation stays about 16.67 ms;
+sustained 8/4 ms and normal-speed 125/250 FPS remain unverified.
+
+The R353 diagnostic measurements below followed the scalar-property cache change.
+Two other CPU candidates failed matched controls and remain unpublished.
 
 ## Racing scope and GPU measurements
 
@@ -103,11 +106,12 @@ GPU/gameplay qualification and is not part of the public source recipe.
 The separate [Linux hardware control qualification](native-linux-hardware-controls.md)
 records the bounded post-reload GPU checks and their limits.
 
-Measure upload-deduplication front-cache hits, map lookups and new copies before
-selecting an allocator or cache change. Retain complete reset/invalidation and
-upload behavior in any control. CPU time for held individual worker-thread
-lifetimes would also help distinguish main-thread work from replay work and
-waiting. Optimizing a weighted elapsed scope alone is insufficient.
+The later allocation controls retain complete reset/invalidation and upload
+behavior. Their measured render-worker saving is not an overall CPU or FPS gain:
+main-thread time and cycles rise in those controls, and process CPU changes in
+opposite directions between the two scenes. Attribute that remaining work before
+claiming a critical-path improvement. Keep ownership diagnostics separate from
+performance runs and retain the complete raw evidence.
 
 Independent rendering still requires proven simulation-state and render-state
 ownership. The rejected broader update gate lost geometry despite a normal HUD

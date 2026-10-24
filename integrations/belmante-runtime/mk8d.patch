@@ -1,3 +1,4 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -36,6 +36,118 @@
@@ -203,7 +204,7 @@
      target_compile_options(${NX_GAME} PRIVATE -fvisibility=hidden)
      # The executable loads near 0x1_0000_0000, below the guest ranges (0x40_0000_0000 and up). The game runs on its
      # own thread with a 64 MiB stack (platform_mac.cpp), so the main thread's stack size does not matter.
-@@ -208,19 +340,85 @@
+@@ -208,19 +340,93 @@
      find_path(NX_VULKAN_INCLUDE vulkan/vulkan.h HINTS "${NX_VULKAN_SDK}/include" /usr/include /usr/local/include)
      add_executable(${NX_GAME} ${NX_RUNTIME_SOURCES} runtime/src/platform_linux.cpp runtime/src/memguard_linux.cpp)
      target_include_directories(${NX_GAME} PRIVATE runtime/include runtime/src "${NX_GAME_DIR}" "${NX_VULKAN_INCLUDE}")
@@ -241,6 +242,8 @@
 +        add_test(NAME native_call_phase_callbacks_cpu COMMAND native_device_fixture --call-phase-callbacks)
 +        set_tests_properties(native_call_phase_callbacks_cpu PROPERTIES ENVIRONMENT "NX_LOG=${CMAKE_BINARY_DIR}/call-phase-callback-test.log")
 +        find_package(Python3 REQUIRED COMPONENTS Interpreter)
++        add_test(NAME native_buffer_lineage_cpu COMMAND "${Python3_EXECUTABLE}"
++            "${CMAKE_SOURCE_DIR}/tests/native_buffer_lineage_stream.py" $<TARGET_FILE:native_device_fixture>)
 +        add_test(NAME native_worker_inventory_cpu COMMAND "${Python3_EXECUTABLE}"
 +            "${CMAKE_SOURCE_DIR}/tests/native_worker_inventory_stream.py" $<TARGET_FILE:native_device_fixture>)
 +        add_test(NAME native_worker_context_cpu COMMAND "${Python3_EXECUTABLE}"
@@ -290,10 +293,18 @@
 +endif()
 +
 +if(NX_TESTS)
++    add_executable(native_upload_dedup_arena_test tests/native_upload_dedup_arena_test.cpp)
++    target_include_directories(native_upload_dedup_arena_test PRIVATE runtime/src)
++    add_test(NAME native_upload_dedup_arena COMMAND native_upload_dedup_arena_test)
++endif()
++
++if(NX_TESTS)
 +    add_executable(native_yuv_layout_test tests/native_yuv_layout_test.cpp)
 +    target_include_directories(native_yuv_layout_test PRIVATE runtime/src)
 +    add_test(NAME native_yuv_layout COMMAND native_yuv_layout_test)
 +endif()
+diff --git a/games/mk8d/game.cpp b/games/mk8d/game.cpp
+new file mode 100644
 --- /dev/null
 +++ b/games/mk8d/game.cpp
 @@ -0,0 +1,9 @@
@@ -306,6 +317,8 @@
 +void game::renderer_start(){}
 +void game::first_frame(){}
 +}
+diff --git a/recomp/lz4_checked.py b/recomp/lz4_checked.py
+new file mode 100644
 --- /dev/null
 +++ b/recomp/lz4_checked.py
 @@ -0,0 +1,33 @@
@@ -342,6 +355,7 @@
 +    require(pos==len(src) and len(out)==size,'LZ4 exact size')
 +    return bytes(out)
 +
+diff --git a/recomp/nso.py b/recomp/nso.py
 --- a/recomp/nso.py
 +++ b/recomp/nso.py
 @@ -5,7 +5,7 @@
@@ -362,6 +376,8 @@
          segs.append((mem_off, blob))
      bss_size = struct.unpack_from("<I", raw, 0x3C)[0]
      data_end = segs[2][0] + len(segs[2][1])
+diff --git a/runtime/src/compiled_callback.h b/runtime/src/compiled_callback.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/compiled_callback.h
 @@ -0,0 +1,4 @@
@@ -369,12 +385,15 @@
 +#pragma once
 +#include <cstdint>
 +namespace nx {bool compiled_callback_target(uint64_t);}
+diff --git a/runtime/src/entry_win.cpp b/runtime/src/entry_win.cpp
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/entry_win.cpp
 @@ -0,0 +1,3 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +int platform_entry();
 +int main(){return platform_entry();}
+diff --git a/runtime/src/frame_stats.cpp b/runtime/src/frame_stats.cpp
 --- a/runtime/src/frame_stats.cpp
 +++ b/runtime/src/frame_stats.cpp
 @@ -11,6 +11,15 @@
@@ -410,6 +429,7 @@
      timespec ts{};
      clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
      return uint64_t(ts.tv_sec) * 1'000'000'000ull + uint64_t(ts.tv_nsec);
+diff --git a/runtime/src/hle_audio.cpp b/runtime/src/hle_audio.cpp
 --- a/runtime/src/hle_audio.cpp
 +++ b/runtime/src/hle_audio.cpp
 @@ -15,6 +15,8 @@
@@ -561,6 +581,7 @@
      {
          std::lock_guard lk(g_renderers_lock);
          g_renderers.push_back(impl);
+diff --git a/runtime/src/hle_fs.cpp b/runtime/src/hle_fs.cpp
 --- a/runtime/src/hle_fs.cpp
 +++ b/runtime/src/hle_fs.cpp
 @@ -1,3 +1,4 @@
@@ -825,6 +846,7 @@
 +
 +NX_HLE("_ZN2nn2fs19MountDeviceSaveDataEPKc",nx::MountDeviceSaveData);
 +NX_HLE("_ZN2nn2fs14CommitSaveDataEPKc",nx::CommitDeviceSaveData);
+diff --git a/runtime/src/hle_hid.cpp b/runtime/src/hle_hid.cpp
 --- a/runtime/src/hle_hid.cpp
 +++ b/runtime/src/hle_hid.cpp
 @@ -13,6 +13,9 @@
@@ -912,6 +934,7 @@
 +
 +NX_HLE("_ZN2nn3hid21InitializeTouchScreenEv",nx::InitializeNativeTouch);
 +NX_HLE("_ZN2nn3hid20GetTouchScreenStatesILm16EEEiPNS0_16TouchScreenStateIXT_EEEi",nx::GetNativeTouchStates);
+diff --git a/runtime/src/hle_vi.cpp b/runtime/src/hle_vi.cpp
 --- a/runtime/src/hle_vi.cpp
 +++ b/runtime/src/hle_vi.cpp
 @@ -2,7 +2,13 @@
@@ -1210,6 +1233,7 @@
 +
 +NX_HLE("_ZN5movie7DecoderD1Ev",nx::native_movie_decoder_destroy_observe);
 +NX_HLE("_ZN5movie7DecoderD2Ev",nx::native_movie_decoder_destroy_observe);
+diff --git a/runtime/src/ipc.cpp b/runtime/src/ipc.cpp
 --- a/runtime/src/ipc.cpp
 +++ b/runtime/src/ipc.cpp
 @@ -36,15 +36,13 @@
@@ -1315,6 +1339,7 @@
          return 0;
      }
  
+diff --git a/runtime/src/ipc.h b/runtime/src/ipc.h
 --- a/runtime/src/ipc.h
 +++ b/runtime/src/ipc.h
 @@ -25,10 +25,13 @@
@@ -1340,6 +1365,7 @@
      virtual uint32_t handle(IpcCtx& ctx);
      std::map<uint32_t, std::function<uint32_t(IpcCtx&)>> cmds;
  };
+diff --git a/runtime/src/kernel.cpp b/runtime/src/kernel.cpp
 --- a/runtime/src/kernel.cpp
 +++ b/runtime/src/kernel.cpp
 @@ -1,3 +1,6 @@
@@ -1720,6 +1746,7 @@
      }
  }
  
+diff --git a/runtime/src/kernel.h b/runtime/src/kernel.h
 --- a/runtime/src/kernel.h
 +++ b/runtime/src/kernel.h
 @@ -15,6 +15,12 @@
@@ -1744,6 +1771,7 @@
  };
  
  struct KEvent : KObject {
+diff --git a/runtime/src/kernel_watch.cpp b/runtime/src/kernel_watch.cpp
 --- a/runtime/src/kernel_watch.cpp
 +++ b/runtime/src/kernel_watch.cpp
 @@ -2,6 +2,7 @@
@@ -1922,6 +1950,7 @@
      static const char* dump_env = std::getenv("NX_THREAD_DUMP_AT");
      uint64_t dump_at = dump_env ? plat::monotonic_ns() + uint64_t(std::atof(dump_env) * 1e9) : 0;
      uint64_t last_frame = 0, since = plat::monotonic_ns();
+diff --git a/runtime/src/loader.cpp b/runtime/src/loader.cpp
 --- a/runtime/src/loader.cpp
 +++ b/runtime/src/loader.cpp
 @@ -1,8 +1,11 @@
@@ -2124,6 +2153,7 @@
                  missing++;
              }
              *slot = target + uint64_t(r.addend);
+diff --git a/runtime/src/main.cpp b/runtime/src/main.cpp
 --- a/runtime/src/main.cpp
 +++ b/runtime/src/main.cpp
 @@ -11,9 +11,11 @@
@@ -2198,6 +2228,7 @@
  
      uint64_t tdata = 0, tdata_end = 0;
      if (tdata_range(nx_module_main, tdata, tdata_end) && tdata_end > tdata) {
+diff --git a/runtime/src/memory.cpp b/runtime/src/memory.cpp
 --- a/runtime/src/memory.cpp
 +++ b/runtime/src/memory.cpp
 @@ -6,6 +6,7 @@
@@ -2225,6 +2256,8 @@
      uint64_t end = addr + size;
      // Cut overlapping blocks.
      auto it = g_vm.lower_bound(addr);
+diff --git a/runtime/src/mk8_focus_policy.cpp b/runtime/src/mk8_focus_policy.cpp
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/mk8_focus_policy.cpp
 @@ -0,0 +1,103 @@
@@ -2331,6 +2364,8 @@
 +    else focus_gate_impl();
 +}
 +}  // namespace nx
+diff --git a/runtime/src/mk8_focus_policy.h b/runtime/src/mk8_focus_policy.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/mk8_focus_policy.h
 @@ -0,0 +1,14 @@
@@ -2348,6 +2383,8 @@
 +struct Mk8FocusSnapshot{bool configured;bool notify;bool background;bool suspend;bool out_of_focus;};
 +Mk8FocusSnapshot mk8_focus_snapshot();
 +}
+diff --git a/runtime/src/mk8_verified_services.cpp b/runtime/src/mk8_verified_services.cpp
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/mk8_verified_services.cpp
 @@ -0,0 +1,44 @@
@@ -2395,6 +2432,8 @@
 + return std::make_shared<VerifiedEndpoint>(port,CreateParentalControlManager(context));
 +}
 +}
+diff --git a/runtime/src/mk8_verified_services.h b/runtime/src/mk8_verified_services.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/mk8_verified_services.h
 @@ -0,0 +1,4 @@
@@ -2402,6 +2441,8 @@
 +#pragma once
 +#include "ipc.h"
 +namespace nx {std::shared_ptr<Service> mk8_verified_parental(const std::string& port);}
+diff --git a/runtime/src/mk8_window_controller.cpp b/runtime/src/mk8_window_controller.cpp
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/mk8_window_controller.cpp
 @@ -0,0 +1,32 @@
@@ -2437,6 +2478,8 @@
 +}
 +std::shared_ptr<Service> mk8_window_controller(){return std::make_shared<WindowController>();}
 +}
+diff --git a/runtime/src/mk8_window_controller.h b/runtime/src/mk8_window_controller.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/mk8_window_controller.h
 @@ -0,0 +1,4 @@
@@ -2444,6 +2487,8 @@
 +#pragma once
 +#include "ipc.h"
 +namespace nx { std::shared_ptr<Service> mk8_window_controller(); }
+diff --git a/runtime/src/module_init.cpp b/runtime/src/module_init.cpp
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/module_init.cpp
 @@ -0,0 +1,26 @@
@@ -2473,6 +2518,8 @@
 + throw std::runtime_error("DT_INIT has no static compiled entry");
 +}
 +}
+diff --git a/runtime/src/module_init.h b/runtime/src/module_init.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/module_init.h
 @@ -0,0 +1,4 @@
@@ -2480,6 +2527,8 @@
 +#pragma once
 +#include <nx/module.h>
 +namespace nx {uint64_t module_init_offset(const ModuleInfo&);}
+diff --git a/runtime/src/native_audio_sdk_layout.h b/runtime/src/native_audio_sdk_layout.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_audio_sdk_layout.h
 @@ -0,0 +1,12 @@
@@ -2495,6 +2544,8 @@
 +struct Sdk53AudioCommand {uint16_t size,id;bool enabled;};
 +inline Sdk53AudioCommand sdk53_audio_command(std::span<const uint8_t> bytes){if(bytes.size()<0x14)throw std::invalid_argument("audio command header truncated");uint32_t magic;uint16_t size,id;std::memcpy(&magic,bytes.data(),4);std::memcpy(&size,bytes.data()+4,2);std::memcpy(&id,bytes.data()+6,2);if(magic!=0xcafebabe||size<0x14||size>bytes.size())throw std::invalid_argument("audio command range/magic");return {size,id,bytes[0x10]!=0};}
 +}
+diff --git a/runtime/src/native_avc_bridge.h b/runtime/src/native_avc_bridge.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_avc_bridge.h
 @@ -0,0 +1,67 @@
@@ -2565,6 +2616,8 @@
 +NX_HLE("H264SwDecDecode",nx::native_avc::decode);
 +NX_HLE("H264SwDecNextPicture",nx::native_avc::next);
 +#endif
+diff --git a/runtime/src/native_avc_sps.h b/runtime/src/native_avc_sps.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_avc_sps.h
 @@ -0,0 +1,36 @@
@@ -2604,6 +2657,8 @@
 + while(start<bytes.size()){const auto length=prefix(start);const auto first=start+length;size_t end=first;while(end<bytes.size()&&!prefix(end))++end;if(end>first)result.push_back(bytes.subspan(first,end-first));start=end;}return result;
 +}
 +}
+diff --git a/runtime/src/native_call_phase.h b/runtime/src/native_call_phase.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_call_phase.h
 @@ -0,0 +1,90 @@
@@ -2697,6 +2752,8 @@
 +    return every && frame >= first && frame <= last && (frame - first) % every == 0;
 +}
 +}  // namespace nx::call_phase
+diff --git a/runtime/src/native_call_phase_impl.h b/runtime/src/native_call_phase_impl.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_call_phase_impl.h
 @@ -0,0 +1,405 @@
@@ -3105,6 +3162,8 @@
 +};
 +}  // namespace
 +}  // namespace call_phase
+diff --git a/runtime/src/native_capture_window.h b/runtime/src/native_capture_window.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_capture_window.h
 @@ -0,0 +1,29 @@
@@ -3137,6 +3196,8 @@
 +    return window;
 +}
 +}
+diff --git a/runtime/src/native_control_metadata.h b/runtime/src/native_control_metadata.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_control_metadata.h
 @@ -0,0 +1,16 @@
@@ -3156,6 +3217,8 @@
 +    std::array<char,16> result{};std::copy(field.begin(),end,result.begin());return result;
 +}
 +}
+diff --git a/runtime/src/native_cpu_cycles.h b/runtime/src/native_cpu_cycles.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_cpu_cycles.h
 @@ -0,0 +1,28 @@
@@ -3187,6 +3250,8 @@
 +#endif
 +}
 +}
+diff --git a/runtime/src/native_draw_invocation.h b/runtime/src/native_draw_invocation.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_draw_invocation.h
 @@ -0,0 +1,12 @@
@@ -3202,6 +3267,8 @@
 +    ~DrawInvocationScope(){current_draw_invocation=previous;}
 +};
 +}
+diff --git a/runtime/src/native_exit_hooks.h b/runtime/src/native_exit_hooks.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_exit_hooks.h
 @@ -0,0 +1,17 @@
@@ -3222,6 +3289,8 @@
 +    for (ExitHook h : hooks) h();
 +}
 +}  // namespace nx
+diff --git a/runtime/src/native_exit_policy.h b/runtime/src/native_exit_policy.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_exit_policy.h
 @@ -0,0 +1,18 @@
@@ -3243,6 +3312,8 @@
 +};
 +inline NativeExitPolicy& native_exit_policy(){static NativeExitPolicy value;return value;}
 +}
+diff --git a/runtime/src/native_failure.h b/runtime/src/native_failure.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_failure.h
 @@ -0,0 +1,10 @@
@@ -3256,6 +3327,8 @@
 +[[noreturn]] void report_current_exception();
 +}
 +}
+diff --git a/runtime/src/native_font_bundle.h b/runtime/src/native_font_bundle.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_font_bundle.h
 @@ -0,0 +1,20 @@
@@ -3279,6 +3352,8 @@
 + return result;
 +}
 +}
+diff --git a/runtime/src/native_frame_attribution.h b/runtime/src/native_frame_attribution.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_frame_attribution.h
 @@ -0,0 +1,53 @@
@@ -3335,6 +3410,8 @@
 +std::string guest_thread_label(uint64_t id);  // "g<id> <entry symbol>"
 +
 +}  // namespace nx
+diff --git a/runtime/src/native_frame_context.h b/runtime/src/native_frame_context.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_frame_context.h
 @@ -0,0 +1,60 @@
@@ -3398,6 +3475,8 @@
 +void wait_end(CPU& cpu, const WaitToken& token, uint32_t result, int blocking_path = -1);
 +}  // namespace frame_context
 +}  // namespace nx
+diff --git a/runtime/src/native_hid_policy.h b/runtime/src/native_hid_policy.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_hid_policy.h
 @@ -0,0 +1,21 @@
@@ -3422,6 +3501,8 @@
 + uint32_t style(uint32_t id)const{std::lock_guard guard(lock);return initialized&&!disconnected&&id==0&&ids.contains(id)&&(supported&1)?1:0;}
 +};
 +}
+diff --git a/runtime/src/native_measurement.h b/runtime/src/native_measurement.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_measurement.h
 @@ -0,0 +1,45 @@
@@ -3470,6 +3551,8 @@
 +};
 +inline uint64_t asset_id(const char* path){uint64_t h=14695981039346656037ull;while(*path){h^=uint8_t(*path++);h*=1099511628211ull;}return h;}
 +}
+diff --git a/runtime/src/native_memory_epoch.h b/runtime/src/native_memory_epoch.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_memory_epoch.h
 @@ -0,0 +1,22 @@
@@ -3495,6 +3578,8 @@
 +    return generation.load(std::memory_order_acquire) == value ? value : 0;
 +}
 +}
+diff --git a/runtime/src/native_mf_avc.h b/runtime/src/native_mf_avc.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_mf_avc.h
 @@ -0,0 +1,73 @@
@@ -3571,6 +3656,8 @@
 + std::vector<Frame> drain(){if(!draining_){require(transform_->ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM,0),"End stream");require(transform_->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN,0),"Drain stream");draining_=true;}return receive();}
 +};
 +}
+diff --git a/runtime/src/native_mii/LICENSE.MIT b/runtime/src/native_mii/LICENSE.MIT
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_mii/LICENSE.MIT
 @@ -0,0 +1,21 @@
@@ -3595,6 +3682,8 @@
 +LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 +OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 +SOFTWARE.
+diff --git a/runtime/src/native_mii/ORIGIN.json b/runtime/src/native_mii/ORIGIN.json
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_mii/ORIGIN.json
 @@ -0,0 +1,18 @@
@@ -3616,6 +3705,8 @@
 +    "CharInfo validation uses the declared eye-rotation maximum and rejects eyebrow coordinates below3"
 +  ]
 +}
+diff --git a/runtime/src/native_mii/random.h b/runtime/src/native_mii/random.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_mii/random.h
 @@ -0,0 +1,748 @@
@@ -4367,6 +4458,8 @@
 +struct CharInfoElement {CharInfo info{};u32 source=1;};
 +static_assert(sizeof(CharInfoElement)==0x5c);
 +}
+diff --git a/runtime/src/native_mii/raw_data.h b/runtime/src/native_mii/raw_data.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_mii/raw_data.h
 @@ -0,0 +1,73 @@
@@ -4443,6 +4536,8 @@
 +CommonColor GetGlassColorFromVer3(u32 color);
 +
 +} // namespace nx::mii::RawData
+diff --git a/runtime/src/native_mii/raw_data.inc b/runtime/src/native_mii/raw_data.inc
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_mii/raw_data.inc
 @@ -0,0 +1,1778 @@
@@ -6224,6 +6319,8 @@
 +}
 +
 +} // namespace nx::mii::RawData
+diff --git a/runtime/src/native_mii/types.h b/runtime/src/native_mii/types.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_mii/types.h
 @@ -0,0 +1,690 @@
@@ -6917,6 +7014,8 @@
 +};
 +
 +} // namespace Service::Mii
+diff --git a/runtime/src/native_overlay.cpp b/runtime/src/native_overlay.cpp
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_overlay.cpp
 @@ -0,0 +1,131 @@
@@ -7051,6 +7150,8 @@
 +}
 +
 +}  // namespace nx
+diff --git a/runtime/src/native_overlay.h b/runtime/src/native_overlay.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_overlay.h
 @@ -0,0 +1,24 @@
@@ -7078,6 +7179,8 @@
 +std::vector<std::string> overlay_lines();
 +
 +}  // namespace nx
+diff --git a/runtime/src/native_perf.h b/runtime/src/native_perf.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_perf.h
 @@ -0,0 +1,61 @@
@@ -7142,24 +7245,31 @@
 +            c.exclusive_ns.exchange(0, std::memory_order_relaxed)};
 +}
 +}
+diff --git a/runtime/src/native_pool_lineage.h b/runtime/src/native_pool_lineage.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_pool_lineage.h
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,79 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +#include "native_capture_window.h"
++#include <array>
 +#include <atomic>
 +#include <cstring>
++#include <span>
 +
 +namespace nx::diagnostic {
 +struct PoolLineageOptions {
 +    bool on = false;
 +    std::optional<CaptureWindow> io_window;
++    std::array<uint8_t, 4> registers{};
++    size_t register_count = 0;
 +    bool includes_io(uint64_t frame) const {
 +        return on && io_window && io_window->contains(frame);
 +    }
 +};
-+inline PoolLineageOptions pool_lineage_options(const char* flag, const char* first, const char* last) {
++inline PoolLineageOptions pool_lineage_options(const char* flag, const char* first, const char* last,
++                                               const char* registers = nullptr) {
 +    PoolLineageOptions result;
 +    if (!flag || std::strcmp(flag, "1")) return result;
 +    if (first || last) {
@@ -7167,8 +7277,46 @@
 +        if (!window) return result;
 +        result.io_window = window;
 +    }
++    if (registers) {
++        const std::string_view input(registers);
++        const auto* cursor = input.data();
++        const auto* end = cursor + input.size();
++        if (cursor == end) return {};
++        while (cursor < end) {
++            if (result.register_count == result.registers.size()) return {};
++            unsigned value = 0;
++            const auto parsed = std::from_chars(cursor, end, value);
++            if (parsed.ec != std::errc{} || parsed.ptr == cursor || value >= 32) return {};
++            for (size_t i = 0; i < result.register_count; ++i)
++                if (result.registers[i] == value) return {};
++            result.registers[result.register_count++] = uint8_t(value);
++            cursor = parsed.ptr;
++            if (cursor == end) break;
++            if (*cursor != ',' || ++cursor == end) return {};
++        }
++    }
 +    result.on = true;
 +    return result;
++}
++// Decimal register indices, hexadecimal raw values. No guest-pointer dereference.
++// Four maximum-width pairs require79bytes plus a terminator.
++inline std::array<char, 80> pool_lineage_registers(const PoolLineageOptions& options,
++                                                 std::span<const uint64_t, 32> values) {
++    std::array<char, 80> text{};
++    text[0] = '-';
++    if (!options.on || !options.register_count || options.register_count > options.registers.size()) return text;
++    for (size_t i = 0; i < options.register_count; ++i)
++        if (options.registers[i] >= values.size()) return text;
++    auto* cursor = text.data();
++    auto* end = text.data() + text.size() - 1;
++    for (size_t i = 0; i < options.register_count; ++i) {
++        if (i) *cursor++ = ',';
++        cursor = std::to_chars(cursor, end, options.registers[i]).ptr;
++        *cursor++ = ':';
++        cursor = std::to_chars(cursor, end, values[options.registers[i]], 16).ptr;
++    }
++    *cursor = 0;
++    return text;
 +}
 +// 1..limit are records; limit+1 is the single truncation notice, then0.
 +// Saturation prevents wrap from admitting new records after truncation.
@@ -7181,6 +7329,8 @@
 +    return 0;
 +}
 +}
+diff --git a/runtime/src/native_program_stages.h b/runtime/src/native_program_stages.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_program_stages.h
 @@ -0,0 +1,10 @@
@@ -7194,6 +7344,8 @@
 +// ShaderInfo objects alive for the program's lifetime (offline cache or producer).
 +void set_program_stages(uint64_t,std::vector<const ShaderInfo*>);
 +}
+diff --git a/runtime/src/native_readonly_storage.h b/runtime/src/native_readonly_storage.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_readonly_storage.h
 @@ -0,0 +1,28 @@
@@ -7225,6 +7377,8 @@
 +    }
 +};
 +}
+diff --git a/runtime/src/native_thread_priority.h b/runtime/src/native_thread_priority.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_thread_priority.h
 @@ -0,0 +1,37 @@
@@ -7265,6 +7419,8 @@
 +#endif
 +}
 +}
+diff --git a/runtime/src/native_touch_policy.h b/runtime/src/native_touch_policy.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_touch_policy.h
 @@ -0,0 +1,17 @@
@@ -7285,6 +7441,8 @@
 + unsigned states(std::span<uint8_t> output,unsigned capacity){std::lock_guard guard(lock);if(!initialized||!capacity)return 0;if(output.size()<StateBytes)throw std::invalid_argument("native touchscreen output extent");if(sampling==UINT64_MAX)throw std::overflow_error("native touch sampling exhausted");std::memset(output.data(),0,StateBytes);const auto next=++sampling;std::memcpy(output.data(),&next,8);return 1;}
 +};
 +}
+diff --git a/runtime/src/native_yuv_layout.h b/runtime/src/native_yuv_layout.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/native_yuv_layout.h
 @@ -0,0 +1,14 @@
@@ -7302,6 +7460,8 @@
 + const std::vector<uint8_t> planes(pixels.begin()+luma,pixels.end());for(size_t n=0;n<chroma;++n){pixels[luma+2*n]=planes[n];pixels[luma+2*n+1]=planes[chroma+n];}
 +}
 +}
+diff --git a/runtime/src/nvn/native_bc3_block_view.h b/runtime/src/nvn/native_bc3_block_view.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_bc3_block_view.h
 @@ -0,0 +1,16 @@
@@ -7321,6 +7481,8 @@
 +    return texels / 4 + (texels % 4 != 0);
 +}
 +}
+diff --git a/runtime/src/nvn/native_buffer_texture_copy.h b/runtime/src/nvn/native_buffer_texture_copy.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_buffer_texture_copy.h
 @@ -0,0 +1,16 @@
@@ -7340,6 +7502,8 @@
 + const uint64_t bytes=uint64_t(uint32_t(r[3]))*uint32_t(r[4])*block.bytes;if(!bytes||bytes>256ull*1024*1024)throw std::invalid_argument("native buffer-to-texture byte extent");return bytes;
 +}
 +}
+diff --git a/runtime/src/nvn/native_compute_profile.h b/runtime/src/nvn/native_compute_profile.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_compute_profile.h
 @@ -0,0 +1,14 @@
@@ -7357,6 +7521,8 @@
 +    return bytes>0&&bytes<=limit&&offset<=pool_size&&bytes<=pool_size-offset;
 +}
 +}
+diff --git a/runtime/src/nvn/native_conditional.h b/runtime/src/nvn/native_conditional.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_conditional.h
 @@ -0,0 +1,9 @@
@@ -7369,6 +7535,8 @@
 +void native_conditional_begin(VkCommandBuffer command);
 +void native_conditional_end(VkCommandBuffer command);
 +}
+diff --git a/runtime/src/nvn/native_conditional_shader.h b/runtime/src/nvn/native_conditional_shader.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_conditional_shader.h
 @@ -0,0 +1,37 @@
@@ -7409,6 +7577,8 @@
 +    0x00000027u,0x00000026u,0x000100fdu,0x00010038u,
 +};
 +}
+diff --git a/runtime/src/nvn/native_counter_clock.h b/runtime/src/nvn/native_counter_clock.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_counter_clock.h
 @@ -0,0 +1,40 @@
@@ -7452,6 +7622,8 @@
 +}
 +inline bool native_counter_report_type(uint32_t type) { return type==0||type==1||type==16; }
 +}
+diff --git a/runtime/src/nvn/native_counter_shaders.h b/runtime/src/nvn/native_counter_shaders.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_counter_shaders.h
 @@ -0,0 +1,62 @@
@@ -7517,6 +7689,8 @@
 +    0x0003003eu,0x00000012u,0x0000001du,0x000100fdu,0x00010038u,
 +};
 +}
+diff --git a/runtime/src/nvn/native_counters.cpp b/runtime/src/nvn/native_counters.cpp
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_counters.cpp
 @@ -0,0 +1,462 @@
@@ -7982,6 +8156,8 @@
 +    counters={};
 +}
 +}
+diff --git a/runtime/src/nvn/native_counters.h b/runtime/src/nvn/native_counters.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_counters.h
 @@ -0,0 +1,21 @@
@@ -8006,6 +8182,8 @@
 +uint64_t native_counter_current_ns();
 +void native_counter_release();
 +}
+diff --git a/runtime/src/nvn/native_debug_buffer_snapshot.h b/runtime/src/nvn/native_debug_buffer_snapshot.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_debug_buffer_snapshot.h
 @@ -0,0 +1,8 @@
@@ -8017,6 +8195,8 @@
 +// Diagnostic only: copy a checked, bound GPU buffer into fence-retired readback.
 +bool debug_buffer_snapshot(VkCommandBuffer command, const VkDescriptorBufferInfo& source, uint64_t tag);
 +}
+diff --git a/runtime/src/nvn/native_device.h b/runtime/src/nvn/native_device.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_device.h
 @@ -0,0 +1,8 @@
@@ -8028,12 +8208,16 @@
 +bool initialize_native_device(uint64_t,uint32_t flags);
 +void finalize_native_device(uint64_t);
 +}
+diff --git a/runtime/src/nvn/native_graphics_buffer_profile.h b/runtime/src/nvn/native_graphics_buffer_profile.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_graphics_buffer_profile.h
 @@ -0,0 +1,3 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#pragma once
 +namespace nx::nvn {struct ShaderInfo;bool native_shader_uses_graphics_buffer_profile(const ShaderInfo*);}
+diff --git a/runtime/src/nvn/native_guest_span.h b/runtime/src/nvn/native_guest_span.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_guest_span.h
 @@ -0,0 +1,4 @@
@@ -8041,6 +8225,8 @@
 +#pragma once
 +#include <cstdint>
 +namespace nx::nvn {bool native_guest_span(uint64_t,uint64_t,uint32_t);}
+diff --git a/runtime/src/nvn/native_point_size_patch.h b/runtime/src/nvn/native_point_size_patch.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_point_size_patch.h
 @@ -0,0 +1,79 @@
@@ -8123,6 +8309,8 @@
 +    return true;
 +}
 +}
+diff --git a/runtime/src/nvn/native_raster_policy.h b/runtime/src/nvn/native_raster_policy.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_raster_policy.h
 @@ -0,0 +1,7 @@
@@ -8133,6 +8321,8 @@
 +// NVNdepthMode the game set (0 NEAR_IS_MINUS_W, NVN's default; 1 NEAR_IS_ZERO), and whether pipelines follow it
 +// (NX_IGNORE_DEPTH_MODE=1: they keep clip-space z in -1..1 whatever the mode).
 +uint32_t native_depth_mode();bool native_clip_z_minus_one_to_one();}
+diff --git a/runtime/src/nvn/native_readback_memory.h b/runtime/src/nvn/native_readback_memory.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_readback_memory.h
 @@ -0,0 +1,31 @@
@@ -8167,6 +8357,8 @@
 + return memory_type(bits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 +}
 +}
+diff --git a/runtime/src/nvn/native_recipe_save_snapshot.h b/runtime/src/nvn/native_recipe_save_snapshot.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_recipe_save_snapshot.h
 @@ -0,0 +1,21 @@
@@ -8191,6 +8383,8 @@
 +    }
 +};
 +}  // namespace nx::nvn::recipes
+diff --git a/runtime/src/nvn/native_recorded_shape.h b/runtime/src/nvn/native_recorded_shape.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_recorded_shape.h
 @@ -0,0 +1,48 @@
@@ -8242,6 +8436,8 @@
 +}
 +
 +}  // namespace nx::nvn
+diff --git a/runtime/src/nvn/native_sample_query_scope.h b/runtime/src/nvn/native_sample_query_scope.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_sample_query_scope.h
 @@ -0,0 +1,8 @@
@@ -8253,6 +8449,8 @@
 +void native_counter_before_helper_draw(VkCommandBuffer);
 +void native_counter_log_queries(uint64_t frames);
 +}
+diff --git a/runtime/src/nvn/native_sampled_profile.h b/runtime/src/nvn/native_sampled_profile.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_sampled_profile.h
 @@ -0,0 +1,37 @@
@@ -8293,6 +8491,8 @@
 +    return target==8&&width>0&&width==height&&samples<=1&&native_float_color_format(format);
 +}
 +}
+diff --git a/runtime/src/nvn/native_texture_clear.h b/runtime/src/nvn/native_texture_clear.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_texture_clear.h
 @@ -0,0 +1,15 @@
@@ -8311,6 +8511,8 @@
 + return {base_level,min_layer+uint32_t(region[2]),uint32_t(region[5])};
 +}
 +}
+diff --git a/runtime/src/nvn/native_texture_clear_view.h b/runtime/src/nvn/native_texture_clear_view.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_texture_clear_view.h
 @@ -0,0 +1,15 @@
@@ -8329,6 +8531,8 @@
 + return true;
 +}
 +}
+diff --git a/runtime/src/nvn/native_texture_format.h b/runtime/src/nvn/native_texture_format.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_texture_format.h
 @@ -0,0 +1,32 @@
@@ -8364,6 +8568,8 @@
 + return f;
 +}
 +}
+diff --git a/runtime/src/nvn/native_texture_layers.h b/runtime/src/nvn/native_texture_layers.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_texture_layers.h
 @@ -0,0 +1,7 @@
@@ -8374,6 +8580,8 @@
 +// SDK53 surface construction forces six faces for target8, independently of builder depth.
 +inline uint32_t native_texture_storage_layers(uint32_t target,uint32_t depth) {return target==8?6:depth;}
 +}
+diff --git a/runtime/src/nvn/native_texture_registration.h b/runtime/src/nvn/native_texture_registration.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_texture_registration.h
 @@ -0,0 +1,19 @@
@@ -8396,6 +8604,76 @@
 +    void register_slot(uint64_t pool, uint32_t id, const ViewInfo& view);
 +};
 +}
+diff --git a/runtime/src/nvn/native_upload_dedup_arena.h b/runtime/src/nvn/native_upload_dedup_arena.h
+new file mode 100644
+--- /dev/null
++++ b/runtime/src/nvn/native_upload_dedup_arena.h
+@@ -0,0 +1,63 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <array>
++#include <cstddef>
++#include <cstdint>
++#include <map>
++#include <memory_resource>
++#include <new>
++#include <optional>
++#include <utility>
++
++namespace nx::nvn {
++// An explicit upstream avoids an extra platform CRT default-resource dependency.
++class UploadDedupHeap final : public std::pmr::memory_resource {
++    void* do_allocate(size_t bytes, size_t alignment) override {
++        if (alignment > __STDCPP_DEFAULT_NEW_ALIGNMENT__) return ::operator new(bytes, std::align_val_t{alignment});
++        return ::operator new(bytes);
++    }
++    void do_deallocate(void* pointer, size_t, size_t alignment) override {
++        if (alignment > __STDCPP_DEFAULT_NEW_ALIGNMENT__) ::operator delete(pointer, std::align_val_t{alignment});
++        else ::operator delete(pointer);
++    }
++    bool do_is_equal(const std::pmr::memory_resource& other) const noexcept override { return this == &other; }
++};
++
++// Existing replay serialization applies. Reset destroys all map nodes and its
++// sentinel before releasing their storage. No map reference survives allocation.
++template<class Entry>
++class UploadDedupArena {
++    using Map = std::pmr::map<const uint8_t*, Entry>;
++    alignas(std::max_align_t) std::array<std::byte, 256 * 1024> initial_{};
++    UploadDedupHeap heap_;
++    std::optional<std::pmr::monotonic_buffer_resource> arena_;
++    std::pmr::memory_resource* upstream_;
++    std::pmr::memory_resource* resource_;
++    bool enabled_;
++    std::optional<Map> entries_;
++public:
++    using iterator = typename Map::iterator;
++    explicit UploadDedupArena(bool enabled, std::pmr::memory_resource* upstream = nullptr)
++        : arena_(std::in_place, initial_.data(), initial_.size(), upstream ? upstream : &heap_),
++          upstream_(upstream ? upstream : &heap_),
++          resource_(enabled ? static_cast<std::pmr::memory_resource*>(&*arena_) : upstream_),
++          enabled_(enabled), entries_(std::in_place, typename Map::allocator_type{resource_}) {}
++    iterator begin() { return entries_->begin(); }
++    iterator end() { return entries_->end(); }
++    auto size() const { return entries_->size(); }
++    iterator find(const uint8_t* key) { return entries_->find(key); }
++    iterator lower_bound(const uint8_t* key) { return entries_->lower_bound(key); }
++    Entry& operator[](const uint8_t* key) { return (*entries_)[key]; }
++    iterator erase(iterator position) { return entries_->erase(position); }
++    void clear() {
++        if (!enabled_) { entries_->clear(); return; }
++        entries_.reset();
++        // Reconstruct as well as release: release() need not rewind a caller's
++        // initial buffer on every library implementation.
++        arena_.reset();
++        arena_.emplace(initial_.data(), initial_.size(), upstream_);
++        resource_ = &*arena_;
++        entries_.emplace(typename Map::allocator_type{resource_});
++    }
++};
++}  // namespace nx::nvn
+diff --git a/runtime/src/nvn/native_volume_profile.h b/runtime/src/nvn/native_volume_profile.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/native_volume_profile.h
 @@ -0,0 +1,22 @@
@@ -8421,6 +8699,7 @@
 +    return !write.level&&!write.x&&!write.y&&!write.z&&write.width==image.width&&write.height==image.height&&write.depth==image.depth&&write.bytes==plane*image.depth*4;
 +}
 +}
+diff --git a/runtime/src/nvn/nvn.h b/runtime/src/nvn/nvn.h
 --- a/runtime/src/nvn/nvn.h
 +++ b/runtime/src/nvn/nvn.h
 @@ -9,6 +9,7 @@
@@ -8495,6 +8774,7 @@
  std::shared_ptr<CmdList> command_list(uint64_t handle);  // a recorded handle's commands (nvn_cmd.cpp)
  std::string explain_handle(uint64_t handle);             // why a handle has no list (NX_CMD_DROPS=1: what dropped it)
  void command_memory_released(uint64_t gpu, uint64_t size);  // a pool finalized: the lists recorded in it go
+diff --git a/runtime/src/nvn/nvn_binds.cpp b/runtime/src/nvn/nvn_binds.cpp
 --- a/runtime/src/nvn/nvn_binds.cpp
 +++ b/runtime/src/nvn/nvn_binds.cpp
 @@ -15,6 +15,8 @@
@@ -8548,6 +8828,7 @@
  }
  
  // BindImage(cmd, stage, index, NVNimageHandle), BindImages[Deferred](cmd, stage, first, count, const NVNimageHandle*)
+diff --git a/runtime/src/nvn/nvn_clears.cpp b/runtime/src/nvn/nvn_clears.cpp
 --- a/runtime/src/nvn/nvn_clears.cpp
 +++ b/runtime/src/nvn/nvn_clears.cpp
 @@ -1,3 +1,4 @@
@@ -8629,6 +8910,7 @@
      p_vkCmdClearAttachments(cb, 1, &a, 1, &r);
      pass_mark_written(color ? 1u << c.n : 1u << 8);  // a later draw sampling it needs a fresh pass
  }
+diff --git a/runtime/src/nvn/nvn_cmd.cpp b/runtime/src/nvn/nvn_cmd.cpp
 --- a/runtime/src/nvn/nvn_cmd.cpp
 +++ b/runtime/src/nvn/nvn_cmd.cpp
 @@ -1,3 +1,4 @@
@@ -8951,6 +9233,7 @@
 +NX_HLE("nvnCommandBufferGetMemoryCallbackData",nx::nvn::GetMemoryCallbackData);
 +
 +NX_HLE("nvnCommandBufferSetShaderScratchMemory",nx::nvn::SetShaderScratchMemory);
+diff --git a/runtime/src/nvn/nvn_copy.cpp b/runtime/src/nvn/nvn_copy.cpp
 --- a/runtime/src/nvn/nvn_copy.cpp
 +++ b/runtime/src/nvn/nvn_copy.cpp
 @@ -7,24 +7,92 @@
@@ -9130,6 +9413,7 @@
 +NX_HLE("nvnCommandBufferCopyBufferToTexture",CopyBufferToTexture);
  
  }  // namespace nx::nvn
+diff --git a/runtime/src/nvn/nvn_debug.cpp b/runtime/src/nvn/nvn_debug.cpp
 --- a/runtime/src/nvn/nvn_debug.cpp
 +++ b/runtime/src/nvn/nvn_debug.cpp
 @@ -1,3 +1,4 @@
@@ -9375,6 +9659,7 @@
      g_zero_stats.clear();
  }
  
+diff --git a/runtime/src/nvn/nvn_dedup.cpp b/runtime/src/nvn/nvn_dedup.cpp
 --- a/runtime/src/nvn/nvn_dedup.cpp
 +++ b/runtime/src/nvn/nvn_dedup.cpp
 @@ -1,3 +1,4 @@
@@ -9382,7 +9667,30 @@
  // Per-submit upload reuse (docs/nvn/DEBUG.md #30). A draw's buffers are copied from guest memory into the upload
  // ring when it is replayed; the same camera block, scene constants and vertex buffers were copied again for every
  // draw that bound them (~130 KB per draw, 50-70 MB per frame). Within one submit guest memory only changes through
-@@ -39,6 +40,7 @@
+@@ -8,9 +9,9 @@
+ #include <cstdint>
+ #include <cstdlib>
+ #include <cstring>
+-#include <map>
+ 
+ #include "nvn_draw_state.h"
++#include "native_upload_dedup_arena.h"
+ 
+ namespace nx::nvn::replay {
+ 
+@@ -21,7 +22,10 @@
+     Upload upload;
+ };
+ // By host address; several sizes of one address are rare, so the latest one is kept.
+-std::map<const uint8_t*, Entry> g_copies;
++UploadDedupArena<Entry> g_copies{[] {
++    const char* value = std::getenv("NX_UPLOAD_DEDUP_ARENA");
++    return !value || std::strcmp(value, "0") != 0;
++}()};
+ uint64_t g_saved = 0, g_copied = 0;
+ 
+ // In front of the map (a tree walk per bound buffer of every draw, and most are hits): a slot per address hash with a
+@@ -39,6 +43,7 @@
  }  // namespace
  
  Upload dedup_upload(const uint8_t* p, uint64_t size, uint64_t padded, uint64_t align) {
@@ -9390,6 +9698,7 @@
      if (!p || !size) {
          Upload u = upload_alloc(padded, align);
          std::memset(u.ptr, 0, padded);
+diff --git a/runtime/src/nvn/nvn_device.cpp b/runtime/src/nvn/nvn_device.cpp
 --- a/runtime/src/nvn/nvn_device.cpp
 +++ b/runtime/src/nvn/nvn_device.cpp
 @@ -1,129 +1,134 @@
@@ -9655,6 +9964,7 @@
 -}  // namespace nx
 +NX_HLE("nvnDeviceSetWindowOriginMode",nx::nvn::DeviceSetOrigin);
 +NX_HLE("nvnDeviceGetWindowOriginMode",nx::nvn::DeviceGetOrigin);
+diff --git a/runtime/src/nvn/nvn_draw.cpp b/runtime/src/nvn/nvn_draw.cpp
 --- a/runtime/src/nvn/nvn_draw.cpp
 +++ b/runtime/src/nvn/nvn_draw.cpp
 @@ -1,3 +1,6 @@
@@ -9897,6 +10207,7 @@
      g_pass_ends[reason & 7]++, trace_pass("end: reason", g_pass, uint32_t(reason), 0);
      if (g_render_pass)
          p_vkCmdEndRenderPass(cb);
+diff --git a/runtime/src/nvn/nvn_draw_state.cpp b/runtime/src/nvn/nvn_draw_state.cpp
 --- a/runtime/src/nvn/nvn_draw_state.cpp
 +++ b/runtime/src/nvn/nvn_draw_state.cpp
 @@ -6,12 +6,15 @@
@@ -9955,6 +10266,7 @@
          case Cmd::DrawArrays: draw_call(cb, targets, c.n, false, c); break;
          case Cmd::DrawElements: draw_call(cb, targets, c.n, true, c); break;
          default: raster_command(c); break;
+diff --git a/runtime/src/nvn/nvn_draw_state.h b/runtime/src/nvn/nvn_draw_state.h
 --- a/runtime/src/nvn/nvn_draw_state.h
 +++ b/runtime/src/nvn/nvn_draw_state.h
 @@ -31,8 +31,11 @@
@@ -9969,6 +10281,7 @@
      // Command-buffer rasterizer state (nvn_raster.cpp), per face 0 front, 1 back. NVN's defaults: masks 0xFF, ref 0.
      uint8_t stencil_ref[2] = {0, 0}, stencil_compare_mask[2] = {0xFF, 0xFF}, stencil_write_mask[2] = {0xFF, 0xFF};
      float bias_factor = 0, bias_units = 0, bias_clamp = 0;  // SetPolygonOffsetClamp
+diff --git a/runtime/src/nvn/nvn_draw_trace.cpp b/runtime/src/nvn/nvn_draw_trace.cpp
 --- a/runtime/src/nvn/nvn_draw_trace.cpp
 +++ b/runtime/src/nvn/nvn_draw_trace.cpp
 @@ -91,7 +91,9 @@
@@ -10087,6 +10400,7 @@
          log("  viewport %d %d %d %d (%d) scissor %d %d %d %d (%d) cull %u front %u depth %g..%g test %u", g_state.viewport[0],
              g_state.viewport[1], g_state.viewport[2], g_state.viewport[3], g_state.has_viewport, g_state.scissor[0],
              g_state.scissor[1], g_state.scissor[2], g_state.scissor[3], g_state.has_scissor, g_state.polygon.cull,
+diff --git a/runtime/src/nvn/nvn_dummy.cpp b/runtime/src/nvn/nvn_dummy.cpp
 --- a/runtime/src/nvn/nvn_dummy.cpp
 +++ b/runtime/src/nvn/nvn_dummy.cpp
 @@ -1,7 +1,11 @@
@@ -10215,6 +10529,7 @@
 +}
 +
  }  // namespace nx::nvn
+diff --git a/runtime/src/nvn/nvn_format.cpp b/runtime/src/nvn/nvn_format.cpp
 --- a/runtime/src/nvn/nvn_format.cpp
 +++ b/runtime/src/nvn/nvn_format.cpp
 @@ -43,7 +43,7 @@
@@ -10226,6 +10541,7 @@
      /* 0x3d */ {VK_FORMAT_A2B10G10R10_UNORM_PACK32, 0}, {VK_FORMAT_A2B10G10R10_UINT_PACK32, 0},
      // 0x3f R11G11B10F becomes RGBA16F: Maxwell stores negative/NaN results of blending as 0 in this unsigned float
      // format, Metal writes Inf/NaN, and the NaN spread through every later pass (bloom, the dialog's frosted-glass
+diff --git a/runtime/src/nvn/nvn_frames.cpp b/runtime/src/nvn/nvn_frames.cpp
 --- a/runtime/src/nvn/nvn_frames.cpp
 +++ b/runtime/src/nvn/nvn_frames.cpp
 @@ -1,3 +1,4 @@
@@ -10387,6 +10703,7 @@
  std::shared_ptr<GpuImage> reuse_image(const Texture& t) {
      // Off unless NX_IMAGE_REUSE=1: a CPU-written texture placed over a freed render target's memory would sample the
      // old render, and swizzle/alpha_from_r come from the old texture (review of #34). The pass breaks it avoided came
+diff --git a/runtime/src/nvn/nvn_gpu_busy.cpp b/runtime/src/nvn/nvn_gpu_busy.cpp
 --- a/runtime/src/nvn/nvn_gpu_busy.cpp
 +++ b/runtime/src/nvn/nvn_gpu_busy.cpp
 @@ -1,3 +1,5 @@
@@ -10633,6 +10950,7 @@
      g_busy_ns = g_span_ns = 0, g_parts = g_not_ready = 0;
  }
  
+diff --git a/runtime/src/nvn/nvn_image.cpp b/runtime/src/nvn/nvn_image.cpp
 --- a/runtime/src/nvn/nvn_image.cpp
 +++ b/runtime/src/nvn/nvn_image.cpp
 @@ -1,3 +1,4 @@
@@ -10788,6 +11106,7 @@
      // A sampled depth/stencil view reads depth.
      vi.subresourceRange = {aspect == 3 ? VkImageAspectFlags(VK_IMAGE_ASPECT_DEPTH_BIT) : img->aspect, 0, img->levels, 0,
                             img->layers};
+diff --git a/runtime/src/nvn/nvn_incarnation.cpp b/runtime/src/nvn/nvn_incarnation.cpp
 --- a/runtime/src/nvn/nvn_incarnation.cpp
 +++ b/runtime/src/nvn/nvn_incarnation.cpp
 @@ -28,6 +28,11 @@
@@ -10854,6 +11173,7 @@
  
  bool resolve_cache_on() {
      static const bool on = [] {
+diff --git a/runtime/src/nvn/nvn_mask_clear.cpp b/runtime/src/nvn/nvn_mask_clear.cpp
 --- a/runtime/src/nvn/nvn_mask_clear.cpp
 +++ b/runtime/src/nvn/nvn_mask_clear.cpp
 @@ -1,3 +1,4 @@
@@ -10869,6 +11189,7 @@
      p_vkCmdDraw(cb, 3, 1, 0, 0);
      return true;
  }
+diff --git a/runtime/src/nvn/nvn_objects.cpp b/runtime/src/nvn/nvn_objects.cpp
 --- a/runtime/src/nvn/nvn_objects.cpp
 +++ b/runtime/src/nvn/nvn_objects.cpp
 @@ -1,18 +1,34 @@
@@ -10906,7 +11227,7 @@
  
  std::recursive_mutex& gpu_lock();  // nvn_vk.cpp
  
-@@ -23,9 +39,41 @@
+@@ -23,9 +39,42 @@
  std::mutex g_gpu_lock;
  std::map<uint64_t, MemoryPool*> g_pools_by_gpu;  // gpu start -> pool
  std::atomic<uint64_t> g_pools_generation{1};     // bumped with every change of the map, under g_gpu_lock
@@ -10917,7 +11238,8 @@
 +        const auto* flag = std::getenv("NX_POOL_LINEAGE");
 +        if (!flag || std::strcmp(flag, "1")) return diagnostic::PoolLineageOptions{};
 +        return diagnostic::pool_lineage_options(flag, std::getenv("NX_POOL_LINEAGE_FIRST_FRAME"),
-+                                                std::getenv("NX_POOL_LINEAGE_LAST_FRAME"));
++                                                std::getenv("NX_POOL_LINEAGE_LAST_FRAME"),
++                                                std::getenv("NX_POOL_LINEAGE_REGISTERS"));
 +    }();
 +    return value;
 +}
@@ -10948,7 +11270,7 @@
  
  uint64_t gpu_alloc(uint64_t size) {
      std::lock_guard lk(g_gpu_lock);
-@@ -67,6 +115,7 @@
+@@ -67,6 +116,7 @@
  }
  
  ViewInfo read_view(CPU& c, uint64_t view) {
@@ -10956,7 +11278,7 @@
      ViewInfo v;
      if (!view) return v;
      uint64_t tmp = scratch(c, 16);
-@@ -99,6 +148,7 @@
+@@ -99,6 +149,7 @@
  
  // NVNboolean nvnMemoryPoolInitialize(NVNmemoryPool*, const NVNmemoryPoolBuilder*)
  void MemoryPoolInitialize(CPU& c) {
@@ -10964,7 +11286,7 @@
      uint64_t guest = c.x[0], builder = c.x[1];
      auto& p = make<MemoryPool>(guest);
      p.memory = driver(c, "nvnMemoryPoolBuilderGetMemory", {builder});
-@@ -109,20 +159,63 @@
+@@ -109,20 +160,63 @@
      if (g_trace)
          log("nvn: pool %llx: memory %llx size %llx flags %x gpu %llx", (unsigned long long)guest,
              (unsigned long long)p.memory, (unsigned long long)p.size, p.flags, (unsigned long long)p.gpu);
@@ -11030,7 +11352,7 @@
  }
  
  void MemoryPoolGetBufferAddress(CPU& c) {  // NVNbufferAddress (const NVNmemoryPool*)
-@@ -163,14 +256,15 @@
+@@ -163,14 +257,15 @@
              v->mappings[voff] = {phys, poff, size};
          else
              v->mappings.erase(voff);  // unmap
@@ -11052,7 +11374,7 @@
  }
  
  // Guest memory is host memory, so buffers need nothing. Textures are copies on the GPU (untiled at first use): a
-@@ -178,6 +272,11 @@
+@@ -178,6 +273,11 @@
  // (NVNmemoryPool*, ptrdiff_t offset, size_t size)
  void MemoryPoolFlushMappedRange(CPU& c) {
      uint64_t pool = c.x[0], off = c.x[1], size = c.x[2];
@@ -11064,7 +11386,7 @@
      std::lock_guard lk(objects_lock());
      auto it = pool_textures().find(pool);
      if (it == pool_textures().end()) return;
-@@ -206,6 +305,8 @@
+@@ -206,6 +306,8 @@
      uint64_t memory = 0, gpu = 0;
  };
  
@@ -11073,7 +11395,34 @@
  void BufferInitialize(CPU& c) {  // NVNboolean (NVNbuffer*, const NVNbufferBuilder*)
      uint64_t guest = c.x[0], builder = c.x[1];
      auto& b = make<Buffer>(guest);
-@@ -272,6 +373,7 @@
+@@ -222,8 +324,24 @@
+ void BufferFinalize(CPU& c) { destroy(c.x[0]); }
+ 
+ void BufferMap(CPU& c) {
+-    auto* b = get<Buffer>(c.x[0]);
+-    c.x[0] = b ? b->memory : 0;
++    const auto guest = c.x[0];
++    auto* b = get<Buffer>(guest);
++    const auto memory = b ? b->memory : 0;
++    uint64_t frame = 0;
++    if (const auto sequence = pool_lineage_event(true, frame)) {
++        const auto pool = b ? b->pool : 0, offset = b ? b->offset : 0;
++        const auto bytes = b ? b->size : 0, gpu = b ? b->gpu : 0;
++        // Observe the input registers before x0 becomes the original API result.
++        // These are values only; do not follow caller pointers or lease objects.
++        const auto registers = diagnostic::pool_lineage_registers(pool_lineage_options(), c.x);
++        log("pool-lineage: v=1 seq=%llu action=map-buffer buffer=%llx pool=%llx offset=%llx bytes=%llx cpu=%llx gpu=%llx found=%u frame=%llu host=%llu tid=%lld lr=%llx regs=%s",
++            (unsigned long long)sequence, (unsigned long long)guest, (unsigned long long)pool,
++            (unsigned long long)offset, (unsigned long long)bytes, (unsigned long long)memory,
++            (unsigned long long)gpu, unsigned(b != nullptr), (unsigned long long)frame,
++            (unsigned long long)plat::monotonic_ns(), (long long)plat::current_thread_id(),
++            (unsigned long long)c.x[30], registers.data());
++    }
++    c.x[0] = memory;
+ }
+ 
+ void BufferGetAddress(CPU& c) {
+@@ -272,6 +390,7 @@
  void TextureInitialize(CPU& c) {  // NVNboolean (NVNtexture*, const NVNtextureBuilder*)
      auto guard = reinit_guard();
      uint64_t guest = c.x[0], builder = c.x[1];
@@ -11081,7 +11430,7 @@
      // Re-initializing a texture a pool slot still names (without finalizing it: Wonder reuses the structs of its
      // dynamic-resolution targets every frame) keeps the old one for those slots, as the pool's descriptor copy
      // would: replayed later, a frame's draws sampled another frame's AO and ambient-light buffers (dark course
-@@ -305,18 +407,40 @@
+@@ -305,18 +424,40 @@
          std::lock_guard lk(objects_lock());
          pool_textures()[t.pool].insert(guest);
      }
@@ -11134,7 +11483,7 @@
      }
  
      // Swizzle: single-channel textures are often read through it (a font atlas in R8 read as alpha = R); without
-@@ -336,6 +460,11 @@
+@@ -336,6 +477,11 @@
              "swizzle %u%u%u%u", (unsigned long long)guest, (unsigned long long)t.memory, t.target, t.format, t.width, t.height, t.depth, t.levels,
              t.samples, t.flags, (unsigned long long)t.storage_size, t.block_height_gobs, t.swizzle[0], t.swizzle[1],
              t.swizzle[2], t.swizzle[3]);
@@ -11146,7 +11495,7 @@
      if (!old) {
          std::lock_guard lk(objects_lock());
          note_replaced(guest);
-@@ -415,6 +544,11 @@
+@@ -415,6 +561,11 @@
      }
  }
  
@@ -11158,7 +11507,7 @@
  void TextureFinalize(CPU& c) {
      auto guard = reinit_guard();
      uint64_t guest = c.x[0];
-@@ -445,6 +579,11 @@
+@@ -445,6 +596,11 @@
  // copy when the slot's texture is gone or no longer has the registered target and format.
  constexpr uint64_t kSnapshot = 0xE000000000000000ull;
  uint64_t g_next_snapshot = 0;
@@ -11170,7 +11519,7 @@
  std::unordered_map<uint64_t, std::vector<uint64_t>> g_snapshots_of;  // guest texture -> its snapshots
  std::deque<std::pair<uint64_t, uint64_t>> g_snapshot_images;         // (snapshot, since ns) that own an image
  
-@@ -452,9 +591,16 @@
+@@ -452,9 +608,16 @@
      auto o = objects().find(guest);
      auto* t = o == objects().end() ? nullptr : dynamic_cast<Texture*>(o->second.get());
      if (!t) return 0;
@@ -11187,7 +11536,7 @@
      copy->width = t->width, copy->height = t->height, copy->depth = t->depth, copy->stride = t->stride;
      copy->pool = t->pool, copy->offset = t->offset, copy->storage_size = t->storage_size;
      copy->memory = t->memory, copy->gpu = t->gpu, copy->block_height_gobs = t->block_height_gobs;
-@@ -462,6 +608,8 @@
+@@ -462,6 +625,8 @@
      copy->pool_swizzle = t->pool_swizzle.load();
      uint64_t key = kSnapshot | ++g_next_snapshot;
      objects()[key] = std::move(copy);
@@ -11196,7 +11545,7 @@
      auto& keys = g_snapshots_of[guest];
      if (keys.size() >= 16)  // re-registered every frame: forget the copies already dropped
          keys.erase(std::remove_if(keys.begin(), keys.end(), [](uint64_t k) { return !objects().count(k); }), keys.end());
-@@ -470,7 +618,26 @@
+@@ -470,7 +635,26 @@
  }
  
  void drop_snapshot(uint64_t key) {  // under objects_lock
@@ -11223,7 +11572,7 @@
      if (o == objects().end()) return;
      note_replaced(key);  // a replay in flight may resolve the slot to this copy (pool_entry_at, DEBUG.md #63)
      defer_object(std::move(o->second));
-@@ -505,7 +672,9 @@
+@@ -505,7 +689,9 @@
  
  // A kept texture no slot names any more is destroyed (under objects_lock).
  void release_kept(uint64_t key) {
@@ -11234,7 +11583,7 @@
      auto reg = g_registered.find(key);
      if (reg != g_registered.end())
          for (auto [pool, id] : reg->second) {
-@@ -548,6 +717,7 @@
+@@ -548,6 +734,7 @@
      if (n == 1 || n == 100 || n == 1000)
          log("nvn: WriteTexels #%llu into %llx (%ux%u fmt %#x): %ux%ux%u at %u,%u,%u level %u", (unsigned long long)n,
              (unsigned long long)c.x[0], t->width, t->height, t->format, w.w, w.h, w.d, w.x, w.y, w.z, w.level);
@@ -11242,7 +11591,7 @@
      t->writes.push_back(std::move(w));
      t->has_writes.store(true, std::memory_order_release);
  }
-@@ -556,24 +726,110 @@
+@@ -556,24 +743,110 @@
  void TextureWriteTexelsStrided(CPU& c) { write_texels(c, c.x[4], c.x[5]); }
  void TextureFlushTexels(CPU&) {}  // coherent: the writes above are what matters
  
@@ -11370,7 +11719,7 @@
  #undef NX_TEXTURE_GETTER
  
  // ---- samplers and descriptor pools ----------------------------------------------------------------------------
-@@ -587,44 +843,35 @@
+@@ -587,44 +860,35 @@
      c.x[0] = 1;
  }
  
@@ -11440,7 +11789,7 @@
  }
  
  void DescriptorPoolGetMemoryPool(CPU& c) {
-@@ -650,8 +897,65 @@
+@@ -650,8 +914,65 @@
  
  }  // namespace
  
@@ -11506,7 +11855,7 @@
  NX_HLE("nvnMemoryPoolMap", MemoryPoolMap);
  NX_HLE("nvnMemoryPoolMapVirtual", MemoryPoolMapVirtual);
  NX_HLE("nvnTextureWriteTexels", TextureWriteTexels);
-@@ -663,6 +967,7 @@
+@@ -663,6 +984,7 @@
  NX_HLE("nvnMemoryPoolFlushMappedRange", MemoryPoolFlushMappedRange);
  NX_HLE("nvnMemoryPoolInvalidateMappedRange", MemoryPoolInvalidateMappedRange);
  NX_HLE("nvnBufferInitialize", BufferInitialize);
@@ -11514,7 +11863,7 @@
  NX_HLE("nvnBufferFinalize", BufferFinalize);
  NX_HLE("nvnBufferMap", BufferMap);
  NX_HLE("nvnBufferGetAddress", BufferGetAddress);
-@@ -685,6 +990,7 @@
+@@ -685,6 +1007,7 @@
  NX_HLE("nvnTextureGetMemoryPool", TextureGetMemoryPool);
  NX_HLE("nvnTextureGetMemoryOffset", TextureGetMemoryOffset);
  NX_HLE("nvnTextureGetStorageSize", TextureGetStorageSize);
@@ -11522,7 +11871,7 @@
  NX_HLE("nvnTextureGetDepthStencilMode", TextureGetDepthStencilMode);
  NX_HLE("nvnSamplerPoolInitialize", DescriptorPoolInitialize);
  NX_HLE("nvnTexturePoolInitialize", DescriptorPoolInitialize);
-@@ -702,4 +1008,17 @@
+@@ -702,4 +1025,17 @@
  NX_HLE("nvnDeviceGetTexelFetchHandle", DeviceGetTexelFetchHandle);
  NX_HLE("nvnDeviceGetImageHandle", DeviceGetImageHandle);
  
@@ -11540,6 +11889,7 @@
  }  // namespace nx::nvn
 +
 +NX_HLE("nvnTextureCompare",nx::nvn::TextureCompare);
+diff --git a/runtime/src/nvn/nvn_pipeline.cpp b/runtime/src/nvn/nvn_pipeline.cpp
 --- a/runtime/src/nvn/nvn_pipeline.cpp
 +++ b/runtime/src/nvn/nvn_pipeline.cpp
 @@ -1,3 +1,4 @@
@@ -12028,6 +12378,7 @@
      }
      return p;
  }
+diff --git a/runtime/src/nvn/nvn_pipeline.h b/runtime/src/nvn/nvn_pipeline.h
 --- a/runtime/src/nvn/nvn_pipeline.h
 +++ b/runtime/src/nvn/nvn_pipeline.h
 @@ -61,6 +61,7 @@
@@ -12063,6 +12414,7 @@
 +                                  VkImageLayout* layout);
  
  }  // namespace nx::nvn
+diff --git a/runtime/src/nvn/nvn_pipeline_cache.cpp b/runtime/src/nvn/nvn_pipeline_cache.cpp
 --- a/runtime/src/nvn/nvn_pipeline_cache.cpp
 +++ b/runtime/src/nvn/nvn_pipeline_cache.cpp
 @@ -1,14 +1,20 @@
@@ -12185,6 +12537,8 @@
  }
  
  }  // namespace nx::nvn
+diff --git a/runtime/src/nvn/nvn_pipeline_prewarm.cpp b/runtime/src/nvn/nvn_pipeline_prewarm.cpp
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/nvn_pipeline_prewarm.cpp
 @@ -0,0 +1,627 @@
@@ -12815,6 +13169,8 @@
 +}
 +
 +}  // namespace nx::nvn::recipes
+diff --git a/runtime/src/nvn/nvn_pipeline_recipes.cpp b/runtime/src/nvn/nvn_pipeline_recipes.cpp
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/nvn_pipeline_recipes.cpp
 @@ -0,0 +1,363 @@
@@ -13181,6 +13537,8 @@
 +}
 +
 +}  // namespace nx::nvn::recipes
+diff --git a/runtime/src/nvn/nvn_pipeline_recipes.h b/runtime/src/nvn/nvn_pipeline_recipes.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/nvn_pipeline_recipes.h
 @@ -0,0 +1,133 @@
@@ -13317,6 +13675,7 @@
 +
 +}  // namespace recipes
 +}  // namespace nx::nvn
+diff --git a/runtime/src/nvn/nvn_program.cpp b/runtime/src/nvn/nvn_program.cpp
 --- a/runtime/src/nvn/nvn_program.cpp
 +++ b/runtime/src/nvn/nvn_program.cpp
 @@ -10,6 +10,7 @@
@@ -13385,6 +13744,7 @@
  
  const std::vector<const ShaderInfo*>* program_shaders(uint64_t program) {
      auto* p = get<Program>(program);
+diff --git a/runtime/src/nvn/nvn_queue.cpp b/runtime/src/nvn/nvn_queue.cpp
 --- a/runtime/src/nvn/nvn_queue.cpp
 +++ b/runtime/src/nvn/nvn_queue.cpp
 @@ -1,3 +1,5 @@
@@ -13863,6 +14223,7 @@
  NX_HLE("nvnWindowInitialize", WindowInitialize);
  NX_HLE("nvnWindowFinalize", WindowFinalize);
  NX_HLE("nvnWindowAcquireTexture", WindowAcquireTexture);
+diff --git a/runtime/src/nvn/nvn_raster.cpp b/runtime/src/nvn/nvn_raster.cpp
 --- a/runtime/src/nvn/nvn_raster.cpp
 +++ b/runtime/src/nvn/nvn_raster.cpp
 @@ -11,7 +11,11 @@
@@ -13927,6 +14288,7 @@
          case Cmd::SetDepthClamp: s.depth_clamp = c.n != 0; return true;
          default: return false;
      }
+diff --git a/runtime/src/nvn/nvn_replay.cpp b/runtime/src/nvn/nvn_replay.cpp
 --- a/runtime/src/nvn/nvn_replay.cpp
 +++ b/runtime/src/nvn/nvn_replay.cpp
 @@ -1,12 +1,15 @@
@@ -14040,6 +14402,7 @@
                  break;
              default:
                  draw_command(cb, c, list, st);
+diff --git a/runtime/src/nvn/nvn_sampler_objects.cpp b/runtime/src/nvn/nvn_sampler_objects.cpp
 --- a/runtime/src/nvn/nvn_sampler_objects.cpp
 +++ b/runtime/src/nvn/nvn_sampler_objects.cpp
 @@ -7,9 +7,15 @@
@@ -14121,6 +14484,7 @@
  NX_HLE("nvnSamplerPoolRegisterSampler", RegisterSampler);
  NX_HLE("nvnSamplerPoolRegisterSamplerBuilder", RegisterSamplerBuilder);
  NX_HLE("nvnSamplerGetMinMagFilter", GetMinMagFilter);
+diff --git a/runtime/src/nvn/nvn_sets.cpp b/runtime/src/nvn/nvn_sets.cpp
 --- a/runtime/src/nvn/nvn_sets.cpp
 +++ b/runtime/src/nvn/nvn_sets.cpp
 @@ -1,3 +1,5 @@
@@ -14438,6 +14802,7 @@
          if (texture ? !sampled_ready(texture) : !dummy_ready(b->image)) out |= kNeedBreak;
          if (!texture) continue;
          GpuImage* img = image_of(texture);
+diff --git a/runtime/src/nvn/nvn_shaders.cpp b/runtime/src/nvn/nvn_shaders.cpp
 --- a/runtime/src/nvn/nvn_shaders.cpp
 +++ b/runtime/src/nvn/nvn_shaders.cpp
 @@ -11,6 +11,12 @@
@@ -14542,6 +14907,7 @@
      if (g_trace)
          log("nvn: shader %s %s: %zu bindings, %zu inputs, %zu outputs, c[1] %u bytes", hash.c_str(),
              stage_name(info->stage), info->refl.bindings.size(), info->refl.inputs.size(), info->refl.outputs.size(),
+diff --git a/runtime/src/nvn/nvn_state.cpp b/runtime/src/nvn/nvn_state.cpp
 --- a/runtime/src/nvn/nvn_state.cpp
 +++ b/runtime/src/nvn/nvn_state.cpp
 @@ -20,6 +20,9 @@
@@ -14597,6 +14963,7 @@
  NX_HLE("nvnDeviceGetTimestampInNanoseconds", GetTimestampInNanoseconds);
  NX_HLE("nvnDeviceGetCurrentTimestampInNanoseconds", GetCurrentTimestampInNanoseconds);  // every replayed command is serialized for now
  
+diff --git a/runtime/src/nvn/nvn_texture_layout.cpp b/runtime/src/nvn/nvn_texture_layout.cpp
 --- a/runtime/src/nvn/nvn_texture_layout.cpp
 +++ b/runtime/src/nvn/nvn_texture_layout.cpp
 @@ -2,8 +2,7 @@
@@ -14678,6 +15045,7 @@
          uint64_t pitch = (uint64_t(cols) * f.bytes + 63) & ~63ull;
          uint64_t tall = (uint64_t(rows) + 8 * bh - 1) / (8 * bh) * (8 * bh);
          layer += pitch * tall;
+diff --git a/runtime/src/nvn/nvn_trace.cpp b/runtime/src/nvn/nvn_trace.cpp
 --- a/runtime/src/nvn/nvn_trace.cpp
 +++ b/runtime/src/nvn/nvn_trace.cpp
 @@ -18,6 +18,7 @@
@@ -14705,6 +15073,7 @@
      std::string name = guest_str(c.x[1]);
      if (g_trace) log("nvnDeviceGetProcAddress(%llx, %s)", (unsigned long long)c.x[0], name.c_str());
      c.x[0] = proc_address(c, name);
+diff --git a/runtime/src/nvn/nvn_upload.cpp b/runtime/src/nvn/nvn_upload.cpp
 --- a/runtime/src/nvn/nvn_upload.cpp
 +++ b/runtime/src/nvn/nvn_upload.cpp
 @@ -1,7 +1,10 @@
@@ -14831,6 +15200,7 @@
      }
      // Widened, every offset in the linear buffer doubles (level offsets are multiples of the 4-byte texel).
      uint64_t scale = widen ? 2 : 1;
+diff --git a/runtime/src/nvn/nvn_vk.cpp b/runtime/src/nvn/nvn_vk.cpp
 --- a/runtime/src/nvn/nvn_vk.cpp
 +++ b/runtime/src/nvn/nvn_vk.cpp
 @@ -1,3 +1,5 @@
@@ -15157,6 +15527,7 @@
 +NX_HLE("nvnTextureReadTexelsStrided",TextureReadTexelsStridedNative);
 +
  }  // namespace nx::nvn
+diff --git a/runtime/src/nvn/nvn_vk.h b/runtime/src/nvn/nvn_vk.h
 --- a/runtime/src/nvn/nvn_vk.h
 +++ b/runtime/src/nvn/nvn_vk.h
 @@ -27,6 +27,7 @@
@@ -15200,6 +15571,7 @@
  // NX_GPU_PROFILE=3: the GPU's busy time per frame without waits, from per-part timestamps (nvn_gpu_busy.cpp).
  // The janitor thread (nvn_janitor.cpp, NX_JANITOR): pool resets of retired slots, off the replay thread.
  bool janitor_on();
+diff --git a/runtime/src/nvn/nvn_worker.cpp b/runtime/src/nvn/nvn_worker.cpp
 --- a/runtime/src/nvn/nvn_worker.cpp
 +++ b/runtime/src/nvn/nvn_worker.cpp
 @@ -1,3 +1,6 @@
@@ -15225,6 +15597,7 @@
          }
          serial = ++g_enqueued;
          g_jobs.push_back({serial, std::move(job)});
+diff --git a/runtime/src/nvn/nvn_written.cpp b/runtime/src/nvn/nvn_written.cpp
 --- a/runtime/src/nvn/nvn_written.cpp
 +++ b/runtime/src/nvn/nvn_written.cpp
 @@ -131,7 +131,13 @@
@@ -15242,6 +15615,8 @@
      r.up = alloc_anchored(r.cap, off);
      std::memcpy(r.up.ptr, lo, n);
      std::memset(r.up.ptr + n, 0, r.cap - n);
+diff --git a/runtime/src/nvn/sdk53_packaged_texture.h b/runtime/src/nvn/sdk53_packaged_texture.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/sdk53_packaged_texture.h
 @@ -0,0 +1,16 @@
@@ -15261,6 +15636,8 @@
 +    return 1u<<y;
 +}
 +}
+diff --git a/runtime/src/nvn/sdk53_sampler_descriptor.h b/runtime/src/nvn/sdk53_sampler_descriptor.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/sdk53_sampler_descriptor.h
 @@ -0,0 +1,22 @@
@@ -15286,6 +15663,8 @@
 +    return true;
 +}
 +}
+diff --git a/runtime/src/nvn/sdk53_sampler_values.h b/runtime/src/nvn/sdk53_sampler_values.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/sdk53_sampler_values.h
 @@ -0,0 +1,24 @@
@@ -15313,6 +15692,8 @@
 + return s;
 +}
 +}
+diff --git a/runtime/src/nvn/sdk53_texture_builder.h b/runtime/src/nvn/sdk53_texture_builder.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/sdk53_texture_builder.h
 @@ -0,0 +1,12 @@
@@ -15328,6 +15709,8 @@
 + return (builder[0x58]&1)!=0;
 +}
 +}
+diff --git a/runtime/src/nvn/sdk53_texture_descriptor.h b/runtime/src/nvn/sdk53_texture_descriptor.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/sdk53_texture_descriptor.h
 @@ -0,0 +1,12 @@
@@ -15343,6 +15726,8 @@
 + return std::memcmp(a.data()+8,b.data()+8,0x4c)==0&&((a[0x54]^b[0x54])&3)==0;
 +}
 +}
+diff --git a/runtime/src/nvn/sdk53_texture_wire.h b/runtime/src/nvn/sdk53_texture_wire.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/sdk53_texture_wire.h
 @@ -0,0 +1,16 @@
@@ -15362,6 +15747,8 @@
 + for(size_t i=0;i<value.fields.size();++i)put(0x20+i*4,value.fields[i]);put(0x54,value.aspect);return bytes;
 +}
 +}
+diff --git a/runtime/src/nvn/sdk53_window_builder.h b/runtime/src/nvn/sdk53_window_builder.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/nvn/sdk53_window_builder.h
 @@ -0,0 +1,14 @@
@@ -15379,6 +15766,7 @@
 + return {u64(0),u64(0x10),u64(0x18),int32_t(u32(8)),int32_t(u32(0x20)+1u)};
 +}
 +}
+diff --git a/runtime/src/platform.h b/runtime/src/platform.h
 --- a/runtime/src/platform.h
 +++ b/runtime/src/platform.h
 @@ -21,6 +21,7 @@
@@ -15389,6 +15777,7 @@
  int64_t current_thread_id();  // the host OS thread id
  // Samples the given threads (thread CPU time, 1 kHz) for `seconds`: host pc, a few host frames and the guest lr
  // (read through guest_lr[k], the thread's x30). Writes one line per sample to `path`:
+diff --git a/runtime/src/platform_android.cpp b/runtime/src/platform_android.cpp
 --- a/runtime/src/platform_android.cpp
 +++ b/runtime/src/platform_android.cpp
 @@ -133,6 +133,7 @@
@@ -15399,6 +15788,7 @@
  int64_t current_thread_id() { return gettid(); }
  
  // ---- sampling profiler (simpleperf is not always allowed on retail phones) ------------------------------------
+diff --git a/runtime/src/platform_linux.cpp b/runtime/src/platform_linux.cpp
 --- a/runtime/src/platform_linux.cpp
 +++ b/runtime/src/platform_linux.cpp
 @@ -168,6 +168,7 @@
@@ -15409,6 +15799,7 @@
  int64_t current_thread_id() { return int64_t(syscall(SYS_gettid)); }
  
  bool profile(const int64_t*, const uint64_t* const*, size_t, int, const std::string&) { return false; }  // use perf
+diff --git a/runtime/src/platform_mac.cpp b/runtime/src/platform_mac.cpp
 --- a/runtime/src/platform_mac.cpp
 +++ b/runtime/src/platform_mac.cpp
 @@ -177,6 +177,7 @@
@@ -15419,6 +15810,7 @@
  int64_t current_thread_id() {
      uint64_t tid = 0;
      pthread_threadid_np(nullptr, &tid);
+diff --git a/runtime/src/platform_win.cpp b/runtime/src/platform_win.cpp
 --- a/runtime/src/platform_win.cpp
 +++ b/runtime/src/platform_win.cpp
 @@ -1,3 +1,6 @@
@@ -15938,6 +16330,8 @@
      if (const char* t = std::getenv("NX_THROW_TRACE"); t && *t == '1') AddVectoredExceptionHandler(1, throw_tracer);
      if (const char* w = std::getenv("NX_WATCH")) {
          g_watch = std::strtoull(w, nullptr, 16);
+diff --git a/runtime/src/romfs_image.h b/runtime/src/romfs_image.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/romfs_image.h
 @@ -0,0 +1,101 @@
@@ -16042,6 +16436,7 @@
 + }
 +};
 +}
+diff --git a/runtime/src/svc_account.cpp b/runtime/src/svc_account.cpp
 --- a/runtime/src/svc_account.cpp
 +++ b/runtime/src/svc_account.cpp
 @@ -5,7 +5,7 @@
@@ -16064,6 +16459,7 @@
      return s;
  }
  
+diff --git a/runtime/src/svc_am.cpp b/runtime/src/svc_am.cpp
 --- a/runtime/src/svc_am.cpp
 +++ b/runtime/src/svc_am.cpp
 @@ -1,9 +1,18 @@
@@ -16190,6 +16586,7 @@
          };
          s.cmds[40] = [](IpcCtx& c) { c.push<uint8_t>(0); return 0u; };  // NotifyRunning
          s.cmds[50] = [](IpcCtx& c) {                                     // GetPseudoDeviceId
+diff --git a/runtime/src/svc_misc.cpp b/runtime/src/svc_misc.cpp
 --- a/runtime/src/svc_misc.cpp
 +++ b/runtime/src/svc_misc.cpp
 @@ -1,6 +1,18 @@
@@ -16520,6 +16917,8 @@
          s.cmds[1] = [](IpcCtx& c) {  // GetPerformanceMode: boost (docked), normal with NX_HANDHELD (svc_am.cpp)
              c.push<uint32_t>(std::getenv("NX_HANDHELD") ? 0 : 1);
              return 0u;
+diff --git a/runtime/src/verified_services/event.cpp b/runtime/src/verified_services/event.cpp
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/verified_services/event.cpp
 @@ -0,0 +1,170 @@
@@ -16693,6 +17092,8 @@
 +  return state_->Complete(EventWaitStatus::Cancelled, -1);
 +}
 +} // namespace native
+diff --git a/runtime/src/verified_services/event.h b/runtime/src/verified_services/event.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/verified_services/event.h
 @@ -0,0 +1,76 @@
@@ -16772,6 +17173,8 @@
 +  std::shared_ptr<detail::EventWaitState> state_;
 +};
 +} // namespace native
+diff --git a/runtime/src/verified_services/native_handles.h b/runtime/src/verified_services/native_handles.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/verified_services/native_handles.h
 @@ -0,0 +1,13 @@
@@ -16788,6 +17191,8 @@
 +              SessionHandleEnd <= EventHandleBegin &&
 +              EventHandleEnd < CurrentThreadHandle);
 +} // namespace native
+diff --git a/runtime/src/verified_services/services/addon_content.cpp b/runtime/src/verified_services/services/addon_content.cpp
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/verified_services/services/addon_content.cpp
 @@ -0,0 +1,152 @@
@@ -16943,6 +17348,8 @@
 +    auto endpoint=std::make_unique<AddOnContentEndpoint>(context);++context->constructions_;return endpoint;
 +}
 +} // namespace native_services
+diff --git a/runtime/src/verified_services/services/addon_content.h b/runtime/src/verified_services/services/addon_content.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/verified_services/services/addon_content.h
 @@ -0,0 +1,80 @@
@@ -17026,6 +17433,8 @@
 +};
 +std::unique_ptr<Endpoint> CreateAddOnContentService(std::shared_ptr<AddOnContentContext>);
 +} // namespace native_services
+diff --git a/runtime/src/verified_services/services/parental_control.cpp b/runtime/src/verified_services/services/parental_control.cpp
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/verified_services/services/parental_control.cpp
 @@ -0,0 +1,164 @@
@@ -17193,6 +17602,8 @@
 +    auto manager=std::make_unique<ParentalControlManagerEndpoint>(context);++context->manager_constructions_;return manager;
 +}
 +} // namespace native_services
+diff --git a/runtime/src/verified_services/services/parental_control.h b/runtime/src/verified_services/services/parental_control.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/verified_services/services/parental_control.h
 @@ -0,0 +1,106 @@
@@ -17302,6 +17713,8 @@
 +};
 +std::unique_ptr<Endpoint> CreateParentalControlManager(std::shared_ptr<ParentalControlContext>);
 +} // namespace native_services
+diff --git a/runtime/src/verified_services/services/router.h b/runtime/src/verified_services/services/router.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/verified_services/services/router.h
 @@ -0,0 +1,110 @@
@@ -17415,6 +17828,8 @@
 +    std::function<std::unique_ptr<native::ScopedEventExport>(const native::EventRef&,uint64_t)> event_exporter_;
 +};
 +} // namespace native_services
+diff --git a/runtime/src/vi_state.cpp b/runtime/src/vi_state.cpp
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/vi_state.cpp
 @@ -0,0 +1,25 @@
@@ -17443,6 +17858,8 @@
 +void close_layer(uint64_t key){std::lock_guard guard(lock);require(layer&&key==layer);layer=0;mode=0;}
 +void close_display(uint64_t key){std::lock_guard guard(lock);require(display&&key==display&&!layer);display=0;window=nullptr;generation=0;}
 +}
+diff --git a/runtime/src/vi_state.h b/runtime/src/vi_state.h
+new file mode 100644
 --- /dev/null
 +++ b/runtime/src/vi_state.h
 @@ -0,0 +1,9 @@
@@ -17455,6 +17872,8 @@
 +uint32_t scaling_mode();bool display_valid(uint64_t display);
 +void close_layer(uint64_t layer);void close_display(uint64_t display);
 +}
+diff --git a/tests/focus_policy_test.cpp b/tests/focus_policy_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/focus_policy_test.cpp
 @@ -0,0 +1,117 @@
@@ -17575,6 +17994,8 @@
 + rejected=false;try{c.commit_reply();}catch(const std::exception&){rejected=true;}check(rejected);
 + std::cout<<"focus_policy checks="<<n<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/ipc_domain_test.cpp b/tests/ipc_domain_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/ipc_domain_test.cpp
 @@ -0,0 +1,37 @@
@@ -17615,6 +18036,8 @@
 + domain(10,200);before=words;rejected=false;try{request();}catch(const std::exception&){rejected=true;}check(rejected&&words==before);
 + std::cout<<"ipc_domain checks="<<checks<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/loader_symbol_test.cpp b/tests/loader_symbol_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/loader_symbol_test.cpp
 @@ -0,0 +1,65 @@
@@ -17683,6 +18106,8 @@
 + bool rejected=false;try{nx::call(c,slot(152));}catch(const FatalExit&){rejected=true;}check(rejected);
 + std::cout<<"loader_symbols checks="<<checks<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/module_init_test.cpp b/tests/module_init_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/module_init_test.cpp
 @@ -0,0 +1,19 @@
@@ -17705,6 +18130,8 @@
 + reset();for(size_t i=144;i<bytes.size();i+=16)put(i,5,8);rejects();reset();entry.fn=nullptr;rejects();entry.fn=compiled;
 + std::cout<<"module_init checks="<<checks<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/native_audio_sdk_layout_test.cpp b/tests/native_audio_sdk_layout_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_audio_sdk_layout_test.cpp
 @@ -0,0 +1,5 @@
@@ -17713,6 +18140,8 @@
 +#include <array>
 +#include <iostream>
 +int main(){unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("audio layout assertion");};check(nx::sdk53_audio_u32_getter_offset(0xb9400000u|((0x238u/4)<<10),0xd65f03c0)==0x238);check(nx::sdk53_audio_system_offset(0x91000013u|(0x60u<<10))==0x60);bool bad=false;try{nx::sdk53_audio_u32_getter_offset(0xf9400000,0xd65f03c0);}catch(const std::invalid_argument&){bad=true;}check(bad);std::array<uint8_t,0x130> bytes{};uint32_t magic=0xcafebabe;uint16_t size=0x130,id=15;std::memcpy(bytes.data(),&magic,4);std::memcpy(bytes.data()+4,&size,2);std::memcpy(bytes.data()+6,&id,2);bytes[0x10]=1;auto command=nx::sdk53_audio_command(bytes);check(command.size==0x130&&command.id==15&&command.enabled);bytes[4]=0;bytes[5]=0;bad=false;try{nx::sdk53_audio_command(bytes);}catch(const std::invalid_argument&){bad=true;}check(bad);std::cout<<"audio layout checks="<<checks<<" PASS\n";}
+diff --git a/tests/native_avc_bridge_probe.h b/tests/native_avc_bridge_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_avc_bridge_probe.h
 @@ -0,0 +1,47 @@
@@ -17763,6 +18192,8 @@
 +}
 +}
 +#endif
+diff --git a/tests/native_avc_sps_test.cpp b/tests/native_avc_sps_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_avc_sps_test.cpp
 @@ -0,0 +1,10 @@
@@ -17776,6 +18207,8 @@
 + for(size_t n=0;n<main.size();++n){bool rejected=false;try{native_video::avc_info(std::span(main).first(n));}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
 + for(auto bad:{sps(100,32,38),sps(77,257,1)}){bool rejected=false;try{native_video::avc_info(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
 + auto wrong=main;wrong[0]=0x68;bool rejected=false;try{native_video::avc_info(wrong);}catch(const std::invalid_argument&){rejected=true;}check(rejected);std::vector<uint8_t> annex{0,0,0,1};annex.insert(annex.end(),main.begin(),main.end());annex.insert(annex.end(),{0,0,1,0x68,0xaa});auto nals=native_video::avc_nals(annex);check(nals.size()==2&&nals[0].size()==main.size()&&nals[1][0]==0x68);check(native_video::avc_nals(std::span<const uint8_t>{}).empty());std::printf("AVC SPS metadata checks=%u PASS\n",checks);}
+diff --git a/tests/native_bc3_block_probe.h b/tests/native_bc3_block_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_bc3_block_probe.h
 @@ -0,0 +1,104 @@
@@ -17883,6 +18316,8 @@
 +    native_bc3_snapshot_probe(key, check);
 +    destroy(key);
 +}
+diff --git a/tests/native_bc3_sample_probe.h b/tests/native_bc3_sample_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_bc3_sample_probe.h
 @@ -0,0 +1,43 @@
@@ -17929,6 +18364,8 @@
 + float actual[8];std::memcpy(actual,output.ptr,sizeof actual);const float expected[8]={1,0,0,1,1,1,0,1};for(unsigned n=0;n<8;++n)check(std::isfinite(actual[n])&&std::fabs(actual[n]-expected[n])<1e-6f);
 + vk::p_vkDestroyPipeline(device,pipeline,nullptr);vk::p_vkDestroyShaderModule(device,module,nullptr);vk::p_vkDestroyPipelineLayout(device,pipeline_layout,nullptr);vk::p_vkDestroyDescriptorSetLayout(device,layout,nullptr);vk::p_vkDestroySampler(device,sampler,nullptr);
 +}
+diff --git a/tests/native_bc3_snapshot_probe.h b/tests/native_bc3_snapshot_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_bc3_snapshot_probe.h
 @@ -0,0 +1,45 @@
@@ -17977,6 +18414,176 @@
 +            check(exact); // Native BC3 conversion preserves the selected face, mip and alpha.
 +        }
 +}
+diff --git a/tests/native_buffer_lineage_probe.h b/tests/native_buffer_lineage_probe.h
+new file mode 100644
+--- /dev/null
++++ b/tests/native_buffer_lineage_probe.h
+@@ -0,0 +1,90 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "kernel.h"
++#include "nvn/nvn.h"
++#include <array>
++#include <cstring>
++#include <iostream>
++#include <stdexcept>
++#include <string_view>
++
++namespace authored_buffer_lineage {
++inline void pool_getter(nx::CPU& cpu) { cpu.x[0] = nx::ld<uint64_t>(cpu.x[0]); }
++inline void offset_getter(nx::CPU& cpu) { cpu.x[0] = nx::ld<uint64_t>(cpu.x[0] + 8); }
++inline void size_getter(nx::CPU& cpu) { cpu.x[0] = nx::ld<uint64_t>(cpu.x[0] + 16); }
++inline void bootstrap(nx::CPU& cpu) {
++    const std::string_view name(reinterpret_cast<const char*>(cpu.x[0]));
++    cpu.x[0] = name == "nvnBufferBuilderGetMemoryPool" ? nx::kModuleBase + 4 :
++               name == "nvnBufferBuilderGetMemoryOffset" ? nx::kModuleBase + 8 :
++               name == "nvnBufferBuilderGetSize" ? nx::kModuleBase + 12 : 0;
++}
++inline int run(const char* directory, bool cap) {
++    using namespace nx;
++    using namespace nx::nvn;
++    unsigned checks = 0, maps = 0;
++    auto check = [&](bool value) { ++checks; if (!value) throw std::runtime_error("buffer lineage assertion " + std::to_string(checks)); };
++    std::cout << std::unitbuf;
++    std::cout.exceptions(std::ios::badbit | std::ios::failbit);
++    memory_init();
++    create_main_thread(0x4000);
++    static const FuncEntry functions[]{{0, bootstrap}, {4, pool_getter}, {8, offset_getter}, {12, size_getter}};
++    static const Symbol symbols[]{{"nvnBootstrapLoader", 0, 4, 2, 1, 0}};
++    static const ModuleInfo module{
++        "buffer_lineage_fixture", kModuleBase, 0, 64, 64, 0, 64, 0, 64, 4096 - 64,
++        functions, std::size(functions), nullptr, 0, symbols, std::size(symbols), nullptr, 0, nullptr, 0};
++    const ModuleInfo* modules[]{&module};
++    load_modules(modules, 1, directory); // Only the authored64byte image and four authored functions.
++    auto allocation = [&](uint64_t bytes) {
++        const auto address = kernel_alloc(bytes, 16);
++        vm_set(address, bytes, kMemHeap, 3);
++        return address;
++    };
++    const auto pool_a = allocation(256), pool_b = allocation(256), buffer = allocation(256), builder = allocation(32);
++    const auto memory_a = allocation(1024), memory_b = allocation(1024);
++    for (const auto key : {pool_a, pool_b}) {
++        auto& pool = make<MemoryPool>(key);
++        pool.size = 1024;
++        pool.memory = key == pool_a ? memory_a : memory_b;
++        pool.gpu = key == pool_a ? 0x120000000ull : 0x240000000ull;
++    }
++    const auto initialize = hle_lookup("nvnBufferInitialize"), map = hle_lookup("nvnBufferMap"), finalize = hle_lookup("nvnBufferFinalize");
++    check(initialize && map && finalize);
++    auto create = [&](uint64_t pool, uint64_t offset, uint64_t size) {
++        st<uint64_t>(builder, pool); st<uint64_t>(builder + 8, offset); st<uint64_t>(builder + 16, size);
++        CPU cpu{}; cpu.x[0] = buffer; cpu.x[1] = builder;
++        cpu.x[31] = current_cpu().x[31];
++        initialize(cpu); check(cpu.x[0] == 1);
++    };
++    auto observe = [&](const char* label, uint64_t frame, bool found, uint64_t pool, uint64_t offset,
++                       uint64_t bytes, uint64_t cpu_address, uint64_t gpu_address, bool emit) {
++        CPU cpu; std::memset(&cpu, 0, sizeof cpu);
++        for (unsigned i = 0; i < 32; ++i) cpu.x[i] = 0xa100000000000000ull + i;
++        for (unsigned i = 0; i < 32; ++i) { cpu.v[i].u64[0] = 0x1234000000000000ull + i; cpu.v[i].u64[1] = ~cpu.v[i].u64[0]; }
++        cpu.x[0] = buffer; cpu.nf = cpu.cf = 1; cpu.fpcr = 0x1234; cpu.fpsr = 0x5678;
++        cpu.tpidr = 0xdead1234; cpu.tpidrro = 0xabcd9876; cpu.excl_addr = 0x98760; cpu.excl_val = 0x12345;
++        CPU expected; std::memcpy(&expected, &cpu, sizeof cpu); expected.x[0] = cpu_address;
++        g_frame = frame;
++        map(cpu); ++maps;
++        check(!std::memcmp(&cpu, &expected, sizeof cpu));
++        check(g_frame.load() == frame);
++        if (emit) std::cout << "buffer-lineage-expected: label=" << label << " frame=" << frame << " found=" << unsigned(found)
++            << std::hex << " buffer=" << buffer << " pool=" << pool << " offset=" << offset << " bytes=" << bytes
++            << " cpu=" << cpu_address << " gpu=" << gpu_address << std::dec << '\n';
++    };
++    create(pool_a, 64, 128);
++    observe("before", 99, true, pool_a, 64, 128, memory_a + 64, 0x120000040ull, true);
++    observe("old", 100, true, pool_a, 64, 128, memory_a + 64, 0x120000040ull, true);
++    CPU retire{}; retire.x[0] = buffer; finalize(retire);
++    observe("missing", 101, false, 0, 0, 0, 0, 0, true);
++    create(pool_b, 192, 96);
++    observe("new", 102, true, pool_b, 192, 96, memory_b + 192, 0x2400000c0ull, true);
++    observe("after", 103, true, pool_b, 192, 96, memory_b + 192, 0x2400000c0ull, true);
++    if (cap) for (unsigned i = 0; i < 8194; ++i)
++        observe("cap", 100, true, pool_b, 192, 96, memory_b + 192, 0x2400000c0ull, false);
++    retire.x[0] = buffer; finalize(retire);
++    destroy(pool_a); destroy(pool_b);
++    std::cout << "native_buffer_lineage checks=" << checks << " maps=" << maps
++              << " title_modules=0 authored_modules=1 GPU_initialized=0 PASS\n";
++    return 0;
++}
++}
+diff --git a/tests/native_buffer_lineage_stream.py b/tests/native_buffer_lineage_stream.py
+new file mode 100644
+--- /dev/null
++++ b/tests/native_buffer_lineage_stream.py
+@@ -0,0 +1,68 @@
++"""Exercise the actual BufferMap path, including retirement/recreation and bounded logs."""
++import os
++import re
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "NORMAL_PRIORITY_CLASS", 0)
++cases = {
++    "off": {},
++    "range": {"NX_POOL_LINEAGE": "1", "NX_POOL_LINEAGE_FIRST_FRAME": "100", "NX_POOL_LINEAGE_LAST_FRAME": "102"},
++    "registers": {"NX_POOL_LINEAGE": "1", "NX_POOL_LINEAGE_FIRST_FRAME": "100", "NX_POOL_LINEAGE_LAST_FRAME": "102", "NX_POOL_LINEAGE_REGISTERS": "0,19,20,31"},
++    "invalid-registers": {"NX_POOL_LINEAGE": "1", "NX_POOL_LINEAGE_FIRST_FRAME": "100", "NX_POOL_LINEAGE_LAST_FRAME": "102", "NX_POOL_LINEAGE_REGISTERS": "19,19"},
++    "partial-window": {"NX_POOL_LINEAGE": "1", "NX_POOL_LINEAGE_FIRST_FRAME": "100"},
++    "state-only": {"NX_POOL_LINEAGE": "1", "NX_POOL_LINEAGE_REGISTERS": "19"},
++    "cap": {"NX_POOL_LINEAGE": "1", "NX_POOL_LINEAGE_FIRST_FRAME": "100", "NX_POOL_LINEAGE_LAST_FRAME": "102", "NX_POOL_LINEAGE_REGISTERS": "0,19,20,31"},
++}
++hex_fields = {"buffer", "pool", "offset", "bytes", "cpu", "gpu", "lr"}
++total_maps = 0
++for mode, options in cases.items():
++    with tempfile.TemporaryDirectory(prefix="native-buffer-lineage-") as temporary:
++        root = Path(temporary).resolve()
++        assert root.parent == Path(tempfile.gettempdir()).resolve() and root.name.startswith("native-buffer-lineage-")
++        (root / "buffer_lineage_fixture.bin").write_bytes(bytes(64))
++        log = root / "native.log"
++        env = {key: value for key, value in os.environ.items() if not key.startswith("NX_")}
++        env.update(NX_LOG=str(log), NX_LOG_STDERR="0", NX_HEADLESS="1", NX_POWER_PROFILE="0", NX_DATA_ROOT=str(root / "data"))
++        env.update(options)
++        result = subprocess.run([sys.argv[1], "--buffer-lineage", str(root), "cap" if mode == "cap" else "plain"],
++                                env=env, capture_output=True, text=True, timeout=30, check=True, creationflags=flags)
++        summary = re.search(r"native_buffer_lineage checks=(\d+) maps=(\d+) title_modules=0 authored_modules=1 GPU_initialized=0 PASS", result.stdout)
++        assert summary, result.stdout
++        maps = int(summary[2])
++        assert maps == (8199 if mode == "cap" else 5)
++        total_maps += maps
++        expected = []
++        for line in result.stdout.splitlines():
++            if line.startswith("buffer-lineage-expected: "):
++                fields = dict(word.split("=", 1) for word in line.split()[1:])
++                expected.append({key: int(value, 16 if key in hex_fields else 10) if key != "label" else value for key, value in fields.items()})
++        assert len(expected) == 5
++        rows, truncations = [], []
++        for line in log.read_text().splitlines():
++            if line.startswith("pool-lineage: v=1 truncated "):
++                truncations.append(line)
++            elif line.startswith("pool-lineage: v=1 "):
++                fields = dict(word.split("=", 1) for word in line.split()[1:])
++                assert fields.pop("action") == "map-buffer"
++                registers = fields.pop("regs")
++                row = {key: int(value, 16 if key in hex_fields else 10) for key, value in fields.items()}
++                row["registers"] = {} if registers == "-" else {int(index): int(value, 16) for index, value in (item.split(":") for item in registers.split(","))}
++                rows.append(row)
++        enabled = mode in {"range", "registers", "cap"}
++        assert len(rows) == (8192 if mode == "cap" else 3 if enabled else 0), (mode, len(rows))
++        assert len(truncations) == (1 if mode == "cap" else 0)
++        for index, row in enumerate(rows):
++            wanted = expected[index + 1] if index < 3 else expected[-1]
++            for key in ["buffer", "pool", "offset", "bytes", "cpu", "gpu", "found"]:
++                assert row[key] == wanted[key], (mode, index, key, row, wanted)
++            assert row["seq"] == index + 1 and row["frame"] == (100 if index >= 3 else wanted["frame"])
++            assert row["host"] > 0 and row["lr"] == 0xa10000000000001e
++            if mode in {"registers", "cap"}:
++                assert row["registers"] == {0: wanted["buffer"], 19: 0xa100000000000013, 20: 0xa100000000000014, 31: 0xa10000000000001f}
++            else:
++                assert row["registers"] == {}
++        print(f"native buffer lineage mode={mode} maps={maps} records={len(rows)} truncations={len(truncations)} PASS")
++print(f"native buffer lineage stream cases={len(cases)} original_maps={total_maps} CPU_state_unchanged=1 PASS")
+diff --git a/tests/native_buffer_texture_probe.h b/tests/native_buffer_texture_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_buffer_texture_probe.h
 @@ -0,0 +1,32 @@
@@ -18012,6 +18619,8 @@
 +  call.x[0]=command_key;api("nvnCommandBufferFinalize");call.x[0]=pool_key;api("nvnMemoryPoolFinalize");destroy(texture_key);
 + }
 +}
+diff --git a/tests/native_call_phase_probe.h b/tests/native_call_phase_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_call_phase_probe.h
 @@ -0,0 +1,107 @@
@@ -18122,6 +18731,8 @@
 +    return 0;
 +}
 +}  // namespace authored_call_phase
+diff --git a/tests/native_callback_state_probe.h b/tests/native_callback_state_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_callback_state_probe.h
 @@ -0,0 +1,119 @@
@@ -18244,6 +18855,8 @@
 +    return 0;
 +}
 +} // namespace authored_callback_state
+diff --git a/tests/native_callback_state_stream.py b/tests/native_callback_state_stream.py
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_callback_state_stream.py
 @@ -0,0 +1,68 @@
@@ -18315,6 +18928,8 @@
 +        assert decode(worker["after"]) == (initial + 47, second ^ 1)
 +        print(result.stdout.strip())
 +print("native state stream exact bytes/nesting/exception/range/revocation/cap/thread/config controls passed")
+diff --git a/tests/native_capture_window_test.cpp b/tests/native_capture_window_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_capture_window_test.cpp
 @@ -0,0 +1,41 @@
@@ -18359,6 +18974,8 @@
 +    }
 +    std::printf("capture_window checks=%u inclusive/default/partial/malformed/overflow/span PASS\n", checks);
 +}
+diff --git a/tests/native_command_tail_probe.h b/tests/native_command_tail_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_command_tail_probe.h
 @@ -0,0 +1,29 @@
@@ -18391,6 +19008,8 @@
 + c.x[0]=command;call("nvnCommandBufferFinalize");
 + c.x[0]=pool_key;call("nvnMemoryPoolFinalize");
 +}
+diff --git a/tests/native_compute_profile_test.cpp b/tests/native_compute_profile_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_compute_profile_test.cpp
 @@ -0,0 +1,5 @@
@@ -18399,6 +19018,8 @@
 +#include <iostream>
 +#include <stdexcept>
 +int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("compute profile assertion");};check(native_compute_group_valid({32,1,1},{32,1,1},0));check(!native_compute_group_valid({32,1,1},{64,1,1},0));check(!native_compute_group_valid({0,1,1},{0,1,1},0));check(!native_compute_group_valid({1024,2,1},{1024,2,1},0));check(!native_compute_group_valid({1,1,65},{1,1,65},0));check(!native_compute_group_valid({32,1,1},{32,1,1},3));check(!native_compute_group_valid({32,1,1},{32,1,1},65540));check(native_compute_buffer_extent_valid(16,32,48,64));check(!native_compute_buffer_extent_valid(49,1,48,64));check(!native_compute_buffer_extent_valid(16,33,48,64));check(!native_compute_buffer_extent_valid(0,0,48,64));check(!native_compute_buffer_extent_valid(0,65,128,64));check(!native_compute_buffer_extent_valid(UINT64_MAX,2,UINT64_MAX,64));std::cout<<"compute profile checks="<<checks<<" PASS\n";}
+diff --git a/tests/native_conditional_probe.h b/tests/native_conditional_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_conditional_probe.h
 @@ -0,0 +1,239 @@
@@ -18641,6 +19262,8 @@
 +    api.x[0] = command_key; call("nvnCommandBufferFinalize");
 +    api.x[0] = pool_key; call("nvnMemoryPoolFinalize"); destroy(texture_key); destroy(depth_key);
 +}
+diff --git a/tests/native_control_metadata_test.cpp b/tests/native_control_metadata_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_control_metadata_test.cpp
 @@ -0,0 +1,6 @@
@@ -18650,6 +19273,8 @@
 +#include <cstring>
 +#include <iostream>
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("control metadata assertion");};std::vector<uint8_t> bytes(0x4000);std::memcpy(bytes.data()+0x3060,"7.8.9",5);auto version=nx::native_display_version(bytes);check(std::string(version.data())=="7.8.9"&&version[15]==0);for(unsigned mode=0;mode<4;++mode){auto bad=bytes;if(mode==0)bad.resize(0x306f);if(mode==1)bad[0x3060]=0;if(mode==2)std::fill(bad.begin()+0x3060,bad.begin()+0x3070,'X');if(mode==3)bad[0x3061]=0x80;bool rejected=false;try{nx::native_display_version(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"control metadata checks="<<checks<<" PASS\n";}
+diff --git a/tests/native_counter_clock_test.cpp b/tests/native_counter_clock_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_counter_clock_test.cpp
 @@ -0,0 +1,63 @@
@@ -18716,6 +19341,8 @@
 +for(auto ratio:{nx::nvn::NativeCounterRatio{0,1},nx::nvn::NativeCounterRatio{1,0},nx::nvn::NativeCounterRatio{UINT64_MAX,1}}){bool rejected=false;try{(void)nx::nvn::native_gpu_counter_ticks(1,ratio);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
 +check(nx::nvn::native_counter_timestamp_ns(384)==625);check(nx::nvn::native_counter_timestamp_ns(0)==0);check(nx::nvn::native_counter_report_type(0)&&nx::nvn::native_counter_report_type(1)&&nx::nvn::native_counter_report_type(16));check(!nx::nvn::native_counter_report_type(2)&&!nx::nvn::native_counter_report_type(17));
 +std::cout<<"native counter clock checks="<<count<<" PASS\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
+diff --git a/tests/native_counter_probe.h b/tests/native_counter_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_counter_probe.h
 @@ -0,0 +1,268 @@
@@ -18987,6 +19614,8 @@
 +    }
 +    api.x[0]=command_key;call("nvnCommandBufferFinalize");api.x[0]=pool_key;call("nvnMemoryPoolFinalize");destroy(texture_key);
 +}
+diff --git a/tests/native_counter_sync_probe.h b/tests/native_counter_sync_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_counter_sync_probe.h
 @@ -0,0 +1,35 @@
@@ -19025,6 +19654,8 @@
 +    finalize_native_device(device);check(!native_device_alive(device));
 +    std::cout<<"native counter sync checks="<<checks<<" guest_modules=0 PASS\n";return 0;
 +}
+diff --git a/tests/native_depth_contract_probe.h b/tests/native_depth_contract_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_depth_contract_probe.h
 @@ -0,0 +1,80 @@
@@ -19108,6 +19739,8 @@
 +    replay::g_state={};api.x[0]=command_key;call("nvnCommandBufferFinalize");api.x[0]=pool_key;call("nvnMemoryPoolFinalize");destroy(colour_key);destroy(depth_key);
 +    check(all);
 +}
+diff --git a/tests/native_depth_test_shader.h b/tests/native_depth_test_shader.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_depth_test_shader.h
 @@ -0,0 +1,60 @@
@@ -19171,9 +19804,11 @@
 +0x0003003e,0x0000002a,0x00000028,0x000100fd,
 +0x00010038
 +};
+diff --git a/tests/native_device_fixture.cpp b/tests/native_device_fixture.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_device_fixture.cpp
-@@ -0,0 +1,906 @@
+@@ -0,0 +1,1098 @@
 +#include "native_thread_policy_probe.h"
 +#include "native_measurement.h"
 +#include <source_location>
@@ -19256,7 +19891,199 @@
 +#include "native_callback_state_probe.h"
 +#include "native_record_capacity_probe.h"
 +#include "native_texture_property_probe.h"
++#include "native_buffer_lineage_probe.h"
++
++namespace {
++int upload_dedup_probe() {
++    using namespace nx::nvn;
++    using namespace nx::nvn::replay;
++#if defined(_WIN32)
++    _putenv_s("NX_ASYNC_GPU", "2");
++    _putenv_s("NX_PIPELINED", "0");
++#endif
++    unsigned checks = 0;
++    auto require = [&](bool value, const std::source_location site = std::source_location::current()) {
++        ++checks;
++        if (!value) throw std::runtime_error("upload dedup assertion " + std::to_string(checks) + " at " + std::to_string(site.line()));
++    };
++    const bool disabled = std::getenv("NX_NO_DEDUP") != nullptr;
++    nx::memory_init();
++    const auto device = nx::kernel_alloc(7008, 16);
++    nx::vm_set(device, 7008, nx::kMemHeap, 3);
++    require(initialize_native_device(device, 0));
++    std::lock_guard lock(gpu_lock());
++    require(frame_begin(true) != VK_NULL_HANDLE);
++    // Close initialization's empty stats window before the authored sequence.
++    dedup_log();
++    dedup_reset();
++    std::vector<uint8_t> source(131072);
++    auto* p = source.data();
++    for (unsigned i = 0; i < 64; ++i) p[i] = uint8_t(i * 17 + 31);
++    auto slot = [](const uint8_t* value) { const auto n = uintptr_t(value); return (n >> 4 ^ n >> 14) & 1023; };
++    uint8_t* q = nullptr;
++    for (size_t i = 512; i + 64 <= source.size(); i += 16) {
++        if (slot(p + i) == slot(p)) { q = p + i; break; }
++    }
++    require(q != nullptr);
++    std::memcpy(q, p, 64);
++    uint64_t checksum = 0;
++    auto upload = [&](const uint8_t* bytes, uint64_t size, uint64_t padded, uint64_t align) {
++        auto result = dedup_upload(bytes, size, padded, align);
++        require(result.buffer != VK_NULL_HANDLE && result.ptr != nullptr);
++        require(result.offset % align == 0);
++        bool exact = true;
++        for (uint64_t i = 0; i < padded; ++i) {
++            exact &= result.ptr[i] == (bytes && i < size ? bytes[i] : 0);
++            checksum += result.ptr[i];
++        }
++        require(exact);
++        return result;
++    };
++    upload(nullptr, 0, 32, 16);
++    upload(p, 0, 16, 16);
++    upload_alloc(1, 2);  // Force the following align=1 upload to an odd offset.
++    auto first = upload(p, 32, 48, 1);
++    require((first.offset & 1) == 1);
++    const auto original = p[0];
++    p[0] ^= 0xff;
++    require(first.ptr[0] == original);  // The upload owns a copy, not guest storage.
++    p[0] = original;
++    auto front = upload(p, 32, 48, 1);
++    require((front.offset == first.offset) == !disabled);
++    auto collision = upload(q, 32, 48, 1);
++    require(collision.offset != front.offset);
++    auto fallback = upload(p, 32, 48, 1);
++    require((fallback.offset == first.offset) == !disabled);
++    auto aligned = upload(p, 32, 48, 2);
++    require(aligned.offset != fallback.offset);
++    auto resized = upload(p, 31, 48, 2);
++    require(resized.offset != aligned.offset);
++    auto padded = upload(p, 31, 64, 2);
++    require(padded.offset != resized.offset);
++    p[4] ^= 0x5a;
++    dedup_invalidate(p + 4, 1);
++    auto invalidated = upload(p, 31, 64, 2);
++    require(invalidated.offset != padded.offset);
++    dedup_invalidate(p + 256, 1);
++    auto untouched = upload(p, 31, 64, 2);
++    require((untouched.offset == invalidated.offset) == !disabled);
++    dedup_reset();
++    auto reset = upload(p, 31, 64, 2);
++    require(reset.offset != untouched.offset);
++    dedup_log();
++    frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, false);
++    require(gpu_wait(gpu_serial()));
++    std::cout << "native upload dedup checks=" << checks << " calls=12 checksum=" << checksum
++              << " disabled=" << disabled << " guest_modules=0 PASS\n";
++    return 0;
++}
++}  // namespace
++
++namespace {
++int upload_dedup_wrap_probe() {
++    using namespace nx::nvn;
++    using namespace nx::nvn::replay;
++#if defined(_WIN32)
++    _putenv_s("NX_ASYNC_GPU", "2"); _putenv_s("NX_PIPELINED", "0");
++#endif
++    unsigned checks = 0;
++    auto require = [&](bool ok) { ++checks; if (!ok) throw std::runtime_error("dedup wrap check " + std::to_string(checks)); };
++    nx::memory_init(); const auto device = nx::kernel_alloc(7008, 16);
++    nx::vm_set(device, 7008, nx::kMemHeap, 3); require(initialize_native_device(device, 0));
++    std::lock_guard lock(gpu_lock()); require(frame_begin(true) != VK_NULL_HANDLE);
++    const auto ring = frame_ring_size(); require(ring >= 4096);
++    dedup_log(); dedup_reset();
++    std::array<uint8_t, 512> source{};
++    auto* p = source.data() + 256; auto* q = source.data() + 128;
++    std::memset(p, 0x35, 32); std::memset(q, 0x76, 32);
++    auto first = dedup_upload(p, 32, 64, 16); require(first.offset == 0);
++    auto padding_ok = [](const Upload& upload, uint8_t byte) {
++        for (unsigned i = 0; i < 64; ++i) if (upload.ptr[i] != (i < 32 ? byte : 0)) return false;
++        return true;
++    };
++    require(padding_ok(first, 0x35));
++    // The next fresh key's lower_bound hint points to p's live node. The actual
++    // allocation wraps over its own empty command stream and destroys that node.
++    upload_alloc(ring - 64 - 16, 16);
++    auto wrapped = dedup_upload(q, 32, 64, 16);
++    require(wrapped.offset == 0 && padding_ok(wrapped, 0x76));
++    auto reused = dedup_upload(q, 32, 64, 16);
++    require(reused.offset == wrapped.offset && padding_ok(reused, 0x76));
++    auto recreated = dedup_upload(p, 32, 64, 16);
++    require(recreated.offset == 64 && padding_ok(recreated, 0x35));
++    dedup_log(); frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, false);
++    require(gpu_wait(gpu_serial()));
++    std::cout << "native upload dedup wrap checks=" << checks << " calls=4 ring=" << ring << " guest_modules=0 PASS\n";
++    return 0;
++}
++
++int upload_dedup_bench() {
++    using namespace nx::nvn;
++    using namespace nx::nvn::replay;
++#if defined(_WIN32)
++    _putenv_s("NX_ASYNC_GPU", "2"); _putenv_s("NX_PIPELINED", "0");
++#endif
++    auto require = [](bool ok) { if (!ok) throw std::runtime_error("dedup benchmark control"); };
++    nx::memory_init(); const auto device = nx::kernel_alloc(7008, 16);
++    nx::vm_set(device, 7008, nx::kMemHeap, 3); require(initialize_native_device(device, 0));
++    std::lock_guard lock(gpu_lock()); require(frame_begin(true) != VK_NULL_HANDLE);
++    constexpr unsigned entries = 1536, iterations = 1024, repeats = 4;
++    require(std::getenv("NX_NO_DEDUP") == nullptr);
++    require(frame_ring_size() >= uint64_t(iterations + 4) * entries * 48 + 64);
++    std::vector<uint8_t> source(entries * 64);
++    for (unsigned i = 0; i < entries; ++i) for (unsigned b = 0; b < 32; ++b) source[i * 64 + b] = uint8_t(i * 13 + b * 7);
++    auto iteration = [&] {
++        dedup_reset(); uint64_t checksum = 0;
++        for (unsigned i = 0; i < entries; ++i) for (unsigned repeat = 0; repeat < repeats; ++repeat) {
++            auto result = dedup_upload(source.data() + i * 64, 32, 48, 16);
++            checksum += result.ptr[0];
++            if (i + 1 == entries && repeat + 1 == repeats) {
++                require(std::memcmp(result.ptr, source.data() + i * 64, 32) == 0);
++                for (unsigned b = 32; b < 48; ++b) require(result.ptr[b] == 0);
++            }
++        }
++        return checksum;
++    };
++    for (unsigned warm = 0; warm < 4; ++warm) require(iteration() == 783360);
++    uint64_t cpu_before = 0, cycles_before = 0;
++#if defined(_WIN32)
++    auto cpu_stamp = [&] {
++        FILETIME created{}, exited{}, kernel{}, user{};
++        require(GetThreadTimes(GetCurrentThread(), &created, &exited, &kernel, &user));
++        const auto ticks = [](const FILETIME& value) { return uint64_t(value.dwLowDateTime) | (uint64_t(value.dwHighDateTime) << 32); };
++        return ticks(kernel) + ticks(user);
++    };
++    cpu_before = cpu_stamp();
++    require(QueryThreadCycleTime(GetCurrentThread(), &cycles_before));
++#endif
++    const auto start = nx::plat::monotonic_ns();
++    uint64_t checksum = 0;
++    for (unsigned i = 0; i < iterations; ++i) checksum += iteration();
++    const auto elapsed = nx::plat::monotonic_ns() - start;
++    uint64_t cpu_100ns = 0, raw_cycles = 0;
++#if defined(_WIN32)
++    const auto cpu_after = cpu_stamp(); uint64_t cycles_after = 0;
++    require(QueryThreadCycleTime(GetCurrentThread(), &cycles_after));
++    require(cpu_after > cpu_before && cycles_after > cycles_before);
++    cpu_100ns = cpu_after - cpu_before; raw_cycles = cycles_after - cycles_before;
++#endif
++    require(checksum == 802160640);
++    frame_submit(VK_NULL_HANDLE, VK_NULL_HANDLE, {}, false); require(gpu_wait(gpu_serial()));
++    std::cout << "native upload dedup bench iterations=1024 entries=1536 queries=6291456 checksum=" << checksum
++              << " elapsed_ns=" << elapsed << " cpu_100ns=" << cpu_100ns << " raw_cycles=" << raw_cycles << " guest_modules=0 PASS\n";
++    return 0;
++}
++}  // namespace
++
 +int main(int argc,char** argv){try{
++ // Authored result records are part of verification. Do not silently lose a
++ // buffered completion record or accept a failed redirected output stream.
++ std::cout.setf(std::ios::unitbuf);
++ std::cout.exceptions(std::ios::badbit | std::ios::failbit);
++ if(argc==2&&std::string_view(argv[1])=="--upload-dedup-probe")return upload_dedup_probe();
++ if(argc==2&&std::string_view(argv[1])=="--upload-dedup-wrap")return upload_dedup_wrap_probe();
++ if(argc==2&&std::string_view(argv[1])=="--upload-dedup-bench")return upload_dedup_bench();
++ if(argc==4&&std::string_view(argv[1])=="--buffer-lineage")return authored_buffer_lineage::run(argv[2],std::string_view(argv[3])=="cap");
 + if(argc==2&&std::string_view(argv[1])=="--texture-property-cache")return native_texture_property_probe();
 + if(argc==2&&std::string_view(argv[1])=="--record-capacity-bench")return native_record_capacity_bench();
 + if(argc==2&&std::string_view(argv[1])=="--call-phase")return authored_call_phase::run();
@@ -20080,6 +20907,8 @@
 + }
 + std::cout<<"native_device mode="<<(gpu?"gpu":"cpu")<<" checks="<<n<<" guest_modules=0 PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/native_early_chunk_probe.h b/tests/native_early_chunk_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_early_chunk_probe.h
 @@ -0,0 +1,43 @@
@@ -20126,6 +20955,8 @@
 + api={};api.x[0]=pool_key;auto drop=hle_lookup("nvnMemoryPoolFinalize");require(drop!=nullptr);drop(api);
 + std::printf("native replayed chunks=%llu draws=17 samples=17 exact-red=1 guarded-readback PASS\n",(unsigned long long)chunks);
 +}
+diff --git a/tests/native_empty_draw_probe.h b/tests/native_empty_draw_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_empty_draw_probe.h
 @@ -0,0 +1,40 @@
@@ -20169,6 +21000,8 @@
 + }
 + check(all);replay::g_state={};destroy(program);destroy(texture_key);api.x[0]=pool_key;const auto finalize=hle_lookup("nvnMemoryPoolFinalize");check(finalize!=nullptr);finalize(api);
 +}
+diff --git a/tests/native_exit_policy_test.cpp b/tests/native_exit_policy_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_exit_policy_test.cpp
 @@ -0,0 +1,5 @@
@@ -20177,6 +21010,8 @@
 +#include <iostream>
 +#include <stdexcept>
 +int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("exit policy assertion");};nx::NativeExitPolicy p;check(!p.is_locked());check(!p.lock_exit()&&p.is_locked());check(!p.lock_exit()&&p.is_locked());check(!p.request_close()&&p.is_locked());check(p.unlock_exit()&&!p.is_locked());check(p.lock_exit());nx::NativeExitPolicy q;check(q.request_close());check(q.lock_exit());check(p.termination_status()==0);check(p.process_status(0)==0);p.set_termination_result(0xf6712345u);check(p.termination_status()==0xf6712345u);check(p.process_status(0)==0xf6712345u);check(p.process_status(1)==1);check(p.process_status(0xc0000005u)==0xc0000005u);check(!p.is_locked());p.set_termination_result(0);check(p.process_status(0)==0);std::cout<<"native_exit_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/native_font_bundle_test.cpp b/tests/native_font_bundle_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_font_bundle_test.cpp
 @@ -0,0 +1,5 @@
@@ -20185,6 +21020,8 @@
 +#include <vector>
 +#include <iostream>
 +int main(){unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("font bundle assertion");};std::vector<uint8_t> bytes(0x100+32);std::memcpy(bytes.data(),"NFB1",4);auto put=[&](size_t offset,uint32_t value){std::memcpy(bytes.data()+offset,&value,4);};put(4,1);put(8,32);put(16,8);put(20,16);bytes[0x109]=1;auto layout=nx::native_font_layout(bytes);check(layout.count==1&&layout.regions[0].offset==8&&layout.regions[0].size==16);for(unsigned mode=0;mode<3;++mode){auto bad=bytes;if(mode==0)bad[0]=0;if(mode==1){uint32_t value=33;std::memcpy(bad.data()+20,&value,4);}if(mode==2)bad[0x109]=0;bool rejected=false;try{nx::native_font_layout(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"font bundle checks="<<checks<<" PASS\n";}
+diff --git a/tests/native_frame_context_probe.h b/tests/native_frame_context_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_frame_context_probe.h
 @@ -0,0 +1,195 @@
@@ -20383,6 +21220,8 @@
 +    return 0;
 +}
 +}  // namespace authored_frame_context
+diff --git a/tests/native_gpu_volume_probe.h b/tests/native_gpu_volume_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_gpu_volume_probe.h
 @@ -0,0 +1,8 @@
@@ -20394,6 +21233,8 @@
 + {std::lock_guard lock(gpu_lock());auto* image=image_of(key);check(image&&image->view_type==VK_IMAGE_VIEW_TYPE_3D);check(!native_volume_ready_for_sample(texture));auto command=frame_begin(false);transition(command,*image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);VkClearColorValue color{};color.float32[3]=1.0f;VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};vk::p_vkCmdClearColorImage(command,image->image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&color,1,&range);image->rendered=true;frame_submit(VK_NULL_HANDLE,VK_NULL_HANDLE,{},true);check(!image->uploaded&&!image->texels&&texture.memory==0);check(native_volume_ready_for_sample(texture));}
 + native_volume_sample_probe(key,check,4,0.0f);destroy(key);
 +}
+diff --git a/tests/native_hid_policy_test.cpp b/tests/native_hid_policy_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_hid_policy_test.cpp
 @@ -0,0 +1,5 @@
@@ -20402,6 +21243,8 @@
 +#include <array>
 +#include <iostream>
 +int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("HID policy assertion");};nx::NativeHidPolicy p;check(p.style(0)==0);p.initialize();check(p.style(0)==1&&p.style(1)==0&&p.style(32)==0);p.styles(0);check(p.style(0)==0);p.styles(1);std::array<uint32_t,1> ids{1};p.supported_ids(ids);check(p.style(0)==0);ids[0]=0;p.supported_ids(ids);check(p.style(0)==1);p.handheld_mode(2);check(p.handheld_mode()==2);p.disconnect(0);check(p.style(0)==0);p.initialize();check(p.style(0)==1);bool bad=false;try{p.handheld_mode(3);}catch(const std::invalid_argument&){bad=true;}check(bad&&p.handheld_mode()==2);ids[0]=99;bad=false;try{p.supported_ids(ids);}catch(const std::invalid_argument&){bad=true;}check(bad&&p.style(0)==1);std::cout<<"native_hid_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/native_mii_defaults_test.cpp b/tests/native_mii_defaults_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_mii_defaults_test.cpp
 @@ -0,0 +1,4 @@
@@ -20409,6 +21252,8 @@
 +#include "native_mii/random.h"
 +#include <iostream>
 +int main(){using namespace nx::mii;unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("Mii preset assertion");};for(unsigned i=0;i<6;++i){std::array<uint8_t,16> id{};id[0]=uint8_t(i+1);const auto info=build_default(i,id);check(info.Verify()==ValidationResult::NoErrors);check(info.gender==Gender(RawData::DefaultMii[i].gender));check(info.height==RawData::DefaultMii[i].height&&info.build==RawData::DefaultMii[i].weight);check(info.name.data==RawData::DefaultMii[i].nickname.data);}bool rejected=false;try{build_default(6,{});}catch(const std::invalid_argument&){rejected=true;}check(rejected);std::cout<<"Mii preset checks="<<checks<<" PASS\n";}
+diff --git a/tests/native_mii_random_test.cpp b/tests/native_mii_random_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_mii_random_test.cpp
 @@ -0,0 +1,6 @@
@@ -20418,6 +21263,8 @@
 +#include <set>
 +#include <cstring>
 +int main(){using namespace nx::mii;unsigned checks=0;auto check=[&](bool v){++checks;if(!v)throw std::runtime_error("native Mii assertion");};std::set<std::array<u8,50>> faces;for(u32 age=0;age<4;++age)for(u32 gender=0;gender<3;++gender)for(u32 race=0;race<4;++race)for(u64 seed=0;seed<128;++seed){std::array<u8,16> id{};id[0]=1;auto m=build_random(age,gender,race,seed,id);check(m.Verify()==ValidationResult::NoErrors);check(gender==2||u32(m.gender)==gender);check(m.height==64&&m.build==64&&m.eyebrow_y>=3&&m.padding==0);check((m.create_id[6]&0xf0)==0x40&&(m.create_id[8]&0xc0)==0x80);std::array<u8,50> face{};std::memcpy(face.data(),reinterpret_cast<const u8*>(&m)+38,50);faces.insert(face);}check(faces.size()>100);for(auto args:std::array<std::array<u32,3>,3>{{{4,0,0},{0,3,0},{0,0,4}}}){bool rejected=false;try{build_random(args[0],args[1],args[2],0,{});}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"native Mii random checks="<<checks<<" faces="<<faces.size()<<" PASS\n";}
+diff --git a/tests/native_null_sampler_probe.h b/tests/native_null_sampler_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_null_sampler_probe.h
 @@ -0,0 +1,68 @@
@@ -20489,6 +21336,8 @@
 + }
 + replay::g_state={};destroy(program);destroy(target_key);destroy(image2d_key);destroy(cube_key);api.x[0]=descriptors;const auto finalize=hle_lookup("nvnTexturePoolFinalize");check(finalize!=nullptr);finalize(api);
 +}
+diff --git a/tests/native_perf_test.cpp b/tests/native_perf_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_perf_test.cpp
 @@ -0,0 +1,25 @@
@@ -20517,6 +21366,8 @@
 +    const auto weighted = take(Region::Focus);
 +    assert(weighted.calls == 1024 && weighted.inclusive_ns == weighted.exclusive_ns);
 +}
+diff --git a/tests/native_pipeline_recipe_probe.h b/tests/native_pipeline_recipe_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_pipeline_recipe_probe.h
 @@ -0,0 +1,363 @@
@@ -20883,6 +21734,8 @@
 +}
 +
 +}  // namespace pipeline_recipe_probe
+diff --git a/tests/native_point_probe.h b/tests/native_point_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_point_probe.h
 @@ -0,0 +1,70 @@
@@ -20956,6 +21809,8 @@
 +    }
 +    replay::g_state={};api.x[0]=command_key;call("nvnCommandBufferFinalize");api.x[0]=pool_key;call("nvnMemoryPoolFinalize");destroy(key);
 +}
+diff --git a/tests/native_point_size_patch_test.cpp b/tests/native_point_size_patch_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_point_size_patch_test.cpp
 @@ -0,0 +1,71 @@
@@ -21030,6 +21885,8 @@
 +    check(!native_point_size_supported(0,true,1,64));
 +    std::cout<<"point-size patch checks="<<checks<<" PASS\n";
 +}
+diff --git a/tests/native_point_test_shaders.h b/tests/native_point_test_shaders.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_point_test_shaders.h
 @@ -0,0 +1,61 @@
@@ -21094,9 +21951,11 @@
 +    0x0003003eu,0x00000015u,0x00000012u,0x00050041u,0x00000013u,0x00000016u,0x00000001u,0x0000000cu,
 +    0x0003003eu,0x00000016u,0x00000011u,0x000100fdu,0x00010038u,
 +};
+diff --git a/tests/native_pool_lineage_test.cpp b/tests/native_pool_lineage_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_pool_lineage_test.cpp
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,77 @@
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +#include "native_pool_lineage.h"
 +#include <array>
@@ -21143,8 +22002,39 @@
 +    for (auto& worker : workers) worker.join();
 +    check(counter == 33 && counts[0] == 967);
 +    for (unsigned i = 1; i <= 33; ++i) check(counts[i] == 1);
++    const auto selected = pool_lineage_options("1", "100", "102", "0,19,20,31");
++    check(selected.on && selected.register_count == 4 && selected.registers == std::array<uint8_t,4>{0,19,20,31});
++    const auto one_register = pool_lineage_options("1", "100", "102", "31");
++    check(one_register.on && one_register.register_count == 1 && one_register.registers[0] == 31);
++    for (const char* bad : {"", "32", "-1", "+1", " 1", "1 ", "1x", "1,", ",1", "1,,2", "1,1", "1,01", "0,1,2,3,4", "4294967296"}) {
++        const auto invalid = pool_lineage_options("1", "100", "102", bad);
++        check(!invalid.on && invalid.register_count == 0 && !invalid.io_window);
++    }
++    check(!pool_lineage_options("0", "100", "102", "19").on);
++    const auto state_registers = pool_lineage_options("1", nullptr, nullptr, "19");
++    check(state_registers.on && state_registers.register_count == 1 && !state_registers.includes_io(100));
++    std::array<uint64_t,32> registers{};
++    registers[0] = 0x1234; registers[19] = 0x5678; registers[20] = 0; registers[31] = UINT64_MAX;
++    const auto before = registers;
++    const auto text = pool_lineage_registers(selected, registers);
++    check(std::strcmp(text.data(), "0:1234,19:5678,20:0,31:ffffffffffffffff") == 0);
++    check(registers == before);
++    check(std::strcmp(pool_lineage_registers(bounded, registers).data(), "-") == 0);
++    auto disabled = selected; disabled.on = false;
++    check(std::strcmp(pool_lineage_registers(disabled, registers).data(), "-") == 0);
++    auto invalid_register = selected; invalid_register.registers[1] = 32;
++    check(std::strcmp(pool_lineage_registers(invalid_register, registers).data(), "-") == 0);
++    auto invalid_count = selected; invalid_count.register_count = 5;
++    check(std::strcmp(pool_lineage_registers(invalid_count, registers).data(), "-") == 0);
++    registers.fill(UINT64_MAX);
++    const auto widest = pool_lineage_options("1", "0", "0", "28,29,30,31");
++    const auto maximum = pool_lineage_registers(widest, registers);
++    check(std::strlen(maximum.data()) == 79 && maximum.back() == 0);
++    check(std::strcmp(maximum.data(), "28:ffffffffffffffff,29:ffffffffffffffff,30:ffffffffffffffff,31:ffffffffffffffff") == 0);
 +    std::printf("pool_lineage checks=%u enable/range/concurrent-cap/one-truncation/no-wrap PASS\n", checks);
 +}
+diff --git a/tests/native_readonly_storage_test.cpp b/tests/native_readonly_storage_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_readonly_storage_test.cpp
 @@ -0,0 +1,4 @@
@@ -21152,6 +22042,8 @@
 +#include "native_readonly_storage.h"
 +#include <iostream>
 +int main(int argc,char** argv){try{if(argc!=2)throw std::runtime_error("fixture directory required");unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("readonly storage assertion");};auto path=std::filesystem::path(argv[1])/"valid.bin";nx::NativeReadonlyStorage image(path,"9ac056b20af5fb961ccf89de921573d4b4b87e0c7a4640f98fcc2fcc6436e3fc");check(image.size()==std::filesystem::file_size(path));auto header=image.read(0,8);check(header.size()==8&&header[0]==80);check(image.read(image.size(),0).empty());bool rejected=false;try{image.read(image.size(),1);}catch(const std::out_of_range&){rejected=true;}check(rejected);rejected=false;try{nx::NativeReadonlyStorage bad(path,std::string(64,'0'));}catch(const std::invalid_argument&){rejected=true;}check(rejected);auto writer=_wfsopen(path.c_str(),L"r+b",_SH_DENYNO);check(writer==nullptr);if(writer)fclose(writer);std::cout<<"readonly storage checks="<<checks<<" PASS\n";return 0;}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}
+diff --git a/tests/native_record_capacity_probe.h b/tests/native_record_capacity_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_record_capacity_probe.h
 @@ -0,0 +1,63 @@
@@ -21218,6 +22110,8 @@
 +             <<" wall_ns="<<wall<<" cycles="<<cycles<<" cycle_samples="<<cycle_samples<<" PASS\n";
 +    return 0;
 +}
+diff --git a/tests/native_rgb565_probe.h b/tests/native_rgb565_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_rgb565_probe.h
 @@ -0,0 +1,62 @@
@@ -21283,6 +22177,8 @@
 +        destroy(key);
 +    }
 +}
+diff --git a/tests/native_sampled_profile_test.cpp b/tests/native_sampled_profile_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_sampled_profile_test.cpp
 @@ -0,0 +1,5 @@
@@ -21291,6 +22187,8 @@
 +#include <iostream>
 +#include <stdexcept>
 +int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("sampled profile assertion");};for(unsigned format:{0x25u,0x4bu,0x79u,0x95u,0xau})check(native_sampled_2d_float_compatible(1,1,1,format));for(unsigned format:{0u,3u,4u,0x27u,0x31u,0x32u,0x33u,0x3eu,0x51u,0xffffffffu})check(!native_sampled_2d_float_compatible(1,1,1,format));for(unsigned target:{0u,2u,3u,4u,5u,6u,7u,8u,9u,0xffffffffu})check(!native_sampled_2d_float_compatible(target,1,1,0x25));check(!native_sampled_2d_float_compatible(1,2,1,0x25));check(!native_sampled_2d_float_compatible(1,1,4,0x25));check(native_sampled_2d_float_compatible(1,1,0,0x25));check(native_sampled_cube_float_compatible(8,16,16,1,0x25));check(native_sampled_cube_float_compatible(8,16,16,0,0x4b));check(!native_sampled_cube_float_compatible(1,16,16,1,0x25));check(!native_sampled_cube_float_compatible(8,16,8,1,0x25));check(!native_sampled_cube_float_compatible(8,0,0,1,0x25));check(!native_sampled_cube_float_compatible(8,16,16,4,0x25));check(!native_sampled_cube_float_compatible(8,16,16,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_array_shadow_compatible(4,4,1,format,0,1,4));check(!native_sampled_array_shadow_compatible(1,4,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,0,1,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,4,0x34,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x25,0,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,1,1,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,0,4));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,0));check(!native_sampled_array_shadow_compatible(4,4,1,0x34,0,1,9));check(native_sampled_shadow_compatible(false,1,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,4,1,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,4,1,0x34,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x25,0,1,4));check(!native_sampled_shadow_compatible(false,1,1,1,0x34,0,0,4));check(native_sampled_array_float_compatible(4,3,1,0x25));check(!native_sampled_array_float_compatible(4,0,1,0x25));check(!native_sampled_array_float_compatible(1,3,1,0x25));check(native_sampled_cube_array_float_compatible(9,16,16,12,1,0x25));check(native_sampled_cube_array_float_compatible(8,16,16,6,1,0x25));check(!native_sampled_cube_array_float_compatible(8,16,16,12,1,0x25));check(!native_sampled_cube_array_float_compatible(8,16,16,6,4,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,7,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,8,12,1,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,4,0x25));check(!native_sampled_cube_array_float_compatible(9,16,16,12,1,0x27));for(unsigned format:{0x32u,0x33u,0x34u,0x35u,0x36u})check(native_sampled_depth_float_compatible(false,1,1,1,format,0,0));check(native_sampled_depth_float_compatible(true,4,6,1,0x34,0,0));check(!native_sampled_depth_float_compatible(false,1,1,1,0x34,0,1));check(!native_sampled_depth_float_compatible(false,1,1,1,0x34,1,0));check(!native_sampled_depth_float_compatible(false,1,1,4,0x34,0,0));check(!native_sampled_depth_float_compatible(false,8,6,1,0x34,0,0));check(!native_sampled_depth_float_compatible(false,1,1,1,0x25,0,0));check(!native_sampled_depth_float_compatible(true,4,0,1,0x34,0,0));check(native_sampled_array_float_compatible(1,1,1,0x44));check(!native_sampled_array_float_compatible(1,0,1,0x44));check(!native_sampled_array_float_compatible(1,2,1,0x44));check(!native_sampled_array_float_compatible(1,1,4,0x44));check(!native_sampled_array_float_compatible(1,1,1,0x27));std::cout<<"sampled profile checks="<<checks<<" PASS\n";}
+diff --git a/tests/native_sdk_mii_probe.cpp b/tests/native_sdk_mii_probe.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_sdk_mii_probe.cpp
 @@ -0,0 +1,25 @@
@@ -21319,6 +22217,8 @@
 + for(const auto& [code,count]:rejected)std::cout<<"SDK validation code="<<code<<" rejected="<<count<<"\n";
 + return accepted==total&&param_accepted==total&&defaults_accepted==6&&invalid_rejected?0:1;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/native_single_layer_array_sample_probe.h b/tests/native_single_layer_array_sample_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_single_layer_array_sample_probe.h
 @@ -0,0 +1,49 @@
@@ -21371,6 +22271,8 @@
 + float actual[8];std::memcpy(actual,output.ptr,sizeof actual);const float expected[8]={1,0,1,1,1,0,1,1};for(unsigned n=0;n<8;++n)check(std::isfinite(actual[n])&&std::fabs(actual[n]-expected[n])<1e-6f);
 + vk::p_vkDestroyPipeline(device,pipeline,nullptr);vk::p_vkDestroyShaderModule(device,module,nullptr);vk::p_vkDestroyPipelineLayout(device,pipeline_layout,nullptr);vk::p_vkDestroyDescriptorSetLayout(device,layout,nullptr);vk::p_vkDestroySampler(device,sampler,nullptr);destroy(texture);
 +}
+diff --git a/tests/native_small_r11_probe.h b/tests/native_small_r11_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_small_r11_probe.h
 @@ -0,0 +1,14 @@
@@ -21388,6 +22290,8 @@
 + }
 + native_volume_sample_probe(key,check,8,1.0f);destroy(key);
 +}
+diff --git a/tests/native_span_cache_probe.h b/tests/native_span_cache_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_span_cache_probe.h
 @@ -0,0 +1,20 @@
@@ -21411,6 +22315,8 @@
 + decommit(memory+4096,4096);check(valid(32,16,3));check(!valid(4096+32,16,3));check(!valid(4096-8,16,3));check(commit(memory+4096,4096));check(valid(4096-8,16,3));
 + vm_set(memory,8192,kMemFree,0);decommit(memory,8192);check(!valid(32,16,3));
 +}
+diff --git a/tests/native_texture_clear_test.cpp b/tests/native_texture_clear_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_texture_clear_test.cpp
 @@ -0,0 +1,5 @@
@@ -21419,6 +22325,8 @@
 +#include "nvn/native_texture_clear_view.h"
 +#include <iostream>
 +int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool v){++checks;if(!v)throw std::runtime_error("texture clear assertion");};std::array<int32_t,6> region={0,0,1,4,4,1};auto range=native_texture_clear_range(4,4,1,2,0,0,0,0,region,15);check(range.level==0&&range.base_layer==1&&range.layers==1);for(unsigned mode=0;mode<5;++mode){auto bad=region;auto mask=15u;if(mode==0)bad[0]=1;if(mode==1)bad[3]=2;if(mode==2)bad[2]=-1;if(mode==3)bad[5]=2;if(mode==4)mask=7;bool rejected=false;try{native_texture_clear_range(4,4,1,2,0,0,0,0,bad,mask);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}region={0,0,0,4,4,1};range=native_texture_clear_range(8,8,2,1,1,1,0,1,region,15);check(range.level==1&&range.base_layer==0);float zero[4]={};check(native_texture_clear_view_compatible(0x38,0x25,zero));check(native_texture_clear_view_compatible(0x25,0x38,zero));float middle[4]={0.25f,0.5f,0.75f,1};check(!native_texture_clear_view_compatible(0x38,0x25,middle));check(native_texture_clear_view_compatible(0x25,0x25,middle));check(!native_texture_clear_view_compatible(0x38,0x34,zero));std::cout<<"texture clear range checks="<<checks<<" PASS\n";}
+diff --git a/tests/native_texture_compare_read_probe.h b/tests/native_texture_compare_read_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_texture_compare_read_probe.h
 @@ -0,0 +1,19 @@
@@ -21441,6 +22349,8 @@
 + run(true);b.width=8;run(false);b.width=4;run(true);
 + destroy(first);destroy(second);
 +}
+diff --git a/tests/native_texture_layers_test.cpp b/tests/native_texture_layers_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_texture_layers_test.cpp
 @@ -0,0 +1,5 @@
@@ -21449,6 +22359,8 @@
 +#include <iostream>
 +#include <stdexcept>
 +int main(){unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("texture layer assertion");};for(unsigned depth:{0u,1u,2u,6u,0xffffffffu})check(nx::nvn::native_texture_storage_layers(8,depth)==6);check(nx::nvn::native_texture_storage_layers(1,1)==1);check(nx::nvn::native_texture_storage_layers(4,7)==7);check(nx::nvn::native_texture_storage_layers(2,9)==9);std::cout<<"texture layer checks="<<checks<<" PASS\n";}
+diff --git a/tests/native_texture_property_probe.h b/tests/native_texture_property_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_texture_property_probe.h
 @@ -0,0 +1,155 @@
@@ -21607,6 +22519,8 @@
 +              << " scalar-fields/strict-binding/strict-storage/retirement PASS\n";
 +    return 0;
 +}
+diff --git a/tests/native_thread_policy_probe.h b/tests/native_thread_policy_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_thread_policy_probe.h
 @@ -0,0 +1,63 @@
@@ -21673,6 +22587,8 @@
 + if(failures.empty())std::printf("native thread policy PASS\n");return failures.empty()?0:1;
 +}
 +}
+diff --git a/tests/native_touch_policy_test.cpp b/tests/native_touch_policy_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_touch_policy_test.cpp
 @@ -0,0 +1,5 @@
@@ -21681,6 +22597,8 @@
 +#include <array>
 +#include <iostream>
 +int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("touch policy assertion");};nx::NativeTouchPolicy p;std::array<uint8_t,nx::NativeTouchPolicy::StateBytes> state{};check(p.states(state,1)==0);p.initialize();check(p.states(state,0)==0);check(p.states(state,1)==1);uint64_t sample=0;std::memcpy(&sample,state.data(),8);check(sample==1);for(size_t i=8;i<state.size();++i)check(state[i]==0);check(p.states(state,16)==1);std::memcpy(&sample,state.data(),8);check(sample==2);bool bad=false;try{p.states(std::span<uint8_t>(state).first(4),1);}catch(const std::invalid_argument&){bad=true;}check(bad);std::cout<<"native_touch_policy checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/native_uniform_snapshot_probe.h b/tests/native_uniform_snapshot_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_uniform_snapshot_probe.h
 @@ -0,0 +1,124 @@
@@ -21808,6 +22726,77 @@
 +    }
 +    destroy(key);
 +}
+diff --git a/tests/native_upload_dedup_arena_test.cpp b/tests/native_upload_dedup_arena_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/tests/native_upload_dedup_arena_test.cpp
+@@ -0,0 +1,64 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "nvn/native_upload_dedup_arena.h"
++#include <iostream>
++#include <stdexcept>
++#include <string>
++#include <source_location>
++#include <vector>
++
++struct CountingHeap final : std::pmr::memory_resource {
++    nx::nvn::UploadDedupHeap heap;
++    size_t bytes = 0, allocations = 0, deallocations = 0;
++    void* do_allocate(size_t n, size_t alignment) override {
++        void* result = heap.allocate(n, alignment); bytes += n; ++allocations; return result;
++    }
++    void do_deallocate(void* pointer, size_t n, size_t alignment) override {
++        bytes -= n; ++deallocations; heap.deallocate(pointer, n, alignment);
++    }
++    bool do_is_equal(const std::pmr::memory_resource& other) const noexcept override { return this == &other; }
++};
++
++int main() { try {
++    unsigned checks = 0;
++    auto check = [&](bool ok, const std::source_location site = std::source_location::current()) {
++        ++checks;
++        if (!ok) throw std::runtime_error("dedup arena check " + std::to_string(checks) + " at " + std::to_string(site.line()));
++    };
++    using Value = std::array<uint8_t, 40>;
++    std::vector<uint8_t> keys(20000 * 64);
++    for (bool enabled : {false, true}) {
++        CountingHeap upstream;
++        {
++            nx::nvn::UploadDedupArena<Value> map(enabled, &upstream);
++            const auto before = upstream.allocations;
++            for (unsigned frame = 0; frame < 3; ++frame) {
++                for (unsigned i = 0; i < 1536; ++i) {
++                    Value value{}; value[0] = uint8_t(i); value[39] = uint8_t(frame + 7);
++                    map[keys.data() + i * 64] = value;
++                }
++                check(map.size() == 1536);
++                check(map.find(keys.data() + 64)->second[0] == 1);
++                check(map.find(keys.data() + 1535 * 64)->second[39] == frame + 7);
++                Value replacement{}; replacement[17] = 0xa5;
++                map[keys.data() + 64] = replacement;
++                check(map.size() == 1536 && map.find(keys.data() + 64)->second[17] == 0xa5);
++                auto it = map.lower_bound(keys.data() + 128);
++                check(it != map.end() && it->first == keys.data() + 128);
++                map.erase(it);
++                check(map.size() == 1535 && map.find(keys.data() + 128) == map.end());
++                if (enabled) check(upstream.allocations == before && upstream.bytes == 0);
++                map.clear();
++                check(map.size() == 0 && map.begin() == map.end());
++                if (enabled) check(upstream.bytes == 0);
++            }
++            map.clear(); check(map.size() == 0);
++            for (unsigned i = 0; i < 20000; ++i) map[keys.data() + i * 64] = {};
++            check(map.size() == 20000 && upstream.bytes > 0);
++            map.clear(); check(map.size() == 0);
++            if (enabled) check(upstream.bytes == 0);
++            map[keys.data() + 32] = {}; check(map.size() == 1);
++        }
++        check(upstream.bytes == 0 && upstream.allocations == upstream.deallocations);
++    }
++    std::cout << "native upload dedup arena checks=" << checks << " PASS\n";
++} catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; } }
+diff --git a/tests/native_volume_profile_test.cpp b/tests/native_volume_profile_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_volume_profile_test.cpp
 @@ -0,0 +1,5 @@
@@ -21816,6 +22805,8 @@
 +#include <iostream>
 +#include <stdexcept>
 +int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("volume coverage assertion");};NativeVolumeExtent image{4,4,4,1,0x25,0};NativeVolumeWrite write{0,0,0,0,4,4,4,256};check(native_volume_full_write(image,write));write.bytes=255;check(!native_volume_full_write(image,write));write.bytes=256;write.z=1;check(!native_volume_full_write(image,write));write.z=0;write.level=1;check(!native_volume_full_write(image,write));write.level=0;image.levels=2;check(!native_volume_full_write(image,write));image.levels=1;image.format=0x27;check(!native_volume_full_write(image,write));image.format=0x25;image.samples=4;check(!native_volume_full_write(image,write));image={0xffffffffu,0xffffffffu,0xffffffffu,1,0x25,0};check(!native_volume_full_write(image,write));check(native_volume_sampler_shape(2,false,false,false));for(unsigned dim:{0u,1u,3u,4u,0xffffffffu})check(!native_volume_sampler_shape(dim,false,false,false));check(!native_volume_sampler_shape(2,true,false,false));check(!native_volume_sampler_shape(2,false,true,false));check(!native_volume_sampler_shape(2,false,false,true));NativeVolumeExtent lut{8,8,8,1,0x3f,0};check(native_small_r11_volume(lut,0,0,0,4096));check(native_small_r11_volume(lut,0,0,1,8192));check(!native_small_r11_volume(lut,8,0,0,4096));check(!native_small_r11_volume(lut,0,32,0,4096));check(!native_small_r11_volume(lut,0,0,2,4096));check(!native_small_r11_volume(lut,0,0,0,4095));lut.depth=4;check(!native_small_r11_volume(lut,0,0,0,4096));lut.depth=8;lut.format=0x25;check(!native_small_r11_volume(lut,0,0,0,4096));std::cout<<"volume coverage checks="<<checks<<" PASS\n";}
+diff --git a/tests/native_volume_sample_probe.h b/tests/native_volume_sample_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_volume_sample_probe.h
 @@ -0,0 +1,43 @@
@@ -21862,6 +22853,8 @@
 + float actual[8];std::memcpy(actual,output.ptr,sizeof actual);const float expected[8]={0,0,0,1,0,0,high_blue,1};for(unsigned n=0;n<8;++n)check(std::isfinite(actual[n])&&std::fabs(actual[n]-expected[n])<1e-6f);
 + vk::p_vkDestroyPipeline(device,pipeline,nullptr);vk::p_vkDestroyShaderModule(device,module,nullptr);vk::p_vkDestroyPipelineLayout(device,pipeline_layout,nullptr);vk::p_vkDestroyDescriptorSetLayout(device,layout,nullptr);vk::p_vkDestroySampler(device,sampler,nullptr);
 +}
+diff --git a/tests/native_wait_cancellation_probe.h b/tests/native_wait_cancellation_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_wait_cancellation_probe.h
 @@ -0,0 +1,26 @@
@@ -21891,6 +22884,8 @@
 + const auto cancel_result=cancel(blocked->handle);worker.join();check(entered);check(cancel_result==0);check(returned.load()==0xec01);check(!blocked->cancel);handle_close(blocked->handle);
 + check(cancel(0)==0xe401);const auto process_handle=handle_add(current_process());check(cancel(process_handle)==0xe401);handle_close(process_handle);
 +}
+diff --git a/tests/native_worker_inventory_probe.h b/tests/native_worker_inventory_probe.h
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_worker_inventory_probe.h
 @@ -0,0 +1,121 @@
@@ -22015,6 +23010,8 @@
 +    return 0;
 +}
 +} // namespace authored_worker_inventory
+diff --git a/tests/native_worker_inventory_stream.py b/tests/native_worker_inventory_stream.py
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_worker_inventory_stream.py
 @@ -0,0 +1,75 @@
@@ -22093,6 +23090,8 @@
 +        assert contexts == []
 +    print(result.stdout.strip())
 +print(f"native wildcard stream roots={count} callbacks={count - 1} sampled_exception=1 threads=2 context_filter={int(filtered)} PASS")
+diff --git a/tests/native_yuv_layout_test.cpp b/tests/native_yuv_layout_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/native_yuv_layout_test.cpp
 @@ -0,0 +1,15 @@
@@ -22111,6 +23110,8 @@
 + for(auto dimensions:{std::pair{0u,4u},std::pair{4u,0u},std::pair{3u,4u},std::pair{4u,3u},std::pair{4098u,4u}}){const auto before=guarded;bool rejected=false;try{nx::native_i420_to_nv12(pixels,dimensions.first,dimensions.second);}catch(const std::invalid_argument&){rejected=true;}check(rejected&&guarded==before);}
 + const auto before=guarded;bool rejected=false;try{nx::native_i420_to_nv12(pixels.first(23),4,4);}catch(const std::invalid_argument&){rejected=true;}check(rejected&&guarded==before);check(nx::native_yuv420_bytes(512,608)==466944);std::cout<<"native YUV layout checks="<<checks<<" PASS\n";return 0;
 + }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/romfs_image_probe.cpp b/tests/romfs_image_probe.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/romfs_image_probe.cpp
 @@ -0,0 +1,12 @@
@@ -22126,6 +23127,8 @@
 + }
 + std::cout<<"{\"directories\":"<<dirs<<",\"files\":"<<files<<",\"file_bytes\":"<<bytes<<",\"native_file_reads\":"<<reads<<",\"sample_fnv1a64\":"<<hash<<"}\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/romfs_image_test.cpp b/tests/romfs_image_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/romfs_image_test.cpp
 @@ -0,0 +1,23 @@
@@ -22152,6 +23155,8 @@
 +#endif
 + std::cout<<"romfs_image checks="<<checks<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/sdk53_packaged_texture_test.cpp b/tests/sdk53_packaged_texture_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/sdk53_packaged_texture_test.cpp
 @@ -0,0 +1,5 @@
@@ -22160,6 +23165,8 @@
 +#include <array>
 +#include <iostream>
 +int main(){unsigned checks=0;auto check=[&](bool ok){++checks;if(!ok)throw std::runtime_error("packaged layout assertion");};std::array<uint8_t,0x60>b{};check(nx::nvn::sdk53_packaged_block_height(b)==0);for(unsigned y=0;y<=5;++y){b[0x58]=1|(y<<4);b[0x59]=0;check(nx::nvn::sdk53_packaged_block_height(b)==(1u<<y));}for(unsigned value:{0x101u,0x1001u,0x61u}){b[0x58]=value;b[0x59]=value>>8;bool bad=false;try{nx::nvn::sdk53_packaged_block_height(b);}catch(const std::invalid_argument&){bad=true;}check(bad);}bool bad=false;try{nx::nvn::sdk53_packaged_block_height(std::span<const uint8_t>(b).first(0x59));}catch(const std::invalid_argument&){bad=true;}check(bad);std::cout<<"packaged layout checks="<<checks<<" PASS\n";}
+diff --git a/tests/sdk53_sampler_descriptor_test.cpp b/tests/sdk53_sampler_descriptor_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/sdk53_sampler_descriptor_test.cpp
 @@ -0,0 +1,26 @@
@@ -22189,6 +23196,8 @@
 +    check(rejected);
 +    std::cout << "sampler descriptor checks=" << checks << " PASS\n";
 +}
+diff --git a/tests/sdk53_sampler_values_test.cpp b/tests/sdk53_sampler_values_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/sdk53_sampler_values_test.cpp
 @@ -0,0 +1,5 @@
@@ -22197,6 +23206,8 @@
 +#include <iostream>
 +#include <limits>
 +int main(){unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("sampler value assertion");};std::array<uint8_t,0x60> bytes{};auto put=[&](size_t off,auto value){std::memcpy(bytes.data()+off,&value,sizeof value);};put(8,uint64_t(0x12345678));put(0x10,uint32_t(5));put(0x14,uint32_t(1));put(0x18,uint32_t(7));put(0x24,-1000.0f);put(0x28,1000.0f);put(0x2c,0.25f);put(0x30,uint32_t(1));put(0x34,uint32_t(4));put(0x48,8.0f);auto value=nx::nvn::sdk53_sampler_values(bytes);check(value.device==0x12345678&&value.mode==1&&value.func==4);check(value.min==5&&value.mag==1&&value.wrap[0]==7);check(value.lod_min==-1000&&value.lod_max==1000&&value.bias==0.25f&&value.anisotropy==8);for(unsigned mode=0;mode<7;++mode){auto bad=bytes;if(mode==0)bad[0x10]=6;if(mode==1)bad[0x14]=2;if(mode==2)bad[0x18]=8;if(mode==3)bad[0x30]=2;if(mode==4)bad[0x34]=0;if(mode==5){float n=std::numeric_limits<float>::quiet_NaN();std::memcpy(bad.data()+0x24,&n,4);}if(mode==6)std::fill(bad.begin()+8,bad.begin()+16,0);bool rejected=false;try{nx::nvn::sdk53_sampler_values(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}bool truncated=false;try{nx::nvn::sdk53_sampler_values(std::span<const uint8_t>(bytes).first(0x4f));}catch(const std::invalid_argument&){truncated=true;}check(truncated);std::cout<<"sampler values checks="<<checks<<" PASS\n";}
+diff --git a/tests/sdk53_texture_builder_test.cpp b/tests/sdk53_texture_builder_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/sdk53_texture_builder_test.cpp
 @@ -0,0 +1,10 @@
@@ -22210,6 +23221,8 @@
 + for(size_t size:{size_t(0),size_t(0x58),size_t(0x59)}){bool bad=false;try{nx::nvn::sdk53_texture_is_packaged(std::span<const uint8_t>(bytes).first(size));}catch(const std::exception&){bad=true;}check(bad);}
 + std::cout<<"sdk53_texture_builder checks="<<n<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/sdk53_texture_descriptor_test.cpp b/tests/sdk53_texture_descriptor_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/sdk53_texture_descriptor_test.cpp
 @@ -0,0 +1,5 @@
@@ -22218,6 +23231,8 @@
 +#include <array>
 +#include <iostream>
 +int main(){try{unsigned n=0;auto check=[&](bool b){++n;if(!b)throw std::runtime_error("texture descriptor assertion");};std::array<uint8_t,0x80>a{},b{};check(nx::nvn::sdk53_texture_descriptors_equal(a,b));b[0]=1;check(nx::nvn::sdk53_texture_descriptors_equal(a,b));b[8]=1;check(!nx::nvn::sdk53_texture_descriptors_equal(a,b));b[8]=0;b[0x40]=1;check(!nx::nvn::sdk53_texture_descriptors_equal(a,b));b[0x40]=0;b[0x54]=0xfc;check(nx::nvn::sdk53_texture_descriptors_equal(a,b));b[0x54]=1;check(!nx::nvn::sdk53_texture_descriptors_equal(a,b));b[0x54]=0;b[0x60]=1;check(nx::nvn::sdk53_texture_descriptors_equal(a,b));bool bad=false;try{nx::nvn::sdk53_texture_descriptors_equal(std::span<const uint8_t>(a).first(0x54),b);}catch(const std::invalid_argument&){bad=true;}check(bad);std::cout<<"sdk53_texture_descriptor checks="<<n<<" PASS\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/sdk53_texture_wire_test.cpp b/tests/sdk53_texture_wire_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/sdk53_texture_wire_test.cpp
 @@ -0,0 +1,4 @@
@@ -22225,6 +23240,8 @@
 +#include "nvn/sdk53_texture_wire.h"
 +#include <iostream>
 +int main(){using namespace nx::nvn;unsigned checks=0;auto check=[&](bool value){++checks;if(!value)throw std::runtime_error("texture wire assertion");};Sdk53TextureWire v;v.device=0x1122334455667788;v.gpu=0x8877665544332211;v.pool=0x1010;v.offset=0x2020;v.stride=0x3030;v.aspect=3;v.fields[2]=1920;v.fields[3]=1080;auto bytes=sdk53_texture_wire(v);auto get64=[&](size_t off){uint64_t value;std::memcpy(&value,bytes.data()+off,8);return value;};auto get32=[&](size_t off){uint32_t value;std::memcpy(&value,bytes.data()+off,4);return value;};check(bytes.size()==0xb0);check(get64(0)==0);check(get64(8)==v.device);check(get64(0x80)==v.gpu);check(get64(0x10)==v.pool&&get64(0x18)==v.offset);check(get64(0x60)==v.stride);check(get32(0x28)==1920&&get32(0x2c)==1080);check(get32(0x54)==3);for(unsigned mode=0;mode<2;++mode){auto bad=v;if(mode==0)bad.device=0;else bad.aspect=4;bool rejected=false;try{sdk53_texture_wire(bad);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}std::cout<<"SDK53 texture wire checks="<<checks<<" PASS\n";}
+diff --git a/tests/sdk53_window_builder_test.cpp b/tests/sdk53_window_builder_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/sdk53_window_builder_test.cpp
 @@ -0,0 +1,9 @@
@@ -22237,6 +23254,8 @@
 + put(0x20,0xffffffff,4);check(nx::nvn::sdk53_window_builder(bytes).interval==0);put(0x20,3,4);check(nx::nvn::sdk53_window_builder(bytes).interval==4);put(8,0xffffffff,4);check(nx::nvn::sdk53_window_builder(bytes).count==-1);
 + bool bad=false;try{nx::nvn::sdk53_window_builder(std::span<const uint8_t>(bytes).first(0x23));}catch(const std::exception&){bad=true;}check(bad);std::cout<<"sdk53_window_builder checks="<<n<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/texture_format_test.cpp b/tests/texture_format_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/texture_format_test.cpp
 @@ -0,0 +1,12 @@
@@ -22252,6 +23271,8 @@
 + for(auto invalid:{0u,0x51u,0x78u,0x9du,0xffffffffu}){bool rejected=false;try{nx::nvn::native_texture_block(invalid);}catch(const std::exception&){rejected=true;}check(rejected);}
 + std::cout<<"texture_format checks="<<n<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/verified_parental_test.cpp b/tests/verified_parental_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/verified_parental_test.cpp
 @@ -0,0 +1,35 @@
@@ -22290,6 +23311,8 @@
 + put(0x90,8,8);install();rejected=false;try{nx::mk8_verified_parental("pctl");}catch(const std::exception&){rejected=true;}check(rejected);
 + std::cout<<"verified_parental checks="<<n<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/vi_state_test.cpp b/tests/vi_state_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/vi_state_test.cpp
 @@ -0,0 +1,25 @@
@@ -22318,6 +23341,8 @@
 + nx::native_vi::close_display(display);check(!nx::native_vi::display_valid(display));DestroyWindow(window);
 + std::cout<<"vi_state checks="<<n<<" PASS\n";return 0;
 +}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+diff --git a/tests/window_controller_test.cpp b/tests/window_controller_test.cpp
+new file mode 100644
 --- /dev/null
 +++ b/tests/window_controller_test.cpp
 @@ -0,0 +1,23 @@

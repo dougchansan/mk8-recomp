@@ -133,6 +133,14 @@ the matching hash now survive both Windows checkout and Git archive export.
 Two regression tests protect license/patch byte identities and checkout rules.
 Public source-only and portable-path audits remain required before publication.
 
+The publication CI also exposed six stale decode-coverage expectations: the
+pinned strict-static emitter already translates fixed-point conversions that
+the coverage fixture still expected to fall back. The fixture retains all 240
+instruction cases and now checks the six emitted helper bodies, including widths,
+scale, signedness, registers and FPCR/FPSR arguments. The old fixture reproduces
+234/240; the corrected fixture passes 240/240 against the same emitter header.
+This changes the authored test expectations and leaves emitted game code pinned.
+
 True normal-speed 125/250 FPS and sustained 8/4 ms presentation remain open.
 The next scheduling work still needs independently owned render preparation and
 simulation state; a faster display event or repeated task/present is insufficient.

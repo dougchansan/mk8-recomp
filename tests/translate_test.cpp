@@ -22,6 +22,7 @@ namespace {
 struct Case {
     const char* name;
     unsigned insn;
+    const char* expected = nullptr;
 };
 
 int failures = 0;
@@ -43,6 +44,10 @@ void Check(const Case& c) {
 
     if (unhandled) {
         std::printf("  FAIL  %-34s %08X  -> unhandled\n", c.name, c.insn);
+        ++failures;
+    } else if (c.expected && body.find(c.expected) == std::string::npos) {
+        std::printf("  FAIL  %-34s %08X  -> unexpected emitted code\n", c.name, c.insn);
+        std::printf("            %s\n", body.c_str());
         ++failures;
     } else {
         std::printf("  ok    %-34s %08X\n", c.name, c.insn);
@@ -74,6 +79,21 @@ int main() {
     // Encodings taken from the recorded examples in the target title's
     // coverage histogram, so these are instructions the title actually runs.
     const std::vector<Case> cases = {
+        // The pinned strict-static emitter translates these former hybrid
+        // fallbacks. Verify helper direction, widths, scale, signedness,
+        // register selection and FPCR/FPSR arguments, rather than only coverage.
+        Case{"fcvtzu w8, s10, #30", 0x1E198948u,
+             "c->x[8]=recomp_fp_to_fixed(c->vreg[10][0],32,32,30,0,c->fpcr,&c->fpsr);"},
+        Case{"fcvtzs w8, s0, #8", 0x1E18E008u,
+             "c->x[8]=recomp_fp_to_fixed(c->vreg[0][0],32,32,8,1,c->fpcr,&c->fpsr);"},
+        Case{"fcvtzu x8, d10, #40", 0x9E596148u,
+             "c->x[8]=recomp_fp_to_fixed(c->vreg[10][0],64,64,40,0,c->fpcr,&c->fpsr);"},
+        Case{"fcvtzs x1, d2, #1", 0x9E58FC41u,
+             "c->x[1]=recomp_fp_to_fixed(c->vreg[2][0],64,64,1,1,c->fpcr,&c->fpsr);"},
+        Case{"scvtf s0, w1, #4", 0x1E02F020u,
+             "{ uint64_t _r=recomp_fixed_to_fp(c->x[1],32,32,4,1,c->fpcr,&c->fpsr); c->vreg[0][0]=_r; c->vreg[0][1]=0; }"},
+        Case{"ucvtf d0, x1, #12", 0x9E43D020u,
+             "{ uint64_t _r=recomp_fixed_to_fp(c->x[1],64,64,12,0,c->fpcr,&c->fpsr); c->vreg[0][0]=_r; c->vreg[0][1]=0; }"},
         // Former mask-neighbor fallbacks now have dedicated, tested handlers.
         Case{"ic ivau, x10 (guarded host event)", 0xD50B752Au},
         Case{"smlal v0.4s, v1.4h, v2.h[0]", 0x0F422020u},
@@ -318,13 +338,6 @@ int main() {
         Case{"shl v0.2d, v1.2d, #40", 0x4F685420u},
         Case{"shl v0.8h, v1.8h, #5", 0x4F155420u},
         Case{"shl v0.8b, v1.8b, #2", 0x0F0A5420u},
-        // Deliberately not translated: measurably slower than the JIT.
-        Case{"fcvtzu w8, s10, #30", 0x1E198948u},
-        Case{"fcvtzs w8, s0, #8", 0x1E18E008u},
-        Case{"fcvtzu x8, d10, #40", 0x9E596148u},
-        Case{"fcvtzs x1, d2, #1", 0x9E58FC41u},
-        Case{"scvtf s0, w1, #4", 0x1E02F020u},
-        Case{"ucvtf d0, x1, #12", 0x9E43D020u},
     };
 
     std::printf("\nencodings that must NOT be translated\n\n");

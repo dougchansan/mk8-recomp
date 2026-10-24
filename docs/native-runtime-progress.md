@@ -1,8 +1,21 @@
 # Native runtime progress
 
-Updated 2026-10-22. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
+Updated 2026-10-24. Repository: `dougchansan/mk8-recomp`. Goal: a standalone title-specific native application with static CPU code and native graphics, platform, audio, input and storage. Completion requires the supported gameplay path to run without CPU JIT, Maxwell/emulated GPU processing or the general emulator runtime.
 
 ## MK8 native runtime
+
+R371 indexes immutable retained-snapshot descriptor fields while preserving full
+identity, ownership, generation and ambiguity checks. A balanced normal-clock
+stationary Stadium comparison observes main-thread CPU work of 6.384 versus
+5.247 ms/present (-17.81%), with raw cycles down 15.33%; both adjacent pairs
+improve. Candidate presentation stays near 16.67 ms. Process variance is large,
+and the accelerating comparison loses its closing baseline to the unchanged
+clock gate. The authored lookup workload improves 95.22%, trading 15.66% more
+slot-replacement time. All 57 suites, existing GPU/sync/readback controls and
+three changed-source analyses pass. The 235-file recipe also includes a tested
+pending-cancellation race fix and canonical license byte identities. See
+[measurements, exclusions and correctness](native-texture-snapshot-admission.md).
+Independent render/simulation scheduling and sustained 8/4 ms remain open.
 
 R351 adds opt-in, bounded pool and Map/Flush call-site observations. All 54 native
 Windows suites, 3,253 GPU checks and 19 control cases pass; both changed-source

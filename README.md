@@ -4,10 +4,11 @@ The current goal is a standalone native Mario Kart 8 Deluxe application: statica
 
 See [native runtime progress](docs/native-runtime-progress.md) for verified results and remaining work. This repository is `dougchansan/mk8-recomp`.
 
-The current source recipe adds [bounded callback-state profiling](docs/native-main-loop-profiler.md)
-to trace simulation state into rendering preparation. Its 52 regression
-suites and native GPU controls pass; the new measurements make no 8 ms/4 ms or
-high-refresh claim.
+The current source recipe reduces [retained texture admission work](docs/native-texture-snapshot-admission.md)
+and fixes a tested pending-cancellation race. Its 57 native regression suites and
+existing GPU controls pass. A balanced stationary gameplay comparison observes
+17.81% less main-thread CPU work, with substantial process variance; presentation
+remains near 16.67 ms. Independent rendering and the 8 ms/4 ms targets remain open.
 
 **Release policy:** Public game-linked binaries are prohibited. Full native compatibility does not authorize downloadable game-linked executables. Audited authored source and game-free tooling only may be published after provenance review. Existing foundations prereleases, download assets and tags were removed; private development builds stay local. See [LEGAL.md](LEGAL.md), [distribution audit](docs/distribution-audit.md) and [build notes](docs/native-builds.md).
 

@@ -2,9 +2,9 @@
   "repository": "https://github.com/BelmanteGu/SuperMarioWonderRecomp",
   "commit": "010ed7a596a621c15d3a8dfa5795ca8c3668b066",
   "license": "MIT",
-  "license_sha256": "7f728cfaa94ff27c2a40c906dac12564a216077ceb017fb2d01cc29ba6697720",
+  "license_sha256": "6466066caf0162b4af89a3108a778843fa21f98dc8a0bc254fe08ededd04faa3",
   "local_changes_license": "GPL-3.0-or-later",
-  "patch_sha256": "722e148c7dd76a088e9aed829ba9b454323ebc85d03162c1c8330ff8037b2213",
+  "patch_sha256": "8c59b56aae520d40c038e54bc5002d93de2560bf924762a3a2e2b793b33ff3ce",
   "changed_files": [
     "CMakeLists.txt",
     "games/mk8d/game.cpp",
@@ -216,6 +216,7 @@
     "tests/native_texture_compare_read_probe.h",
     "tests/native_texture_layers_test.cpp",
     "tests/native_texture_property_probe.h",
+    "tests/native_texture_snapshot_probe.h",
     "tests/native_thread_policy_probe.h",
     "tests/native_touch_policy_test.cpp",
     "tests/native_uniform_snapshot_probe.h",
@@ -223,6 +224,7 @@
     "tests/native_volume_profile_test.cpp",
     "tests/native_volume_sample_probe.h",
     "tests/native_wait_cancellation_probe.h",
+    "tests/native_wait_timeout_cancel_probe.h",
     "tests/native_worker_inventory_probe.h",
     "tests/native_worker_inventory_stream.py",
     "tests/native_yuv_layout_test.cpp",
@@ -240,7 +242,7 @@
     "tests/vi_state_test.cpp",
     "tests/window_controller_test.cpp"
   ],
-  "purpose": "Experimental MK8D adaptation. R366 reduces scoped upload allocation/replay work and adds bounded opt-in BufferMap metadata. Native controls and scoped gameplay pass at normal clock speed. Main/process CPU results are mixed; independent rendering, sustained 8/4 ms and 125/250 FPS remain unverified.",
+  "purpose": "Experimental MK8D adaptation. R371 reduces retained-snapshot admission work and fixes pending timed-wait cancellation. Native controls and a scoped normal-clock stationary gameplay comparison pass; process variance and an excluded accelerating window limit the performance claim. Independent rendering, sustained 8/4 ms and 125/250 FPS remain unverified.",
   "vulkan_dispatch": "Regenerate with supplied installed-header registry; generated dispatch changes are not embedded in this patch.",
   "additional_source_provenance": "Existing mk8-recomp verified native event/NPDM/parental policy implementation is GPL-3.0-or-later; not donor MIT code."
 }

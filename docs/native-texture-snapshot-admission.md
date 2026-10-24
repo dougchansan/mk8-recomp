@@ -140,6 +140,9 @@ instruction cases and now checks the six emitted helper bodies, including widths
 scale, signedness, registers and FPCR/FPSR arguments. The old fixture reproduces
 234/240; the corrected fixture passes 240/240 against the same emitter header.
 This changes the authored test expectations and leaves emitted game code pinned.
+The side-entry runner also explicitly returns success after validating its
+expected guard fast-fail. Previously both controls passed but the CI shell
+propagated the last native abort status. The exact rejection checks are retained.
 
 True normal-speed 125/250 FPS and sustained 8/4 ms presentation remain open.
 The next scheduling work still needs independently owned render preparation and

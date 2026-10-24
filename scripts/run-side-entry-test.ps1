@@ -41,3 +41,6 @@ if ($mutationExit -ne -1073740791) {
     throw "mutated side entry exited $mutationExit instead of guard-v2 fast-fail"
 }
 Write-Host 'mutated interior entry was refused by guard-v2' -ForegroundColor Green
+# The expected fast-fail was verified above. GitHub's PowerShell wrapper would
+# otherwise propagate that last native exit status after this passing script.
+exit 0

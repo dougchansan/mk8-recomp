@@ -71,10 +71,9 @@ Write-Host '=== synthetic emitter tests ===' -ForegroundColor Cyan
 # against a reference rather than being a plain unit test.
 # Scored on a success marker in the output, NOT on the exit code. Several of
 # these deliberately provoke a guard rejection or an expected trap to prove the
-# refusal path works, and the process exits non-zero as a side effect - the
-# side-entry test prints its pass line and still exits 1 because the code-guard
-# mutation it induces aborts. Gating on exit code reports those as failures, and
-# a check that cries wolf gets ignored.
+# refusal path works. Each runner must validate that result before reporting
+# success. The side-entry runner also clears its verified native abort status
+# for direct CI callers; an arbitrary non-zero exit never proves guard success.
 $runners = @(
     @{ Name = 'shifted-register width'; Script = 'run-shifted-register-test.ps1'; Ok = 'checks passed' },
     @{ Name = 'translate';              Script = 'run-translate-test.ps1';        Ok = '/240 ok' },
